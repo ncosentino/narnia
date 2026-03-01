@@ -1,0 +1,63 @@
+@page "/commits"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject ISessionRepository Repository
+
+<PageTitle>Commits — Narnia</PageTitle>
+
+<h1>Commit Traceability</h1>
+<p>Find which sessions produced a specific commit SHA.</p>
+
+<form method="get" action="/commits" class="commit-search-form">
+    <input type="text" name="sha" value="@Sha" placeholder="Enter commit SHA, e.g. abc123f" maxlength="40" />
+    <button type="submit">Look up</button>
+</form>
+
+@if (!string.IsNullOrWhiteSpace(Sha) && _sessions is null)
+{
+    <p>Searching…</p>
+}
+else if (_sessions is { Length: 0 })
+{
+    <p>No sessions found for commit <code>@Sha</code>.</p>
+}
+else if (_sessions is not null)
+{
+    <p><strong>@_sessions.Length session(s)</strong> linked to commit <code>@Sha</code></p>
+    <table class="sessions-table">
+        <thead>
+            <tr>
+                <th>Summary</th>
+                <th>Repository</th>
+                <th>Branch</th>
+                <th>Turns</th>
+                <th>Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var s in _sessions)
+            {
+                <tr>
+                    <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
+                    <td>@(s.Repository ?? "—")</td>
+                    <td>@(s.Branch ?? "—")</td>
+                    <td>@s.TurnCount</td>
+                    <td>@s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "sha")]
+    public string? Sha { get; set; }
+
+    private SessionSummary[]? _sessions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Sha))
+            _sessions = await Repository.GetSessionsByRefAsync(Sha.Trim());
+    }
+}
