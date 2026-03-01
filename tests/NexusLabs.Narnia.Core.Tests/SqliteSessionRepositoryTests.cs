@@ -111,7 +111,8 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
 
             INSERT INTO search_index (content, session_id, source_type, source_id) VALUES
                 ('Build the API caching dependency injection', 'sess-1', 'turn', '1'),
-                ('Fix the tests xunit mocking', 'sess-2', 'turn', '1');
+                ('Fix the tests xunit mocking', 'sess-2', 'turn', '1'),
+                ('Committed deadc0de1234567890abcdef1234567890deadc0de work done', 'sess-2', 'checkpoint_work_done', '2');
             """;
         cmd.ExecuteNonQuery();
     }
@@ -296,6 +297,26 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         var results = await _repository.GetSessionsByRefAsync("deadbeef", TestContext.Current.CancellationToken);
 
         Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_ShaInSessionContent_ReturnsSession()
+    {
+        // SHA mentioned in checkpoint text (FTS fallback path), not in session_refs.
+        var results = await _repository.GetSessionsByRefAsync("deadc0de1234567890abcdef1234567890deadc0de", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-2", results[0].Id);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_ShortShaInSessionContent_ReturnsSession()
+    {
+        // Short prefix of a SHA that appears in session text.
+        var results = await _repository.GetSessionsByRefAsync("deadc0de", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-2", results[0].Id);
     }
 
     // ── GetGlobalStatsAsync ───────────────────────────────────────────────────

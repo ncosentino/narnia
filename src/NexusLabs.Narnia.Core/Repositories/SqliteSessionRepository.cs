@@ -158,13 +158,20 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         """
         SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
                COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c.id) as checkpoint_count
-        FROM session_refs sr
-        JOIN sessions s ON s.id = sr.session_id
+        FROM sessions s
         LEFT JOIN turns t ON t.session_id = s.id
         LEFT JOIN checkpoints c ON c.session_id = s.id
-        WHERE (sr.ref_value = @refValue
-           OR sr.ref_value LIKE @refPrefix
-           OR @refValue LIKE sr.ref_value || '%')
+        WHERE s.id IN (
+            SELECT sr.session_id
+            FROM session_refs sr
+            WHERE sr.ref_value = @refValue
+               OR sr.ref_value LIKE @refPrefix
+               OR @refValue LIKE sr.ref_value || '%'
+            UNION
+            SELECT si.session_id
+            FROM search_index si
+            WHERE si.search_index MATCH @ftsQuery
+        )
         GROUP BY s.id
         ORDER BY s.updated_at DESC
         """;
@@ -457,6 +464,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         cmd.CommandText = SessionsByRefSql;
         cmd.Parameters.AddWithValue("@refValue", refValue);
         cmd.Parameters.AddWithValue("@refPrefix", refValue + "%");
+        cmd.Parameters.AddWithValue("@ftsQuery", refValue + "*");
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         var results = new List<SessionSummary>();
