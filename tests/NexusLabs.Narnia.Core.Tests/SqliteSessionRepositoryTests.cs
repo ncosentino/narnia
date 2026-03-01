@@ -300,6 +300,17 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetSessionsByRefAsync_LongInputMatchesShortShaInContent_ReturnsSession()
+    {
+        // User types full 40-char SHA; content only mentions the short 8-char prefix.
+        // "deadc0de" appears in search_index for sess-2.
+        var results = await _repository.GetSessionsByRefAsync("deadc0de1234567890abcdef1234567890000000", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-2", results[0].Id);
+    }
+
+    [Fact]
     public async Task GetSessionsByRefAsync_ShaInSessionContent_ReturnsSession()
     {
         // SHA mentioned in checkpoint text (FTS fallback path), not in session_refs.

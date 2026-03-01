@@ -171,6 +171,10 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             SELECT si.session_id
             FROM search_index si
             WHERE si.search_index MATCH @ftsQuery
+            UNION
+            SELECT si.session_id
+            FROM search_index si
+            WHERE si.search_index MATCH @ftsShortQuery
         )
         GROUP BY s.id
         ORDER BY s.updated_at DESC
@@ -465,6 +469,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         cmd.Parameters.AddWithValue("@refValue", refValue);
         cmd.Parameters.AddWithValue("@refPrefix", refValue + "%");
         cmd.Parameters.AddWithValue("@ftsQuery", refValue + "*");
+        cmd.Parameters.AddWithValue("@ftsShortQuery", refValue[..Math.Min(8, refValue.Length)] + "*");
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         var results = new List<SessionSummary>();

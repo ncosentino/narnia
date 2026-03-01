@@ -174,3 +174,18 @@ a { color: #6c5ce7; }
 .search-result-snippet { margin: 0; font-size: .85rem; color: #444; white-space: pre-wrap; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
 .search-hint { color: #888; font-size: .9rem; }
 .search-hint code { background: #e9ecef; padding: .1rem .35rem; border-radius: 3px; }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--border, #e5e7eb);
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+.footer span { font-weight: 600; }
+.footer a { color: #6b7280; text-decoration: none; }
+.footer a:hover { color: var(--accent, #6366f1); }
