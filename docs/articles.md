@@ -1,3 +1,7 @@
+---
+description: Blog posts and articles about Narnia, Copilot CLI session management, and .NET/C# development from Dev Leader.
+---
+
 # Articles & Blog Posts
 
 Blog posts and articles about this MCP server from [Dev Leader](https://www.devleader.ca).

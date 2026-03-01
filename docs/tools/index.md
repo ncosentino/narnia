@@ -2,6 +2,10 @@
 description: Overview of all nine Narnia MCP tools for searching and browsing GitHub Copilot CLI session history. Use these from any AI assistant that supports MCP.
 ---
 
+---
+description: Reference for all nine Narnia MCP tools. Search sessions, browse checkpoints, read conversation history, and open the Narnia web UI from any MCP-enabled AI assistant.
+---
+
 # MCP Tools
 
 Narnia exposes nine MCP tools for working with your local Copilot CLI session history. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
