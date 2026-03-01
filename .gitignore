@@ -24,3 +24,7 @@ publish/
 
 ## Local developer config (copy appsettings.Development.json.example to customize)
 appsettings.Development.json
+
+## MkDocs
+site/
+__pycache__/
