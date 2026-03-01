@@ -1,0 +1,53 @@
+@page "/resume"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject ISessionRepository Repository
+
+<PageTitle>Resume — Narnia</PageTitle>
+
+<h1>Resume</h1>
+<p>Sessions with unfinished work — pick up where you left off.</p>
+
+@if (_suggestions is null)
+{
+    <p>Loading...</p>
+}
+else if (_suggestions.Length == 0)
+{
+    <p>No sessions with pending next steps found.</p>
+}
+else
+{
+    @foreach (var s in _suggestions)
+    {
+        <div class="resume-card">
+            <h3><a href="/sessions/@s.Session.Id">@(s.Session.Summary ?? "(no summary)")</a></h3>
+            <div class="resume-meta">
+                @if (s.Session.Repository is not null)
+                {
+                    <span>📁 @s.Session.Repository</span>
+                    <span> · </span>
+                }
+                @if (s.LatestCheckpointTitle is not null)
+                {
+                    <span>🔖 @s.LatestCheckpointTitle</span>
+                    <span> · </span>
+                }
+                <span>🕐 @s.Session.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+            </div>
+            @if (s.NextStepsPreview is not null)
+            {
+                <div class="resume-next-steps">@s.NextStepsPreview</div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private ResumeSuggestion[]? _suggestions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _suggestions = await Repository.GetResumeSuggestionsAsync(20);
+    }
+}
