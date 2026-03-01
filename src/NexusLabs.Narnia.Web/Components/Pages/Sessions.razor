@@ -1,0 +1,82 @@
+@page "/sessions"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject ISessionRepository Repository
+@inject ISessionSearch Search
+
+<PageTitle>Sessions — Narnia</PageTitle>
+
+<h1>Sessions</h1>
+
+<form method="get" action="/sessions">
+    <input type="search" name="q" value="@Query" placeholder="Search sessions..." />
+    <button type="submit">Search</button>
+</form>
+
+@if (_sessions is not null && _sessions.Length > 0)
+{
+    <p>@_sessions.Length result(s)</p>
+    <table class="sessions-table">
+        <thead>
+            <tr>
+                <th>Summary</th>
+                <th>Repository</th>
+                <th>Directory</th>
+                <th>Turns</th>
+                <th>Checkpoints</th>
+                <th>Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var s in _sessions)
+            {
+                <tr>
+                    <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
+                    <td>@(s.Repository ?? "—")</td>
+                    <td class="cwd">@(s.Cwd ?? "—")</td>
+                    <td>@s.TurnCount</td>
+                    <td>@s.CheckpointCount</td>
+                    <td>@s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (_sessions is not null)
+{
+    <p>No results found.</p>
+}
+
+@if (_searchResults is not null && _searchResults.Length > 0)
+{
+    <h2>Search Matches</h2>
+    @foreach (var r in _searchResults)
+    {
+        <div class="search-result">
+            <a href="/sessions/@r.SessionId">@r.SessionId</a>
+            <span class="source-type">@r.SourceType</span>
+            <p>@r.Content</p>
+        </div>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? Query { get; set; }
+
+    private SessionSummary[]? _sessions;
+    private SearchResult[]? _searchResults;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Query))
+        {
+            _sessions = await Repository.ListRecentAsync(100);
+        }
+        else
+        {
+            _searchResults = await Search.SearchAsync(Query, 20);
+            _sessions = [];
+        }
+    }
+}

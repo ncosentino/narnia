@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <!-- Blazor SSR does not yet support NativeAOT or full trimming (as of .NET 10).
+         The MCP server uses NativeAOT; the Web app uses standard JIT publish. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexusLabs.Narnia.Core\NexusLabs.Narnia.Core.csproj" />
+  </ItemGroup>
+
+</Project>

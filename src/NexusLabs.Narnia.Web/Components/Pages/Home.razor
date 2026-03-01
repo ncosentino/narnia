@@ -1,0 +1,54 @@
+@page "/"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject ISessionRepository Repository
+
+<PageTitle>Narnia — Copilot Session Browser</PageTitle>
+
+<h1>Recent Sessions</h1>
+
+@if (_sessions is null)
+{
+    <p>Loading...</p>
+}
+else if (_sessions.Length == 0)
+{
+    <p>No sessions found. Make sure <code>~/.copilot/session-store.db</code> exists.</p>
+}
+else
+{
+    <table class="sessions-table">
+        <thead>
+            <tr>
+                <th>Summary</th>
+                <th>Repository</th>
+                <th>Directory</th>
+                <th>Turns</th>
+                <th>Checkpoints</th>
+                <th>Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var s in _sessions)
+            {
+                <tr>
+                    <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
+                    <td>@(s.Repository ?? "—")</td>
+                    <td class="cwd">@(s.Cwd ?? "—")</td>
+                    <td>@s.TurnCount</td>
+                    <td>@s.CheckpointCount</td>
+                    <td>@s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private SessionSummary[]? _sessions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sessions = await Repository.ListRecentAsync(50);
+    }
+}

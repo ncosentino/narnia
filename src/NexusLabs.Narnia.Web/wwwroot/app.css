@@ -1,0 +1,85 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    background: #f8f9fa;
+}
+
+.layout { min-height: 100vh; display: flex; flex-direction: column; }
+
+.header {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    padding: .75rem 1.5rem;
+}
+
+.header nav { display: flex; gap: 1.5rem; align-items: center; }
+.header a { color: #cdd6f4; text-decoration: none; }
+.header a:hover { color: #cba6f7; }
+.brand { font-weight: 700; font-size: 1.1rem; }
+
+.main { padding: 1.5rem; max-width: 1200px; margin: 0 auto; width: 100%; }
+
+h1 { font-size: 1.6rem; margin-bottom: 1rem; }
+h2 { font-size: 1.2rem; margin-top: 1.5rem; margin-bottom: .75rem; }
+h3 { font-size: 1rem; margin-top: 1rem; margin-bottom: .4rem; color: #555; }
+
+.sessions-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .9rem;
+}
+.sessions-table th {
+    text-align: left;
+    padding: .5rem .75rem;
+    background: #e9ecef;
+    border-bottom: 2px solid #dee2e6;
+}
+.sessions-table td {
+    padding: .5rem .75rem;
+    border-bottom: 1px solid #dee2e6;
+    vertical-align: top;
+}
+.sessions-table tr:hover td { background: #f1f3f5; }
+.sessions-table a { color: #6c5ce7; text-decoration: none; }
+.sessions-table a:hover { text-decoration: underline; }
+.cwd { font-family: monospace; font-size: .8rem; color: #666; }
+
+.session-meta { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .75rem; margin-bottom: 1.5rem; }
+.session-meta dt { font-weight: 600; color: #555; }
+.session-meta code { background: #e9ecef; padding: 0 .3rem; border-radius: 3px; font-size: .85rem; }
+
+.checkpoint {
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: .75rem;
+    background: #fff;
+}
+.checkpoint summary {
+    padding: .75rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    font-size: .95rem;
+}
+.checkpoint summary:hover { background: #f8f9fa; }
+.checkpoint-date { margin-left: .75rem; color: #888; font-size: .85rem; }
+.checkpoint > * { padding: 0 1rem; }
+.checkpoint pre { background: #f8f9fa; padding: .75rem; border-radius: 4px; overflow-x: auto; font-size: .82rem; white-space: pre-wrap; }
+
+.turn { margin-bottom: 1rem; border: 1px solid #dee2e6; border-radius: 6px; background: #fff; overflow: hidden; }
+.turn-user { padding: .75rem 1rem; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
+.turn-assistant { padding: .75rem 1rem; }
+.turn p { margin: .25rem 0; white-space: pre-wrap; font-size: .88rem; }
+
+.search-result { background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: .75rem 1rem; margin-bottom: .5rem; }
+.search-result a { color: #6c5ce7; font-weight: 600; }
+.source-type { margin-left: .5rem; font-size: .8rem; background: #e9ecef; padding: .1rem .4rem; border-radius: 3px; }
+
+form { display: flex; gap: .5rem; margin-bottom: 1rem; }
+input[type=search] { flex: 1; padding: .4rem .75rem; border: 1px solid #dee2e6; border-radius: 4px; font-size: .95rem; }
+button { padding: .4rem 1rem; background: #6c5ce7; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+button:hover { background: #5a4bd1; }
+
+a { color: #6c5ce7; }

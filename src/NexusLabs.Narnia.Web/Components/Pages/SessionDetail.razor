@@ -1,0 +1,134 @@
+@page "/sessions/{SessionId}"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject ISessionRepository Repository
+@inject IWorkspaceReader WorkspaceReader
+
+<PageTitle>@(_session?.Summary ?? SessionId) — Narnia</PageTitle>
+
+@if (_session is null && _loaded)
+{
+    <h1>Session not found</h1>
+    <p>No session with ID <code>@SessionId</code> was found.</p>
+    <a href="/sessions">← Back to sessions</a>
+}
+else if (_session is not null)
+{
+    <a href="/sessions">← Sessions</a>
+    <h1>@(_session.Summary ?? "(no summary)")</h1>
+
+    <dl class="session-meta">
+        <dt>ID</dt><dd><code>@_session.Id</code></dd>
+        @if (_session.Repository is not null)
+        {
+            <dt>Repository</dt><dd>@_session.Repository (@(_session.Branch ?? "unknown branch"))</dd>
+        }
+        @if (_session.Cwd is not null)
+        {
+            <dt>Directory</dt><dd><code>@_session.Cwd</code></dd>
+        }
+        @if (_workspace?.GitRoot is not null)
+        {
+            <dt>Git Root</dt><dd><code>@_workspace.GitRoot</code></dd>
+        }
+        <dt>Created</dt><dd>@_session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
+        <dt>Updated</dt><dd>@_session.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
+        <dt>Turns</dt><dd>@_session.TurnCount</dd>
+        <dt>Checkpoints</dt><dd>@_session.CheckpointCount</dd>
+    </dl>
+
+    @if (_checkpoints is not null && _checkpoints.Length > 0)
+    {
+        <h2>Checkpoints</h2>
+        @foreach (var cp in _checkpoints)
+        {
+            <details class="checkpoint">
+                <summary>
+                    <strong>#@cp.CheckpointNumber</strong>
+                    @if (cp.Title is not null) { <span>— @cp.Title</span> }
+                    <span class="checkpoint-date">@cp.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                </summary>
+                @if (cp.Overview is not null)
+                {
+                    <h3>Overview</h3>
+                    <p>@cp.Overview</p>
+                }
+                @if (cp.History is not null)
+                {
+                    <h3>History</h3>
+                    <pre>@cp.History</pre>
+                }
+                @if (cp.WorkDone is not null)
+                {
+                    <h3>Work Done</h3>
+                    <pre>@cp.WorkDone</pre>
+                }
+                @if (cp.NextSteps is not null)
+                {
+                    <h3>Next Steps</h3>
+                    <pre>@cp.NextSteps</pre>
+                }
+                @if (cp.ImportantFiles is not null)
+                {
+                    <h3>Important Files</h3>
+                    <pre>@cp.ImportantFiles</pre>
+                }
+            </details>
+        }
+    }
+
+    @if (_workspace?.ArtifactFiles is { Length: > 0 } files)
+    {
+        <h2>Session Files</h2>
+        <ul>
+            @foreach (var f in files)
+            {
+                <li><code>@f</code></li>
+            }
+        </ul>
+    }
+
+    @if (_turns is not null && _turns.Length > 0)
+    {
+        <h2>Conversation (@_turns.Length turn@(_turns.Length == 1 ? "" : "s"))</h2>
+        @foreach (var turn in _turns)
+        {
+            <div class="turn">
+                <div class="turn-user">
+                    <strong>You</strong>
+                    <p>@turn.UserMessage</p>
+                </div>
+                @if (turn.AssistantResponse is not null)
+                {
+                    <div class="turn-assistant">
+                        <strong>Copilot</strong>
+                        <p>@turn.AssistantResponse</p>
+                    </div>
+                }
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter]
+    public string SessionId { get; set; } = "";
+
+    private Session? _session;
+    private WorkspaceInfo? _workspace;
+    private Checkpoint[]? _checkpoints;
+    private Turn[]? _turns;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _session = await Repository.GetByIdAsync(SessionId);
+        if (_session is not null)
+        {
+            _workspace = WorkspaceReader.ReadWorkspace(SessionId);
+            _checkpoints = await Repository.GetCheckpointsAsync(SessionId);
+            _turns = await Repository.GetTurnsAsync(SessionId, 0, 100);
+        }
+        _loaded = true;
+    }
+}

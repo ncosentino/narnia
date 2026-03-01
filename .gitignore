@@ -1,0 +1,26 @@
+## .NET build outputs
+bin/
+obj/
+*.user
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+## IDE
+.vs/
+.idea/
+*.suo
+*.userprefs
+.DS_Store
+
+## Publish
+publish/
+
+## Logs
+*.log
+
+## Local developer config (copy appsettings.Development.json.example to customize)
+appsettings.Development.json
