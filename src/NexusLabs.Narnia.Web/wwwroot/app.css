@@ -101,3 +101,5 @@ a { color: #6c5ce7; }
 
 .page-actions { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
 .page-actions h1, .page-actions h2 { margin: 0; }
+.btn-refresh { padding: .4rem 1rem; background: #6c5ce7; color: #fff; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; font-size: .9rem; }
+.btn-refresh:hover { background: #5a4bd1; color: #fff; }

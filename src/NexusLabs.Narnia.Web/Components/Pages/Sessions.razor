@@ -8,7 +8,7 @@
 
 <div class="page-actions">
     <h1>Sessions</h1>
-    <button @onclick="RefreshAsync">↻ Refresh</button>
+    <a href="@(string.IsNullOrWhiteSpace(Query) ? "/sessions" : $"/sessions?q={Uri.EscapeDataString(Query)}")" class="btn-refresh">↻ Refresh</a>
 </div>
 
 <form method="get" action="/sessions">
@@ -70,12 +70,8 @@ else if (_sessions is not null)
     private SessionSummary[]? _sessions;
     private SearchResult[]? _searchResults;
 
-    protected override async Task OnInitializedAsync() => await RefreshAsync();
-
-    private async Task RefreshAsync()
+    protected override async Task OnInitializedAsync()
     {
-        _sessions = null;
-        _searchResults = null;
         if (string.IsNullOrWhiteSpace(Query))
         {
             _sessions = await Repository.ListRecentAsync(100);
