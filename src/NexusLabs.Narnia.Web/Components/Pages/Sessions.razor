@@ -6,7 +6,10 @@
 
 <PageTitle>Sessions — Narnia</PageTitle>
 
-<h1>Sessions</h1>
+<div class="page-actions">
+    <h1>Sessions</h1>
+    <button @onclick="RefreshAsync">↻ Refresh</button>
+</div>
 
 <form method="get" action="/sessions">
     <input type="search" name="q" value="@Query" placeholder="Search sessions..." />
@@ -67,8 +70,12 @@ else if (_sessions is not null)
     private SessionSummary[]? _sessions;
     private SearchResult[]? _searchResults;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
     {
+        _sessions = null;
+        _searchResults = null;
         if (string.IsNullOrWhiteSpace(Query))
         {
             _sessions = await Repository.ListRecentAsync(100);

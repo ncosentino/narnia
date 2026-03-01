@@ -15,7 +15,10 @@
     </p>
 </div>
 
-<h2>Recent Sessions</h2>
+<div class="page-actions">
+    <h2>Recent Sessions</h2>
+    <button @onclick="RefreshAsync">↻ Refresh</button>
+</div>
 
 @if (_sessions is null)
 {
@@ -58,8 +61,11 @@ else
 @code {
     private SessionSummary[]? _sessions;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
     {
+        _sessions = null;
         _sessions = await Repository.ListRecentAsync(10);
     }
 }

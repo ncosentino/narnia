@@ -98,3 +98,6 @@ a { color: #6c5ce7; }
 .home-description a { color: #cba6f7; }
 .home-description a:hover { color: #f5c2e7; }
 .home-view-all { margin-top: .75rem; font-size: .9rem; }
+
+.page-actions { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.page-actions h1, .page-actions h2 { margin: 0; }
