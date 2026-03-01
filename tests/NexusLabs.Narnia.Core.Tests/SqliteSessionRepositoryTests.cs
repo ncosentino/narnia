@@ -241,6 +241,16 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         Assert.Equal("sess-1", results[0].SessionId);
     }
 
+    [Fact]
+    public async Task SearchAsync_QueryWithSpecialChars_DoesNotThrow()
+    {
+        // Slash and other FTS5 special chars must not cause a syntax error.
+        var ex = await Record.ExceptionAsync(() =>
+            _repository.SearchAsync("ncosentino/devleader-blog", 10, TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Null(ex);
+    }
+
     // ── GetGlobalStatsAsync ───────────────────────────────────────────────────
 
     [Fact]

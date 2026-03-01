@@ -328,7 +328,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = SearchSql;
-        cmd.Parameters.AddWithValue("@query", query);
+        cmd.Parameters.AddWithValue("@query", SanitizeFts5Query(query));
         cmd.Parameters.AddWithValue("@limit", limit);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -521,6 +521,15 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         "their", "all", "as", "if", "so", "no", "not", "more", "also", "than", "then", "when",
         "which", "who", "what", "how", "use", "used", "using", "new", "add", "added"
     };
+
+    // Wrap the query in double-quotes so FTS5 treats it as a phrase and
+    // special characters (/, -, :, etc.) don't trigger syntax errors.
+    private static string SanitizeFts5Query(string query)
+    {
+        // Escape any embedded double-quotes by doubling them, then wrap.
+        var escaped = query.Replace("\"", "\"\"");
+        return $"\"{escaped}\"";
+    }
 
     private static IEnumerable<string> TokenizeKeywords(string text)
     {
