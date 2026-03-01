@@ -1,0 +1,82 @@
+@page "/repositories"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@using System.Text.Json
+@inject ISessionRepository Repository
+
+<PageTitle>Repositories — Narnia</PageTitle>
+
+<h1>Repositories</h1>
+
+@if (_repos is null)
+{
+    <p>Loading...</p>
+}
+else if (_repos.Length == 0)
+{
+    <p>No repository-linked sessions found.</p>
+}
+else
+{
+    <div class="chart-container">
+        <canvas id="repo-chart"></canvas>
+    </div>
+    <script type="application/json" data-chart-id="repo-chart">
+        @((MarkupString)BuildChartJson(_repos))
+    </script>
+
+    <table class="repo-table">
+        <thead>
+            <tr>
+                <th>Repository</th>
+                <th>Sessions</th>
+                <th>Turns</th>
+                <th>Files Touched</th>
+                <th>Last Activity</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _repos)
+            {
+                <tr>
+                    <td><a href="/sessions?q=@Uri.EscapeDataString(r.Repository)">@r.Repository</a></td>
+                    <td>@r.SessionCount</td>
+                    <td>@r.TurnCount</td>
+                    <td>@r.FilesTouched</td>
+                    <td>@r.LastActivity.LocalDateTime.ToString("yyyy-MM-dd")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private RepositoryStats[]? _repos;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _repos = await Repository.GetRepositoryStatsAsync();
+    }
+
+    private static string BuildChartJson(RepositoryStats[] data) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "bar",
+            data = new
+            {
+                labels = data.Select(r => r.Repository).ToArray(),
+                datasets = new object[]
+                {
+                    new { label = "Sessions", data = data.Select(r => r.SessionCount).ToArray(),
+                          backgroundColor = "rgba(99,102,241,0.7)", borderColor = "rgba(99,102,241,1)", borderWidth = 1 },
+                    new { label = "Turns", data = data.Select(r => r.TurnCount).ToArray(),
+                          backgroundColor = "rgba(249,115,22,0.7)", borderColor = "rgba(249,115,22,1)", borderWidth = 1 }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                scales = new { y = new { beginAtZero = true } }
+            }
+        });
+}
