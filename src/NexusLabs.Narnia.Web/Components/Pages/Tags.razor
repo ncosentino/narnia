@@ -1,0 +1,83 @@
+@page "/analytics/tags"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@using System.Text.Json
+@inject ISessionRepository Repository
+
+<PageTitle>Tag Cloud — Narnia</PageTitle>
+
+<h1>Tag Cloud</h1>
+<p>Most frequent keywords across session summaries and checkpoint overviews.</p>
+
+@if (_keywords is null)
+{
+    <p>Loading…</p>
+}
+else if (_keywords.Length == 0)
+{
+    <p>No keyword data found.</p>
+}
+else
+{
+    <div class="tag-cloud">
+        @foreach (var kw in _keywords)
+        {
+            var size = ScaleFont(kw.Count, _minCount, _maxCount);
+            <span class="tag-item" style="font-size:@(size.ToString("F1"))rem" title="@kw.Count occurrence(s)">
+                @kw.Keyword
+            </span>
+        }
+    </div>
+
+    <h2>Top 20 Keywords</h2>
+    <div class="chart-container">
+        <canvas id="tags-chart"></canvas>
+    </div>
+    <script type="application/json" data-chart-id="tags-chart">
+        @((MarkupString)BuildChartJson(_keywords.Take(20).ToArray()))
+    </script>
+}
+
+@code {
+    private KeywordFrequency[]? _keywords;
+    private int _minCount;
+    private int _maxCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _keywords = await Repository.GetTopKeywordsAsync(60);
+        if (_keywords.Length > 0)
+        {
+            _minCount = _keywords.Min(k => k.Count);
+            _maxCount = _keywords.Max(k => k.Count);
+        }
+    }
+
+    private static double ScaleFont(int count, int min, int max)
+    {
+        if (max == min) return 1.0;
+        return 0.8 + (count - min) / (double)(max - min) * 1.6;
+    }
+
+    private static string BuildChartJson(KeywordFrequency[] data) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "bar",
+            data = new
+            {
+                labels = data.Select(k => k.Keyword).ToArray(),
+                datasets = new[]
+                {
+                    new { label = "Occurrences", data = data.Select(k => k.Count).ToArray(),
+                          backgroundColor = "rgba(139,92,246,0.7)", borderColor = "rgba(139,92,246,1)", borderWidth = 1 }
+                }
+            },
+            options = new
+            {
+                indexAxis = "y",
+                responsive = true,
+                plugins = new { legend = new { display = false } },
+                scales = new { x = new { beginAtZero = true } }
+            }
+        });
+}
