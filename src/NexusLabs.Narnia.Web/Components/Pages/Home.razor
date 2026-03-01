@@ -5,7 +5,17 @@
 
 <PageTitle>Narnia — Copilot Session Browser</PageTitle>
 
-<h1>Recent Sessions</h1>
+<div class="home-hero">
+    <h1>🗡️ Narnia</h1>
+    <p class="home-tagline">Browse, search, and resume your GitHub Copilot CLI sessions — even after a restart.</p>
+    <p class="home-description">
+        Narnia reads your local <code>~/.copilot/session-store.db</code> and session-state files so you can
+        quickly find past work, review conversation history and checkpoints, and pick up where you left off.
+        Use the <a href="/sessions">Sessions</a> page to search across all sessions, or jump straight to a recent one below.
+    </p>
+</div>
+
+<h2>Recent Sessions</h2>
 
 @if (_sessions is null)
 {
@@ -42,6 +52,7 @@ else
             }
         </tbody>
     </table>
+    <p class="home-view-all"><a href="/sessions">View all sessions →</a></p>
 }
 
 @code {
@@ -49,6 +60,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _sessions = await Repository.ListRecentAsync(50);
+        _sessions = await Repository.ListRecentAsync(10);
     }
 }

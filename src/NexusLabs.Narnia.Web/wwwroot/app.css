@@ -83,3 +83,18 @@ button { padding: .4rem 1rem; background: #6c5ce7; color: #fff; border: none; bo
 button:hover { background: #5a4bd1; }
 
 a { color: #6c5ce7; }
+
+.home-hero {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    border-radius: 8px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+.home-hero h1 { color: #cdd6f4; margin: 0 0 .5rem; font-size: 2rem; }
+.home-tagline { font-size: 1.1rem; color: #a6adc8; margin: 0 0 1rem; }
+.home-description { font-size: .95rem; color: #bac2de; margin: 0; line-height: 1.6; }
+.home-description code { background: #313244; padding: .1rem .35rem; border-radius: 3px; font-size: .88rem; }
+.home-description a { color: #cba6f7; }
+.home-description a:hover { color: #f5c2e7; }
+.home-view-all { margin-top: .75rem; font-size: .9rem; }
