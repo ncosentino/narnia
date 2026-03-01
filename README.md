@@ -133,3 +133,86 @@ The **Core** library is the only place where data access logic lives. Both the M
 - `session-store.db` — SQLite with FTS5 full-text search (opened read-only)
 - `session-state/{guid}/workspace.yaml` — flat key:value YAML with filesystem metadata (e.g. `git_root`)
 - `session-state/{guid}/files/` — session artifact files (plan.md, context files, etc.)
+
+---
+
+## About
+
+### Nick Cosentino — Dev Leader
+
+This tool was built by **[Nick Cosentino](https://www.devleader.ca)**, a software engineer and content creator known as **Dev Leader**. Nick creates practical .NET, C#, ASP.NET Core, Blazor, and software engineering content for intermediate to advanced developers — covering everything from performance optimization and clean architecture to real-world career advice.
+
+Narnia was born out of real frustration losing active Copilot CLI sessions to Windows restarts, and the desire to use AI assistants more effectively across longer-running projects. It serves as a practical example of building NativeAOT C# MCP servers and Blazor Static SSR web apps with modern .NET 10 standards.
+
+**Find Nick online:**
+- Blog: [https://www.devleader.ca](https://www.devleader.ca)
+- YouTube: [https://www.youtube.com/@devleaderca](https://www.youtube.com/@devleaderca)
+- Newsletter: [https://weekly.devleader.ca](https://weekly.devleader.ca)
+- LinkedIn: [https://linkedin.com/in/nickcosentino](https://linkedin.com/in/nickcosentino)
+- Linktree: [https://www.linktr.ee/devleader](https://www.linktr.ee/devleader)
+
+### BrandGhost
+
+[BrandGhost](https://www.brandghost.ai) is a social media automation platform built by Nick that lets content creators cross-post and schedule content across all social platforms in one click. If you create content and want to spend less time on distribution and more time creating, check it out.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Open an issue describing the bug or feature request before submitting a PR
+2. Run `dotnet build` with zero warnings before submitting
+3. Run `dotnet test` and ensure all tests pass
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+## Related Projects
+
+- [google-search-console-mcp](https://github.com/ncosentino/google-search-console-mcp) -- Google Search Console MCP server: query clicks, impressions, CTR, and ranking position from your Search Console properties
+- [google-keyword-planner-mcp](https://github.com/ncosentino/google-keyword-planner-mcp) -- Google Ads Keyword Planner MCP server: keyword ideas, search volume, competition, and CPC data
+- [google-psi-mcp](https://github.com/ncosentino/google-psi-mcp) -- Zero-dependency MCP server for Google PageSpeed Insights Core Web Vitals
+
+---
+
+## About
+
+### Nick Cosentino -- Dev Leader
+
+This tool was built by **[Nick Cosentino](https://www.devleader.ca)**, a software engineer and content creator known as **Dev Leader**. Nick creates practical .NET, C#, ASP.NET Core, Blazor, and software engineering content for intermediate to advanced developers -- covering everything from performance optimization and clean architecture to real-world career advice.
+
+Narnia was born out of a real frustration: Windows forcing a restart and wiping every active Copilot CLI session with no easy way to recover. It serves as a practical example of building NativeAOT C# MCP servers and Blazor Static SSR apps following modern .NET standards.
+
+**Find Nick online:**
+
+- Blog: [https://www.devleader.ca](https://www.devleader.ca)
+- YouTube: [https://www.youtube.com/@devleaderca](https://www.youtube.com/@devleaderca)
+- Newsletter: [https://weekly.devleader.ca](https://weekly.devleader.ca)
+- LinkedIn: [https://linkedin.com/in/nickcosentino](https://linkedin.com/in/nickcosentino)
+- Linktree: [https://www.linktr.ee/devleader](https://www.linktr.ee/devleader)
+
+### BrandGhost
+
+[BrandGhost](https://www.brandghost.ai) is a social media automation platform built by Nick that lets content creators cross-post and schedule content across all social platforms in one click. If you create content and want to spend less time on distribution and more time creating, check it out.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Open an issue describing the bug or feature request before submitting a PR
+2. Run `dotnet build` with zero warnings before submitting
+3. Run `dotnet test` — all tests must pass
+
+---
+
+## License
+
+MIT License -- see [LICENSE](LICENSE) for details.
