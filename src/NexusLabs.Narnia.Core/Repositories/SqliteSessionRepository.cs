@@ -162,7 +162,9 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         JOIN sessions s ON s.id = sr.session_id
         LEFT JOIN turns t ON t.session_id = s.id
         LEFT JOIN checkpoints c ON c.session_id = s.id
-        WHERE sr.ref_value = @refValue
+        WHERE (sr.ref_value = @refValue
+           OR sr.ref_value LIKE @refPrefix
+           OR @refValue LIKE sr.ref_value || '%')
         GROUP BY s.id
         ORDER BY s.updated_at DESC
         """;
@@ -454,6 +456,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = SessionsByRefSql;
         cmd.Parameters.AddWithValue("@refValue", refValue);
+        cmd.Parameters.AddWithValue("@refPrefix", refValue + "%");
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         var results = new List<SessionSummary>();
@@ -522,13 +525,20 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         "which", "who", "what", "how", "use", "used", "using", "new", "add", "added"
     };
 
-    // Wrap the query in double-quotes so FTS5 treats it as a phrase and
-    // special characters (/, -, :, etc.) don't trigger syntax errors.
+    // Replace FTS5 special characters with spaces, preserving * for prefix
+    // wildcard queries. This avoids "syntax error near '/'" style exceptions
+    // while keeping multi-word and wildcard searches functional.
     private static string SanitizeFts5Query(string query)
     {
-        // Escape any embedded double-quotes by doubling them, then wrap.
-        var escaped = query.Replace("\"", "\"\"");
-        return $"\"{escaped}\"";
+        var sb = new System.Text.StringBuilder(query.Length);
+        foreach (var ch in query)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '*' || ch == ' ')
+                sb.Append(ch);
+            else
+                sb.Append(' ');
+        }
+        return sb.ToString().Trim();
     }
 
     private static IEnumerable<string> TokenizeKeywords(string text)

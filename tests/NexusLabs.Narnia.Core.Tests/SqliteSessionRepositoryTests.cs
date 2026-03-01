@@ -251,6 +251,53 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         Assert.Null(ex);
     }
 
+    [Fact]
+    public async Task SearchAsync_WildcardQuery_ReturnsResults()
+    {
+        // "cach*" should prefix-match "caching" in the seed data.
+        var results = await _repository.SearchAsync("cach*", 10, TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(results);
+        Assert.Equal("sess-1", results[0].SessionId);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_ExactMatch_ReturnsSession()
+    {
+        var results = await _repository.GetSessionsByRefAsync("abc123", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-1", results[0].Id);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_PrefixOfStoredRef_ReturnsSession()
+    {
+        // User types short prefix of a longer stored SHA.
+        var results = await _repository.GetSessionsByRefAsync("abc", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-1", results[0].Id);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_StoredRefIsPrefixOfQuery_ReturnsSession()
+    {
+        // Stored SHA is short ("abc123"), user types the full expanded version.
+        var results = await _repository.GetSessionsByRefAsync("abc123def456", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-1", results[0].Id);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_UnknownRef_ReturnsEmpty()
+    {
+        var results = await _repository.GetSessionsByRefAsync("deadbeef", TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+    }
+
     // ── GetGlobalStatsAsync ───────────────────────────────────────────────────
 
     [Fact]
@@ -410,25 +457,6 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         var results = await _repository.GetFileHistoryAsync("src/Program.cs", TestContext.Current.CancellationToken);
 
         Assert.Equal("Overview text", results[0].CheckpointOverview);
-    }
-
-    // ── GetSessionsByRefAsync ─────────────────────────────────────────────────
-
-    [Fact]
-    public async Task GetSessionsByRefAsync_MatchesExistingRef()
-    {
-        var results = await _repository.GetSessionsByRefAsync("abc123", TestContext.Current.CancellationToken);
-
-        Assert.Single(results);
-        Assert.Equal("sess-1", results[0].Id);
-    }
-
-    [Fact]
-    public async Task GetSessionsByRefAsync_UnknownRef_ReturnsEmpty()
-    {
-        var results = await _repository.GetSessionsByRefAsync("deadbeef", TestContext.Current.CancellationToken);
-
-        Assert.Empty(results);
     }
 
     // ── GetResumeSuggestionsAsync ─────────────────────────────────────────────
