@@ -1,6 +1,7 @@
 @page "/sessions/{SessionId}"
 @using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Repositories
+@using System.Text.Json
 @inject ISessionRepository Repository
 @inject IWorkspaceReader WorkspaceReader
 
@@ -40,41 +41,67 @@ else if (_session is not null)
     @if (_checkpoints is not null && _checkpoints.Length > 0)
     {
         <h2>Checkpoints</h2>
-        @foreach (var cp in _checkpoints)
+
+        @if (_checkpoints.Length > 1)
         {
-            <details class="checkpoint">
-                <summary>
-                    <strong>#@cp.CheckpointNumber</strong>
-                    @if (cp.Title is not null) { <span>— @cp.Title</span> }
-                    <span class="checkpoint-date">@cp.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
-                </summary>
-                @if (cp.Overview is not null)
-                {
-                    <h3>Overview</h3>
-                    <p>@cp.Overview</p>
-                }
-                @if (cp.History is not null)
-                {
-                    <h3>History</h3>
-                    <pre>@cp.History</pre>
-                }
-                @if (cp.WorkDone is not null)
-                {
-                    <h3>Work Done</h3>
-                    <pre>@cp.WorkDone</pre>
-                }
-                @if (cp.NextSteps is not null)
-                {
-                    <h3>Next Steps</h3>
-                    <pre>@cp.NextSteps</pre>
-                }
-                @if (cp.ImportantFiles is not null)
-                {
-                    <h3>Important Files</h3>
-                    <pre>@cp.ImportantFiles</pre>
-                }
-            </details>
+            <div class="chart-container" style="max-height:200px">
+                <canvas id="cp-cadence-chart"></canvas>
+            </div>
+            <script type="application/json" data-chart-id="cp-cadence-chart">
+                @((MarkupString)BuildCadenceChartJson(_checkpoints))
+            </script>
         }
+
+        <div class="cp-timeline">
+            @foreach (var cp in _checkpoints)
+            {
+                <div class="cp-timeline-entry">
+                    <div class="cp-timeline-header">
+                        <span class="cp-timeline-num">#@cp.CheckpointNumber</span>
+                        @if (cp.Title is not null)
+                        {
+                            <span class="cp-timeline-title">@cp.Title</span>
+                        }
+                        <span class="cp-timeline-date">@cp.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+                    </div>
+                    @if (cp.Overview is not null)
+                    {
+                        <details class="cp-section" open>
+                            <summary>Overview</summary>
+                            <div class="cp-section-body"><p>@cp.Overview</p></div>
+                        </details>
+                    }
+                    @if (cp.WorkDone is not null)
+                    {
+                        <details class="cp-section">
+                            <summary>Work Done</summary>
+                            <div class="cp-section-body"><pre>@cp.WorkDone</pre></div>
+                        </details>
+                    }
+                    @if (cp.NextSteps is not null)
+                    {
+                        <details class="cp-section">
+                            <summary>Next Steps</summary>
+                            <div class="cp-section-body"><pre>@cp.NextSteps</pre></div>
+                        </details>
+                    }
+                    @if (cp.ImportantFiles is not null)
+                    {
+                        <details class="cp-section">
+                            <summary>Important Files</summary>
+                            <div class="cp-section-body"><pre>@cp.ImportantFiles</pre></div>
+                        </details>
+                    }
+                    @if (cp.History is not null)
+                    {
+                        <details class="cp-section">
+                            <summary>History</summary>
+                            <div class="cp-section-body"><pre>@cp.History</pre></div>
+                        </details>
+                    }
+                </div>
+            }
+        </div>
     }
 
     @if (_workspace?.ArtifactFiles is { Length: > 0 } files)
@@ -131,4 +158,26 @@ else if (_session is not null)
         }
         _loaded = true;
     }
+
+    private static string BuildCadenceChartJson(Checkpoint[] checkpoints) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "line",
+            data = new
+            {
+                labels = checkpoints.Select(c => c.CreatedAt.LocalDateTime.ToString("HH:mm")).ToArray(),
+                datasets = new[]
+                {
+                    new { label = "Checkpoint", data = checkpoints.Select(c => c.CheckpointNumber).ToArray(),
+                          borderColor = "rgba(99,102,241,1)", backgroundColor = "rgba(99,102,241,0.1)",
+                          pointBackgroundColor = "rgba(99,102,241,1)", tension = 0.3, fill = true }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { display = false } },
+                scales = new { y = new { beginAtZero = false, ticks = new { stepSize = 1 } } }
+            }
+        });
 }
