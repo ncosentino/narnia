@@ -6,6 +6,14 @@ public sealed class NarniaOptions
 
     public string DatabasePath { get; set; } = GetDefaultDatabasePath();
     public string SessionStatePath { get; set; } = GetDefaultSessionStatePath();
+    public string WebUiUrl { get; set; } = "http://localhost:5244";
+
+    /// <summary>
+    /// Path to the NexusLabs.Narnia.Web project file or its containing directory.
+    /// Used by the <c>open_narnia_ui</c> MCP tool to start the web server when it is not already running.
+    /// When null, the tool auto-detects the project by walking up from <see cref="AppContext.BaseDirectory"/>.
+    /// </summary>
+    public string? WebProjectPath { get; set; }
 
     /// <summary>
     /// When set, used directly as the SQLite connection string instead of building one from <see cref="DatabasePath"/>.

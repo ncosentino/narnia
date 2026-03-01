@@ -73,6 +73,7 @@ After publishing as a NativeAOT binary (`dotnet publish src/NexusLabs.Narnia.Mcp
 | `get_session_workspace` | Git root and session artifact files from the filesystem |
 | `list_sessions_by_repository` | Filter sessions by git repository |
 | `list_sessions_by_cwd` | Filter sessions by working directory |
+| `open_narnia_ui` | Start the web UI if not running and open it in the default browser |
 
 ---
 
@@ -94,6 +95,8 @@ Both the MCP server and web UI read configuration from environment variables:
 |----------|-------------|---------|
 | `NARNIA__DatabasePath` | Path to `session-store.db` | `~/.copilot/session-store.db` |
 | `NARNIA__SessionStatePath` | Path to session state directory | `~/.copilot/session-state` |
+| `NARNIA__WebUiUrl` | URL used by `open_narnia_ui` to check/open the web UI | `http://localhost:5244` |
+| `NARNIA__WebProjectPath` | Path to the Web project (for `open_narnia_ui` to start the server). Auto-detected from source layout if not set. | _(auto-detected)_ |
 
 ---
 

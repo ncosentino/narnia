@@ -8,11 +8,15 @@ using NexusLabs.Narnia.McpServer.Tools;
 var builder = Host.CreateApplicationBuilder(args);
 
 var options = new NarniaOptions();
-// Allow override via environment variables: NARNIA__DatabasePath, NARNIA__SessionStatePath
+// Allow override via environment variables: NARNIA__DatabasePath, NARNIA__SessionStatePath, NARNIA__WebUiUrl, NARNIA__WebProjectPath
 var dbPath = Environment.GetEnvironmentVariable("NARNIA__DatabasePath");
 var statePath = Environment.GetEnvironmentVariable("NARNIA__SessionStatePath");
+var webUiUrl = Environment.GetEnvironmentVariable("NARNIA__WebUiUrl");
+var webProjectPath = Environment.GetEnvironmentVariable("NARNIA__WebProjectPath");
 if (!string.IsNullOrWhiteSpace(dbPath)) options.DatabasePath = dbPath;
 if (!string.IsNullOrWhiteSpace(statePath)) options.SessionStatePath = statePath;
+if (!string.IsNullOrWhiteSpace(webUiUrl)) options.WebUiUrl = webUiUrl;
+if (!string.IsNullOrWhiteSpace(webProjectPath)) options.WebProjectPath = webProjectPath;
 builder.Services.AddSingleton(options);
 
 builder.Services.AddSingleton<IFileSystem, FileSystem>();
