@@ -1,0 +1,86 @@
+@page "/analytics/activity"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@using System.Text.Json
+@inject ISessionRepository Repository
+
+<PageTitle>Activity — Narnia</PageTitle>
+
+<h1>Activity</h1>
+
+<form method="get" action="/analytics/activity">
+    <label>
+        Days to show:
+        <select name="days" onchange="this.form.submit()">
+            <option value="30" selected="@(Days == 30)">Last 30 days</option>
+            <option value="60" selected="@(Days == 60)">Last 60 days</option>
+            <option value="90" selected="@(Days == 90)">Last 90 days</option>
+            <option value="180" selected="@(Days == 180)">Last 180 days</option>
+            <option value="365" selected="@(Days == 365)">Last year</option>
+        </select>
+    </label>
+    <button type="submit">Go</button>
+</form>
+
+@if (_activity is null)
+{
+    <p>Loading...</p>
+}
+else if (_activity.Length == 0)
+{
+    <p>No sessions in this period.</p>
+}
+else
+{
+    <div class="activity-summary">
+        <span>Total: <strong>@_activity.Sum(d => d.SessionCount) sessions</strong></span>
+        <span>Active days: <strong>@_activity.Length</strong></span>
+        <span>Peak: <strong>@_activity.Max(d => d.SessionCount) sessions</strong> on @_activity.OrderByDescending(d => d.SessionCount).First().Date.ToString("yyyy-MM-dd")</span>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="activity-chart"></canvas>
+    </div>
+    <script type="application/json" data-chart-id="activity-chart">
+        @((MarkupString)BuildActivityChartJson(_activity))
+    </script>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "days")]
+    public int Days { get; set; } = 90;
+
+    private ActivityDay[]? _activity;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var days = Days is > 0 and <= 365 ? Days : 90;
+        _activity = await Repository.GetActivityByDateAsync(days);
+    }
+
+    private static string BuildActivityChartJson(ActivityDay[] data) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "bar",
+            data = new
+            {
+                labels = data.Select(d => d.Date.ToString("yyyy-MM-dd")).ToArray(),
+                datasets = new[]
+                {
+                    new { label = "Sessions", data = data.Select(d => d.SessionCount).ToArray(),
+                          backgroundColor = "rgba(99,102,241,0.7)", borderColor = "rgba(99,102,241,1)", borderWidth = 1 }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { display = false },
+                    tooltip = new { callbacks = new { } } },
+                scales = new
+                {
+                    x = new { ticks = new { maxRotation = 45, minRotation = 45 } },
+                    y = new { beginAtZero = true, ticks = new { stepSize = 1 } }
+                }
+            }
+        });
+}
