@@ -240,4 +240,248 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         Assert.Single(results);
         Assert.Equal("sess-1", results[0].SessionId);
     }
+
+    // ── GetGlobalStatsAsync ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetGlobalStatsAsync_ReturnsTotalSessions()
+    {
+        var stats = await _repository.GetGlobalStatsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, stats.TotalSessions);
+    }
+
+    [Fact]
+    public async Task GetGlobalStatsAsync_ReturnsTotalTurns()
+    {
+        var stats = await _repository.GetGlobalStatsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, stats.TotalTurns);
+    }
+
+    [Fact]
+    public async Task GetGlobalStatsAsync_ReturnsAvgTurnsPerSession()
+    {
+        var stats = await _repository.GetGlobalStatsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1.0, stats.AvgTurnsPerSession);
+    }
+
+    [Fact]
+    public async Task GetGlobalStatsAsync_ReturnsTotalFilesTouched()
+    {
+        var stats = await _repository.GetGlobalStatsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, stats.TotalFilesTouched);
+    }
+
+    [Fact]
+    public async Task GetGlobalStatsAsync_ReturnsMostActiveRepository()
+    {
+        var stats = await _repository.GetGlobalStatsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("owner/repo-a", stats.MostActiveRepository);
+    }
+
+    [Fact]
+    public async Task GetGlobalStatsAsync_ReturnsBusiestDay()
+    {
+        var stats = await _repository.GetGlobalStatsAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(stats.BusiestDay);
+    }
+
+    // ── GetActivityByDateAsync ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetActivityByDateAsync_ReturnsSessionsWithinWindow()
+    {
+        var results = await _repository.GetActivityByDateAsync(9999, TestContext.Current.CancellationToken);
+
+        Assert.True(results.Length >= 3);
+    }
+
+    [Fact]
+    public async Task GetActivityByDateAsync_ResultsAreSortedByDate()
+    {
+        var results = await _repository.GetActivityByDateAsync(9999, TestContext.Current.CancellationToken);
+
+        for (var i = 1; i < results.Length; i++)
+            Assert.True(results[i].Date >= results[i - 1].Date);
+    }
+
+    [Fact]
+    public async Task GetActivityByDateAsync_CountsMatchSeedData()
+    {
+        var results = await _repository.GetActivityByDateAsync(9999, TestContext.Current.CancellationToken);
+        var total = results.Sum(r => r.SessionCount);
+
+        Assert.Equal(3, total);
+    }
+
+    // ── GetRepositoryStatsAsync ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetRepositoryStatsAsync_ReturnsOneRowPerRepository()
+    {
+        var results = await _repository.GetRepositoryStatsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, results.Length);
+    }
+
+    [Fact]
+    public async Task GetRepositoryStatsAsync_CountsSessionsPerRepository()
+    {
+        var results = await _repository.GetRepositoryStatsAsync(TestContext.Current.CancellationToken);
+        var repoA = Array.Find(results, r => r.Repository == "owner/repo-a");
+
+        Assert.NotNull(repoA);
+        Assert.Equal(2, repoA.SessionCount);
+    }
+
+    [Fact]
+    public async Task GetRepositoryStatsAsync_OrderedBySessionCountDescending()
+    {
+        var results = await _repository.GetRepositoryStatsAsync(TestContext.Current.CancellationToken);
+
+        for (var i = 1; i < results.Length; i++)
+            Assert.True(results[i].SessionCount <= results[i - 1].SessionCount);
+    }
+
+    // ── GetHotFilesAsync ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetHotFilesAsync_ReturnsFiles()
+    {
+        var results = await _repository.GetHotFilesAsync(10, TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("src/Program.cs", results[0].FilePath);
+    }
+
+    [Fact]
+    public async Task GetHotFilesAsync_RespectsLimit()
+    {
+        var results = await _repository.GetHotFilesAsync(0, TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task GetHotFilesAsync_ReturnsToolName()
+    {
+        var results = await _repository.GetHotFilesAsync(10, TestContext.Current.CancellationToken);
+
+        Assert.Equal("edit", results[0].LastToolName);
+    }
+
+    // ── GetFileHistoryAsync ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetFileHistoryAsync_ReturnsSessionsThatTouchedFile()
+    {
+        var results = await _repository.GetFileHistoryAsync("src/Program.cs", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-1", results[0].SessionId);
+    }
+
+    [Fact]
+    public async Task GetFileHistoryAsync_UnknownFile_ReturnsEmpty()
+    {
+        var results = await _repository.GetFileHistoryAsync("nonexistent/file.cs", TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task GetFileHistoryAsync_IncludesCheckpointOverview()
+    {
+        var results = await _repository.GetFileHistoryAsync("src/Program.cs", TestContext.Current.CancellationToken);
+
+        Assert.Equal("Overview text", results[0].CheckpointOverview);
+    }
+
+    // ── GetSessionsByRefAsync ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_MatchesExistingRef()
+    {
+        var results = await _repository.GetSessionsByRefAsync("abc123", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-1", results[0].Id);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_UnknownRef_ReturnsEmpty()
+    {
+        var results = await _repository.GetSessionsByRefAsync("deadbeef", TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+    }
+
+    // ── GetResumeSuggestionsAsync ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetResumeSuggestionsAsync_ReturnsSessionsWithNextSteps()
+    {
+        var results = await _repository.GetResumeSuggestionsAsync(10, TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-1", results[0].Session.Id);
+    }
+
+    [Fact]
+    public async Task GetResumeSuggestionsAsync_IncludesNextStepsPreview()
+    {
+        var results = await _repository.GetResumeSuggestionsAsync(10, TestContext.Current.CancellationToken);
+
+        Assert.Contains("Next steps", results[0].NextStepsPreview);
+    }
+
+    [Fact]
+    public async Task GetResumeSuggestionsAsync_RespectsLimit()
+    {
+        var results = await _repository.GetResumeSuggestionsAsync(0, TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+    }
+
+    // ── GetTopKeywordsAsync ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetTopKeywordsAsync_ReturnsKeywords()
+    {
+        var results = await _repository.GetTopKeywordsAsync(50, TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(results);
+    }
+
+    [Fact]
+    public async Task GetTopKeywordsAsync_RespectsTopN()
+    {
+        var results = await _repository.GetTopKeywordsAsync(2, TestContext.Current.CancellationToken);
+
+        Assert.True(results.Length <= 2);
+    }
+
+    [Fact]
+    public async Task GetTopKeywordsAsync_KeywordsAreOrderedByCountDescending()
+    {
+        var results = await _repository.GetTopKeywordsAsync(50, TestContext.Current.CancellationToken);
+
+        for (var i = 1; i < results.Length; i++)
+            Assert.True(results[i].Count <= results[i - 1].Count);
+    }
+
+    [Fact]
+    public async Task GetTopKeywordsAsync_ExcludesStopWords()
+    {
+        var results = await _repository.GetTopKeywordsAsync(50, TestContext.Current.CancellationToken);
+        var keywords = results.Select(r => r.Keyword).ToArray();
+
+        Assert.DoesNotContain("the", keywords);
+        Assert.DoesNotContain("and", keywords);
+    }
 }

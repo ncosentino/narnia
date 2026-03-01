@@ -97,6 +97,100 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         LIMIT @limit
         """;
 
+    private static readonly string GlobalStatsSql =
+        """
+        SELECT
+            (SELECT COUNT(*) FROM sessions) as total_sessions,
+            (SELECT COUNT(*) FROM turns) as total_turns,
+            (SELECT COUNT(*) FROM session_files) as total_files,
+            (SELECT repository FROM sessions WHERE repository IS NOT NULL
+             GROUP BY repository ORDER BY COUNT(*) DESC LIMIT 1) as most_active_repo,
+            (SELECT DATE(created_at) FROM sessions
+             GROUP BY DATE(created_at) ORDER BY COUNT(*) DESC LIMIT 1) as busiest_day
+        """;
+
+    private static readonly string ActivityByDateSql =
+        """
+        SELECT DATE(created_at) as day, COUNT(*) as cnt
+        FROM sessions
+        WHERE created_at >= DATE('now', @offset)
+        GROUP BY day
+        ORDER BY day
+        """;
+
+    private static readonly string RepositoryStatsSql =
+        """
+        SELECT s.repository,
+               COUNT(DISTINCT s.id) as session_count,
+               COUNT(DISTINCT t.id) as turn_count,
+               COUNT(DISTINCT sf.id) as file_count,
+               MAX(s.updated_at) as last_activity
+        FROM sessions s
+        LEFT JOIN turns t ON t.session_id = s.id
+        LEFT JOIN session_files sf ON sf.session_id = s.id
+        WHERE s.repository IS NOT NULL
+        GROUP BY s.repository
+        ORDER BY session_count DESC
+        """;
+
+    private static readonly string HotFilesSql =
+        """
+        SELECT file_path, COUNT(DISTINCT session_id) as session_count, tool_name
+        FROM session_files
+        WHERE file_path IS NOT NULL
+        GROUP BY file_path
+        ORDER BY session_count DESC
+        LIMIT @limit
+        """;
+
+    private static readonly string FileHistorySql =
+        """
+        SELECT sf.session_id, s.summary, sf.tool_name, sf.first_seen_at,
+               (SELECT c.overview FROM checkpoints c WHERE c.session_id = sf.session_id
+                ORDER BY c.checkpoint_number LIMIT 1) as checkpoint_overview
+        FROM session_files sf
+        JOIN sessions s ON s.id = sf.session_id
+        WHERE sf.file_path = @filePath
+        ORDER BY sf.first_seen_at
+        """;
+
+    private static readonly string SessionsByRefSql =
+        """
+        SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
+               COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c.id) as checkpoint_count
+        FROM session_refs sr
+        JOIN sessions s ON s.id = sr.session_id
+        LEFT JOIN turns t ON t.session_id = s.id
+        LEFT JOIN checkpoints c ON c.session_id = s.id
+        WHERE sr.ref_value = @refValue
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC
+        """;
+
+    private static readonly string ResumeSuggestionsSql =
+        """
+        SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
+               COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c2.id) as checkpoint_count,
+               c.title as cp_title, c.next_steps
+        FROM sessions s
+        LEFT JOIN turns t ON t.session_id = s.id
+        LEFT JOIN checkpoints c2 ON c2.session_id = s.id
+        JOIN checkpoints c ON c.session_id = s.id
+            AND c.checkpoint_number = (
+                SELECT MAX(checkpoint_number) FROM checkpoints WHERE session_id = s.id)
+        WHERE c.next_steps IS NOT NULL AND trim(c.next_steps) != ''
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC
+        LIMIT @limit
+        """;
+
+    private static readonly string TopKeywordsSql =
+        """
+        SELECT summary FROM sessions WHERE summary IS NOT NULL
+        UNION ALL
+        SELECT overview FROM checkpoints WHERE overview IS NOT NULL
+        """;
+
     public async ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, CancellationToken ct = default)
     {
         await using var connection = new SqliteConnection(_connectionString);
@@ -242,6 +336,201 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         while (await reader.ReadAsync(ct))
             results.Add(ReadSearchResult(reader));
         return [.. results];
+    }
+
+    public async ValueTask<GlobalStats> GetGlobalStatsAsync(CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = GlobalStatsSql;
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+            return new GlobalStats(0, 0, 0, 0, null, null);
+
+        var totalSessions = reader.GetInt32(0);
+        var totalTurns = reader.GetInt32(1);
+        var totalFiles = reader.GetInt32(2);
+        var mostActiveRepo = reader.IsDBNull(3) ? null : reader.GetString(3);
+        var busiestDay = reader.IsDBNull(4) ? null : reader.GetString(4);
+        var avg = totalSessions > 0 ? Math.Round((double)totalTurns / totalSessions, 1) : 0;
+
+        return new GlobalStats(totalSessions, totalTurns, avg, totalFiles, mostActiveRepo, busiestDay);
+    }
+
+    public async ValueTask<ActivityDay[]> GetActivityByDateAsync(int days = 90, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = ActivityByDateSql;
+        cmd.Parameters.AddWithValue("@offset", $"-{days} days");
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new List<ActivityDay>();
+        while (await reader.ReadAsync(ct))
+        {
+            var day = DateOnly.Parse(reader.GetString(0));
+            var count = reader.GetInt32(1);
+            results.Add(new ActivityDay(day, count));
+        }
+        return [.. results];
+    }
+
+    public async ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = RepositoryStatsSql;
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new List<RepositoryStats>();
+        while (await reader.ReadAsync(ct))
+        {
+            var repo = reader.GetString(0);
+            var sessions = reader.GetInt32(1);
+            var turns = reader.GetInt32(2);
+            var files = reader.GetInt32(3);
+            var lastActivity = ParseDateTimeOffset(reader.IsDBNull(4) ? null : reader.GetString(4));
+            results.Add(new RepositoryStats(repo, sessions, turns, files, lastActivity));
+        }
+        return [.. results];
+    }
+
+    public async ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = HotFilesSql;
+        cmd.Parameters.AddWithValue("@limit", limit);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new List<HotFile>();
+        while (await reader.ReadAsync(ct))
+        {
+            var filePath = reader.GetString(0);
+            var sessionCount = reader.GetInt32(1);
+            var toolName = reader.IsDBNull(2) ? null : reader.GetString(2);
+            results.Add(new HotFile(filePath, sessionCount, toolName));
+        }
+        return [.. results];
+    }
+
+    public async ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = FileHistorySql;
+        cmd.Parameters.AddWithValue("@filePath", filePath);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new List<FileHistoryEntry>();
+        while (await reader.ReadAsync(ct))
+        {
+            var sessionId = reader.GetString(0);
+            var summary = reader.IsDBNull(1) ? null : reader.GetString(1);
+            var toolName = reader.IsDBNull(2) ? null : reader.GetString(2);
+            var firstSeenAt = ParseDateTimeOffset(reader.IsDBNull(3) ? null : reader.GetString(3));
+            var overview = reader.IsDBNull(4) ? null : reader.GetString(4);
+            results.Add(new FileHistoryEntry(sessionId, summary, toolName, firstSeenAt, overview));
+        }
+        return [.. results];
+    }
+
+    public async ValueTask<SessionSummary[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = SessionsByRefSql;
+        cmd.Parameters.AddWithValue("@refValue", refValue);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new List<SessionSummary>();
+        while (await reader.ReadAsync(ct))
+            results.Add(ReadSessionSummary(reader));
+        return [.. results];
+    }
+
+    public async ValueTask<ResumeSuggestion[]> GetResumeSuggestionsAsync(int limit = 10, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = ResumeSuggestionsSql;
+        cmd.Parameters.AddWithValue("@limit", limit);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new List<ResumeSuggestion>();
+        while (await reader.ReadAsync(ct))
+        {
+            var session = ReadSessionSummary(reader);
+            var cpTitle = reader.IsDBNull(9) ? null : reader.GetString(9);
+            var nextSteps = reader.IsDBNull(10) ? null : reader.GetString(10);
+            var preview = nextSteps is { Length: > 200 } ? nextSteps[..200] + "…" : nextSteps;
+            results.Add(new ResumeSuggestion(session, cpTitle, preview));
+        }
+        return [.. results];
+    }
+
+    public async ValueTask<KeywordFrequency[]> GetTopKeywordsAsync(int topN = 50, CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = TopKeywordsSql;
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var freq = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        while (await reader.ReadAsync(ct))
+        {
+            var text = reader.IsDBNull(0) ? null : reader.GetString(0);
+            if (text is null) continue;
+            foreach (var word in TokenizeKeywords(text))
+            {
+                freq.TryGetValue(word, out var c);
+                freq[word] = c + 1;
+            }
+        }
+
+        return [.. freq
+            .OrderByDescending(kv => kv.Value)
+            .Take(topN)
+            .Select(kv => new KeywordFrequency(kv.Key, kv.Value))];
+    }
+
+    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with",
+        "by", "from", "up", "about", "into", "through", "during", "is", "are", "was", "were",
+        "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would",
+        "could", "should", "may", "might", "shall", "can", "it", "its", "this", "that",
+        "these", "those", "i", "me", "my", "we", "our", "you", "your", "he", "she", "they",
+        "their", "all", "as", "if", "so", "no", "not", "more", "also", "than", "then", "when",
+        "which", "who", "what", "how", "use", "used", "using", "new", "add", "added"
+    };
+
+    private static IEnumerable<string> TokenizeKeywords(string text)
+    {
+        var words = text.Split([' ', '\t', '\n', '\r', '.', ',', ':', ';', '!', '?', '(', ')', '[', ']', '"', '\'', '-', '_', '/'], StringSplitOptions.RemoveEmptyEntries);
+        foreach (var w in words)
+        {
+            var clean = w.Trim().ToLowerInvariant();
+            if (clean.Length >= 3 && !StopWords.Contains(clean) && clean.All(c => char.IsLetter(c)))
+                yield return clean;
+        }
     }
 
     private static SessionSummary ReadSessionSummary(SqliteDataReader reader)

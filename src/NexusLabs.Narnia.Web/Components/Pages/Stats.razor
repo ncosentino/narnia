@@ -1,0 +1,92 @@
+@page "/stats"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@using System.Text.Json
+@inject ISessionRepository Repository
+
+<PageTitle>Stats — Narnia</PageTitle>
+
+<h1>Stats</h1>
+
+@if (_stats is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">@_stats.TotalSessions</div>
+            <div class="stat-label">Sessions</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_stats.TotalTurns</div>
+            <div class="stat-label">Turns</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_stats.AvgTurnsPerSession.ToString("F1")</div>
+            <div class="stat-label">Avg Turns / Session</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_stats.TotalFilesTouched</div>
+            <div class="stat-label">Files Touched</div>
+        </div>
+        @if (_stats.MostActiveRepository is not null)
+        {
+            <div class="stat-card stat-card--wide">
+                <div class="stat-value stat-value--sm">@_stats.MostActiveRepository</div>
+                <div class="stat-label">Most Active Repository</div>
+            </div>
+        }
+        @if (_stats.BusiestDay is not null)
+        {
+            <div class="stat-card">
+                <div class="stat-value stat-value--sm">@_stats.BusiestDay</div>
+                <div class="stat-label">Busiest Day</div>
+            </div>
+        }
+    </div>
+
+    @if (_repoStats is { Length: > 0 })
+    {
+        <h2>Sessions by Repository</h2>
+        <div class="chart-container">
+            <canvas id="stats-repo-chart"></canvas>
+        </div>
+        <script type="application/json" data-chart-id="stats-repo-chart">
+            @((MarkupString)BuildRepoChartJson(_repoStats))
+        </script>
+    }
+}
+
+@code {
+    private GlobalStats? _stats;
+    private RepositoryStats[]? _repoStats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stats = await Repository.GetGlobalStatsAsync();
+        _repoStats = await Repository.GetRepositoryStatsAsync();
+    }
+
+    private static string BuildRepoChartJson(RepositoryStats[] data) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "bar",
+            data = new
+            {
+                labels = data.Select(r => r.Repository).ToArray(),
+                datasets = new[]
+                {
+                    new { label = "Sessions", data = data.Select(r => r.SessionCount).ToArray(),
+                          backgroundColor = "rgba(99,102,241,0.7)", borderColor = "rgba(99,102,241,1)", borderWidth = 1 }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { display = false } },
+                scales = new { y = new { beginAtZero = true, ticks = new { stepSize = 1 } } }
+            }
+        });
+}
