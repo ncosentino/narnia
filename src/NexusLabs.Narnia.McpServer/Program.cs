@@ -21,8 +21,12 @@ builder.Services.AddSingleton(options);
 
 builder.Services.AddSingleton<IFileSystem, FileSystem>();
 builder.Services.AddSingleton<SqliteSessionRepository>();
-builder.Services.AddSingleton<ISessionRepository>(sp => sp.GetRequiredService<SqliteSessionRepository>());
 builder.Services.AddSingleton<ISessionSearch>(sp => sp.GetRequiredService<SqliteSessionRepository>());
+builder.Services.AddSingleton<SqliteSessionOverridesRepository>();
+builder.Services.AddSingleton<ISessionOverridesRepository>(sp => sp.GetRequiredService<SqliteSessionOverridesRepository>());
+builder.Services.AddSingleton<OverridingSessionRepository>();
+builder.Services.AddSingleton<ISessionRepository>(sp => sp.GetRequiredService<OverridingSessionRepository>());
+builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
 builder.Services.AddSingleton<IWorkspaceReader, WorkspaceReader>();
 
 builder.Services
@@ -31,4 +35,5 @@ builder.Services
     .WithTools<SessionTools>();
 
 var app = builder.Build();
+app.Services.GetRequiredService<NarniaSettingsDbMigrator>().MigrateUp();
 await app.RunAsync();

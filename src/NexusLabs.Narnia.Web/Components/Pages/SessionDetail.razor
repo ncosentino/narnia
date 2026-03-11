@@ -3,6 +3,8 @@
 @using NexusLabs.Narnia.Core.Repositories
 @using System.Text.Json
 @inject ISessionRepository Repository
+@inject SqliteSessionRepository RawRepository
+@inject ISessionOverridesRepository OverridesRepository
 @inject IWorkspaceReader WorkspaceReader
 
 <PageTitle>@(_session?.Summary ?? SessionId) — Narnia</PageTitle>
@@ -42,6 +44,44 @@ else if (_session is not null)
         <dt>Turns</dt><dd>@_session.TurnCount</dd>
         <dt>Checkpoints</dt><dd>@_session.CheckpointCount</dd>
     </dl>
+
+    <details class="overrides-panel">
+        <summary>✏️ Edit Session Overrides @(_override is not null ? "(active)" : "")</summary>
+        <div class="overrides-body">
+            <p class="overrides-hint">
+                Override fields stored in <code>narnia-settings.db</code>. Original session-store values are shown below each field.
+            </p>
+            <div class="override-field">
+                <label for="ov-display-name">Display Name</label>
+                <input id="ov-display-name" type="text" value="@(_override?.DisplayName ?? "")"
+                       placeholder="@(_rawSession?.Summary ?? "(no summary)")" />
+                <span class="ov-original">session-store summary: @(_rawSession?.Summary ?? "(none)")</span>
+            </div>
+            <div class="override-field">
+                <label for="ov-repo">Repository</label>
+                <input id="ov-repo" type="text" value="@(_override?.Repository ?? "")"
+                       placeholder="@(_rawSession?.Repository ?? "(none)")" />
+                <span class="ov-original">session-store repository: @(_rawSession?.Repository ?? "(none)")</span>
+            </div>
+            <div class="override-field">
+                <label for="ov-branch">Branch</label>
+                <input id="ov-branch" type="text" value="@(_override?.Branch ?? "")"
+                       placeholder="@(_rawSession?.Branch ?? "(none)")" />
+                <span class="ov-original">session-store branch: @(_rawSession?.Branch ?? "(none)")</span>
+            </div>
+            <div class="override-field">
+                <label for="ov-notes">Notes</label>
+                <textarea id="ov-notes" rows="3" placeholder="Personal notes about this session…">@(_override?.Notes ?? "")</textarea>
+            </div>
+            <div class="override-actions">
+                <button class="btn-save" onclick="narniaSaveOverride('@_session.Id')">Save</button>
+                @if (_override is not null)
+                {
+                    <button class="btn-reset" onclick="narniaResetOverride('@_session.Id')">Reset to Original</button>
+                }
+            </div>
+        </div>
+    </details>
 
     @if (_checkpoints is not null && _checkpoints.Length > 0)
     {
@@ -147,6 +187,8 @@ else if (_session is not null)
     public string SessionId { get; set; } = "";
 
     private Session? _session;
+    private Session? _rawSession;
+    private SessionOverride? _override;
     private WorkspaceInfo? _workspace;
     private Checkpoint[]? _checkpoints;
     private Turn[]? _turns;
@@ -157,6 +199,8 @@ else if (_session is not null)
         _session = await Repository.GetByIdAsync(SessionId);
         if (_session is not null)
         {
+            _rawSession = await RawRepository.GetByIdAsync(SessionId);
+            _override = await OverridesRepository.GetOverrideAsync(SessionId);
             _workspace = WorkspaceReader.ReadWorkspace(SessionId);
             _checkpoints = await Repository.GetCheckpointsAsync(SessionId);
             _turns = await Repository.GetTurnsAsync(SessionId, 0, 100);

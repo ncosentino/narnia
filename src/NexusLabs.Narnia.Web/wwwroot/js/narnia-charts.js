@@ -31,3 +31,50 @@ function narniaCopyText(elementId, btn) {
         initCharts();
     }
 })();
+
+async function narniaSaveOverride(sessionId) {
+    const payload = {
+        displayName: document.getElementById('ov-display-name').value,
+        repository: document.getElementById('ov-repo').value,
+        branch: document.getElementById('ov-branch').value,
+        notes: document.getElementById('ov-notes').value
+    };
+    const btn = document.querySelector('.btn-save');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+        const resp = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/overrides', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            alert('Failed to save overrides (HTTP ' + resp.status + ')');
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+        }
+    } catch (e) {
+        alert('Error saving overrides: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+}
+
+async function narniaResetOverride(sessionId) {
+    if (!confirm('Reset all overrides for this session? The original session-store values will be shown.')) return;
+    const btn = document.querySelector('.btn-reset');
+    if (btn) { btn.disabled = true; btn.textContent = 'Resetting…'; }
+    try {
+        const resp = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/overrides', {
+            method: 'DELETE'
+        });
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            alert('Failed to reset overrides (HTTP ' + resp.status + ')');
+            if (btn) { btn.disabled = false; btn.textContent = 'Reset to Original'; }
+        }
+    } catch (e) {
+        alert('Error resetting overrides: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Reset to Original'; }
+    }
+}
