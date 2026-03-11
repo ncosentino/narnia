@@ -204,7 +204,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         SELECT overview FROM checkpoints WHERE overview IS NOT NULL
         """;
 
-    public async ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, CancellationToken ct = default)
+    public async ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, bool includeArchived = false, CancellationToken ct = default)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);
@@ -220,7 +220,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         return [.. results];
     }
 
-    public async ValueTask<SessionSummary[]> ListByRepositoryAsync(string repository, CancellationToken ct = default)
+    public async ValueTask<SessionSummary[]> ListByRepositoryAsync(string repository, bool includeArchived = false, CancellationToken ct = default)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);
@@ -236,7 +236,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         return [.. results];
     }
 
-    public async ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, CancellationToken ct = default)
+    public async ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, bool includeArchived = false, CancellationToken ct = default)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);

@@ -7,4 +7,7 @@ public sealed record SessionOverride(
     string? Branch,
     string? Notes,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public bool IsArchived { get; init; } = false;
+}

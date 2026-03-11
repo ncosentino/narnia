@@ -33,7 +33,7 @@ internal sealed class SessionTools
     {
         try
         {
-            var sessions = await _repository.ListRecentAsync(limit, cancellationToken);
+            var sessions = await _repository.ListRecentAsync(limit, ct: cancellationToken);
             return JsonSerializer.Serialize(sessions, McpJsonContext.Default.SessionSummaryArray);
         }
         catch (Exception ex)
@@ -104,7 +104,7 @@ internal sealed class SessionTools
     {
         try
         {
-            var sessions = await _repository.ListByRepositoryAsync(repo, cancellationToken);
+            var sessions = await _repository.ListByRepositoryAsync(repo, ct: cancellationToken);
             return JsonSerializer.Serialize(sessions, McpJsonContext.Default.SessionSummaryArray);
         }
         catch (Exception ex)
@@ -121,7 +121,7 @@ internal sealed class SessionTools
     {
         try
         {
-            var sessions = await _repository.ListByCwdAsync(cwd, cancellationToken);
+            var sessions = await _repository.ListByCwdAsync(cwd, ct: cancellationToken);
             return JsonSerializer.Serialize(sessions, McpJsonContext.Default.SessionSummaryArray);
         }
         catch (Exception ex)

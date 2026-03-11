@@ -1,0 +1,1 @@
+ALTER TABLE session_overrides ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;

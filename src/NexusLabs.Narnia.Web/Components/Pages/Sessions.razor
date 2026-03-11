@@ -3,6 +3,7 @@
 @using NexusLabs.Narnia.Core.Repositories
 @inject ISessionRepository Repository
 @inject ISessionSearch Search
+@inject ISessionOverridesRepository OverridesRepository
 
 <PageTitle>Sessions — Narnia</PageTitle>
 
@@ -13,6 +14,10 @@
 
 <form method="get" action="/sessions">
     <input type="search" name="q" value="@Query" placeholder="Search sessions..." />
+    <label class="show-archived-label">
+        <input type="checkbox" name="showArchived" value="true" @(ShowArchived ? "checked" : "") />
+        Show archived
+    </label>
     <button type="submit">Search</button>
 </form>
 
@@ -33,8 +38,15 @@
         <tbody>
             @foreach (var s in _sessions)
             {
-                <tr>
-                    <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
+                var isArchived = _archivedIds?.Contains(s.Id) == true;
+                <tr class="@(isArchived ? "session-archived" : "")">
+                    <td>
+                        <a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a>
+                        @if (isArchived)
+                        {
+                            <span class="badge-archived">archived</span>
+                        }
+                    </td>
                     <td>@(s.Repository ?? "—")</td>
                     <td class="cwd">@(s.Cwd ?? "—")</td>
                     <td>@s.TurnCount</td>
@@ -67,19 +79,26 @@ else if (_sessions is not null)
     [SupplyParameterFromQuery(Name = "q")]
     public string? Query { get; set; }
 
+    [SupplyParameterFromQuery(Name = "showArchived")]
+    public bool ShowArchived { get; set; }
+
     private SessionSummary[]? _sessions;
     private SearchResult[]? _searchResults;
+    private HashSet<string>? _archivedIds;
 
     protected override async Task OnInitializedAsync()
     {
         if (string.IsNullOrWhiteSpace(Query))
         {
-            _sessions = await Repository.ListRecentAsync(100);
+            _sessions = await Repository.ListRecentAsync(100, ShowArchived);
         }
         else
         {
             _searchResults = await Search.SearchAsync(Query, 20);
             _sessions = [];
         }
+
+        if (ShowArchived)
+            _archivedIds = await OverridesRepository.GetArchivedSessionIdsAsync();
     }
 }

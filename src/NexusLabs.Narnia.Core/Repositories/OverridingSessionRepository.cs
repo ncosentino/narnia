@@ -1,4 +1,5 @@
 using NexusLabs.Narnia.Core.Models;
+using System.Linq;
 
 namespace NexusLabs.Narnia.Core.Repositories;
 
@@ -11,22 +12,22 @@ public sealed class OverridingSessionRepository(
     SqliteSessionRepository inner,
     ISessionOverridesRepository overrides) : ISessionRepository
 {
-    public async ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, CancellationToken ct = default)
+    public async ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, bool includeArchived = false, CancellationToken ct = default)
     {
-        var sessions = await inner.ListRecentAsync(limit, ct);
-        return await MergeAllAsync(sessions, ct);
+        var sessions = await inner.ListRecentAsync(limit, includeArchived, ct);
+        return await MergeAllAsync(sessions, includeArchived, ct);
     }
 
-    public async ValueTask<SessionSummary[]> ListByRepositoryAsync(string repository, CancellationToken ct = default)
+    public async ValueTask<SessionSummary[]> ListByRepositoryAsync(string repository, bool includeArchived = false, CancellationToken ct = default)
     {
-        var sessions = await inner.ListByRepositoryAsync(repository, ct);
-        return await MergeAllAsync(sessions, ct);
+        var sessions = await inner.ListByRepositoryAsync(repository, includeArchived, ct);
+        return await MergeAllAsync(sessions, includeArchived, ct);
     }
 
-    public async ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, CancellationToken ct = default)
+    public async ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, bool includeArchived = false, CancellationToken ct = default)
     {
-        var sessions = await inner.ListByCwdAsync(cwd, ct);
-        return await MergeAllAsync(sessions, ct);
+        var sessions = await inner.ListByCwdAsync(cwd, includeArchived, ct);
+        return await MergeAllAsync(sessions, includeArchived, ct);
     }
 
     public async ValueTask<Session?> GetByIdAsync(string sessionId, CancellationToken ct = default)
@@ -80,13 +81,21 @@ public sealed class OverridingSessionRepository(
         inner.GetTopKeywordsAsync(topN, ct);
 
     // -------------------------------------------------------------------------
-    private async ValueTask<SessionSummary[]> MergeAllAsync(SessionSummary[] sessions, CancellationToken ct)
+    private async ValueTask<SessionSummary[]> MergeAllAsync(SessionSummary[] sessions, bool includeArchived, CancellationToken ct)
     {
-        var result = new SessionSummary[sessions.Length];
-        for (var i = 0; i < sessions.Length; i++)
+        SessionSummary[] filtered = sessions;
+        if (!includeArchived)
         {
-            var ov = await overrides.GetOverrideAsync(sessions[i].Id, ct);
-            result[i] = ov is null ? sessions[i] : Merge(sessions[i], ov);
+            var archivedIds = await overrides.GetArchivedSessionIdsAsync(ct);
+            if (archivedIds.Count > 0)
+                filtered = sessions.Where(s => !archivedIds.Contains(s.Id)).ToArray();
+        }
+
+        var result = new SessionSummary[filtered.Length];
+        for (var i = 0; i < filtered.Length; i++)
+        {
+            var ov = await overrides.GetOverrideAsync(filtered[i].Id, ct);
+            result[i] = ov is null ? filtered[i] : Merge(filtered[i], ov);
         }
 
         return result;

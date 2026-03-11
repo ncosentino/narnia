@@ -78,3 +78,17 @@ async function narniaResetOverride(sessionId) {
         if (btn) { btn.disabled = false; btn.textContent = 'Reset to Original'; }
     }
 }
+
+async function narniaToggleArchive(sessionId, archived) {
+    try {
+        const resp = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/archive`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ archived: archived === 'true' || archived === true }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        window.location.reload();
+    } catch (e) {
+        alert('Error updating archive status: ' + e.message);
+    }
+}

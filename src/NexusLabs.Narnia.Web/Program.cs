@@ -72,6 +72,29 @@ app.MapDelete("/api/sessions/{id}/overrides", async (
     return Results.NoContent();
 });
 
+app.MapPost("/api/sessions/{id}/archive", async (
+    string id,
+    ArchiveRequest request,
+    ISessionOverridesRepository repo,
+    CancellationToken ct) =>
+{
+    var now = DateTimeOffset.UtcNow;
+    var existing = await repo.GetOverrideAsync(id, ct);
+    var ov = new SessionOverride(
+        id,
+        existing?.DisplayName,
+        existing?.Repository,
+        existing?.Branch,
+        existing?.Notes,
+        existing?.CreatedAt ?? now,
+        now)
+    {
+        IsArchived = request.Archived,
+    };
+    await repo.UpsertOverrideAsync(ov, ct);
+    return Results.Ok();
+});
+
 app.Run();
 
 internal sealed record OverrideRequest(
@@ -79,3 +102,5 @@ internal sealed record OverrideRequest(
     string? Repository,
     string? Branch,
     string? Notes);
+
+internal sealed record ArchiveRequest(bool Archived);

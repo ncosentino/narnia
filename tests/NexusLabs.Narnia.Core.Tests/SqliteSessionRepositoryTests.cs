@@ -120,7 +120,7 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     [Fact]
     public async Task ListRecentAsync_ReturnsSessionsOrderedByUpdatedAt()
     {
-        var results = await _repository.ListRecentAsync(10, TestContext.Current.CancellationToken);
+        var results = await _repository.ListRecentAsync(10, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, results.Length);
         Assert.Equal("sess-3", results[0].Id);
@@ -131,7 +131,7 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     [Fact]
     public async Task ListRecentAsync_RespectsLimit()
     {
-        var results = await _repository.ListRecentAsync(2, TestContext.Current.CancellationToken);
+        var results = await _repository.ListRecentAsync(2, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, results.Length);
     }
@@ -139,7 +139,7 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     [Fact]
     public async Task ListRecentAsync_IncludesTurnAndCheckpointCounts()
     {
-        var results = await _repository.ListRecentAsync(10, TestContext.Current.CancellationToken);
+        var results = await _repository.ListRecentAsync(10, ct: TestContext.Current.CancellationToken);
         var sess1 = Array.Find(results, s => s.Id == "sess-1");
 
         Assert.NotNull(sess1);
@@ -150,7 +150,7 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     [Fact]
     public async Task ListByRepositoryAsync_FiltersByRepository()
     {
-        var results = await _repository.ListByRepositoryAsync("owner/repo-a", TestContext.Current.CancellationToken);
+        var results = await _repository.ListByRepositoryAsync("owner/repo-a", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, results.Length);
         Assert.All(results, s => Assert.Equal("owner/repo-a", s.Repository));
@@ -159,7 +159,7 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     [Fact]
     public async Task ListByCwdAsync_FiltersByDirectory()
     {
-        var results = await _repository.ListByCwdAsync(@"C:\dev\proj-a", TestContext.Current.CancellationToken);
+        var results = await _repository.ListByCwdAsync(@"C:\dev\proj-a", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, results.Length);
         Assert.All(results, s => Assert.Equal(@"C:\dev\proj-a", s.Cwd));
