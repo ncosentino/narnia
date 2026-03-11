@@ -2,9 +2,7 @@
 
 ## Database Schema — DO NOT MODIFY
 
-The `session-store.db` SQLite database schema is **owned by the GitHub Copilot CLI** and is written to by an external process. **Do not add, remove, or rename columns, tables, or indexes in this database.**
-
-Any new data that Narnia needs to persist must be stored in a **separate database or storage mechanism** — not in `session-store.db`.
+The `session-store.db` SQLite database schema is **owned by the GitHub Copilot CLI** and is written to by an external process. **Do not add, remove, or rename columns, tables, or indexes in this database.** Reading from and writing to existing columns is fine.
 
 ### Why
 

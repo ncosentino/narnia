@@ -47,6 +47,34 @@ h3 { font-size: 1rem; margin-top: 1rem; margin-bottom: .4rem; color: #555; }
 .sessions-table a:hover { text-decoration: underline; }
 .cwd { font-family: monospace; font-size: .8rem; color: #666; }
 
+.resume-command {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    background: #1e1e2e;
+    border-radius: 6px;
+    padding: .4rem .75rem;
+    margin-bottom: 1.25rem;
+}
+.resume-command code {
+    font-family: monospace;
+    font-size: .9rem;
+    color: #cdd6f4;
+    user-select: all;
+}
+.copy-btn {
+    background: #6c5ce7;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: .2rem .5rem;
+    font-size: .75rem;
+    cursor: pointer;
+    transition: background .15s;
+}
+.copy-btn:hover { background: #5a4fcf; }
+.copy-btn.copied { background: #28a745; }
+
 .session-meta { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .75rem; margin-bottom: 1.5rem; }
 .session-meta dt { font-weight: 600; color: #555; }
 .session-meta code { background: #e9ecef; padding: 0 .3rem; border-radius: 3px; font-size: .85rem; }

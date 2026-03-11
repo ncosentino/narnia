@@ -18,6 +18,11 @@ else if (_session is not null)
     <a href="/sessions">← Sessions</a>
     <h1>@(_session.Summary ?? "(no summary)")</h1>
 
+    <div class="resume-command">
+        <code id="resume-cmd-@_session.Id">copilot --resume=@_session.Id</code>
+        <button class="copy-btn" onclick="narniaCopyText('resume-cmd-@_session.Id', this)" title="Copy to clipboard">Copy</button>
+    </div>
+
     <dl class="session-meta">
         <dt>ID</dt><dd><code>@_session.Id</code></dd>
         @if (_session.Repository is not null)
