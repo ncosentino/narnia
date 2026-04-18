@@ -36,14 +36,14 @@ Register Narnia as a marketplace first, then install from it. This is useful if 
 
 ```
 /plugin marketplace add ncosentino/narnia
-/plugin install narnia
+/plugin install narnia@narnia
 ```
 
 **Claude Code:**
 
 ```
 /plugin marketplace add ncosentino/narnia
-/plugin install narnia@ncosentino-narnia
+/plugin install narnia@narnia
 ```
 
 ### From a Local Clone
