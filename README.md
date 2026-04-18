@@ -204,7 +204,7 @@ Narnia was born out of a real frustration: Windows forcing a restart and wiping 
 - YouTube: [https://www.youtube.com/@devleaderca](https://www.youtube.com/@devleaderca)
 - Newsletter: [https://weekly.devleader.ca](https://weekly.devleader.ca)
 - LinkedIn: [https://linkedin.com/in/nickcosentino](https://linkedin.com/in/nickcosentino)
-- Linktree: [https://www.linktr.ee/devleader](https://www.linktr.ee/devleader)
+- All My Links: [https://links.devleader.ca](https://links.devleader.ca)
 
 ### BrandGhost
 
