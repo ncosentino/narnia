@@ -1,0 +1,19 @@
+{
+  "name": "narnia",
+  "owner": {
+    "name": "Nexus Labs"
+  },
+  "metadata": {
+    "description": "Session history explorer for GitHub Copilot CLI — browse, search, and visualize past coding sessions with a Blazor web UI.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "narnia",
+      "description": "MCP server for session queries plus skills for managing the Narnia web UI.",
+      "source": "./",
+      "category": "developer-tools",
+      "homepage": "https://github.com/ncosentino/narnia"
+    }
+  ]
+}

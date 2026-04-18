@@ -1,0 +1,10 @@
+{
+  "name": "narnia",
+  "description": "Session history explorer for GitHub Copilot CLI. Browse, search, and visualize your past coding sessions with a Blazor web UI and MCP server integration.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Nexus Labs"
+  },
+  "homepage": "https://github.com/ncosentino/narnia",
+  "repository": "https://github.com/ncosentino/narnia"
+}
