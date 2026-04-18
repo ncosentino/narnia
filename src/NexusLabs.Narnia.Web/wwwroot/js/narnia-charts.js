@@ -4,10 +4,11 @@
 function narniaCopyText(elementId, btn) {
     var el = document.getElementById(elementId);
     if (!el) return;
+    var origText = btn.textContent;
     navigator.clipboard.writeText(el.textContent.trim()).then(function () {
-        btn.textContent = 'Copied!';
+        btn.textContent = '✅ Copied!';
         btn.classList.add('copied');
-        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+        setTimeout(function () { btn.textContent = origText; btn.classList.remove('copied'); }, 2000);
     });
 }
 (function () {
@@ -37,7 +38,9 @@ async function narniaSaveOverride(sessionId) {
         displayName: document.getElementById('ov-display-name').value,
         repository: document.getElementById('ov-repo').value,
         branch: document.getElementById('ov-branch').value,
-        notes: document.getElementById('ov-notes').value
+        notes: document.getElementById('ov-notes').value,
+        localPath: document.getElementById('ov-local-path').value,
+        terminalTitle: document.getElementById('ov-terminal-title').value
     };
     const btn = document.querySelector('.btn-save');
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
@@ -90,5 +93,133 @@ async function narniaToggleArchive(sessionId, archived) {
         window.location.reload();
     } catch (e) {
         alert('Error updating archive status: ' + e.message);
+    }
+}
+
+async function narniaLaunch(target, sessionId, btn) {
+    var origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Launching…';
+    try {
+        const resp = await fetch('/api/launch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: sessionId, target: target }),
+        });
+        if (resp.ok) {
+            btn.textContent = '✅ Launched!';
+            setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 3000);
+        } else {
+            var data = await resp.json().catch(function () { return null; });
+            alert('Launch failed: ' + (data?.message || data || 'HTTP ' + resp.status));
+            btn.textContent = origText;
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert('Error launching: ' + e.message);
+        btn.textContent = origText;
+        btn.disabled = false;
+    }
+}
+
+async function narniaSaveSettings() {
+    var shellInput = document.getElementById('setting-shell-path');
+    if (!shellInput) return;
+    var btn = document.querySelector('.btn-save-settings');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+        var resp = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'shell_path', value: shellInput.value }),
+        });
+        if (resp.ok) {
+            if (btn) { btn.textContent = '✅ Saved!'; }
+            setTimeout(function () {
+                if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+            }, 2000);
+        } else {
+            alert('Failed to save settings (HTTP ' + resp.status + ')');
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+        }
+    } catch (e) {
+        alert('Error saving settings: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+}
+
+async function narniaDetectShell() {
+    var btn = document.querySelector('.btn-detect');
+    if (btn) { btn.disabled = true; btn.textContent = 'Detecting…'; }
+    try {
+        var resp = await fetch('/api/settings/detect-shell');
+        if (resp.ok) {
+            var data = await resp.json();
+            var input = document.getElementById('setting-shell-path');
+            if (input && data.path) { input.value = data.path; }
+            if (btn) { btn.textContent = '✅ Detected!'; }
+            setTimeout(function () { if (btn) { btn.textContent = '🔍 Auto-detect'; btn.disabled = false; } }, 2000);
+        } else {
+            alert('No shell detected on this system');
+            if (btn) { btn.disabled = false; btn.textContent = '🔍 Auto-detect'; }
+        }
+    } catch (e) {
+        alert('Error detecting shell: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = '🔍 Auto-detect'; }
+    }
+}
+
+function narniaToggleAll(masterCheckbox) {
+    var checks = document.querySelectorAll('.session-check');
+    for (var i = 0; i < checks.length; i++) {
+        checks[i].checked = masterCheckbox.checked;
+    }
+    narniaUpdateBulkBar();
+}
+
+function narniaUpdateBulkBar() {
+    var checks = document.querySelectorAll('.session-check:checked');
+    var bar = document.getElementById('bulk-action-bar');
+    var count = document.getElementById('bulk-count');
+    if (!bar) return;
+    if (checks.length > 0) {
+        bar.style.display = '';
+        count.textContent = checks.length + ' selected';
+    } else {
+        bar.style.display = 'none';
+    }
+}
+
+async function narniaLaunchBulk() {
+    var checks = document.querySelectorAll('.session-check:checked');
+    if (checks.length === 0) return;
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+
+    var btn = document.querySelector('.btn-bulk-launch');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Launching…'; }
+    try {
+        var resp = await fetch('/api/launch-bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionIds: ids }),
+        });
+        if (resp.ok) {
+            var data = await resp.json();
+            var msg = '✅ Launched ' + data.launched.length + ' session(s)';
+            if (data.failed && data.failed.length > 0) {
+                msg += '\n⚠️ Failed: ' + data.failed.map(function (f) { return f.sessionId.substring(0, 8) + ': ' + f.reason; }).join(', ');
+            }
+            if (btn) { btn.textContent = '✅ Launched!'; }
+            setTimeout(function () { if (btn) { btn.textContent = '🚀 Launch Selected'; btn.disabled = false; } }, 3000);
+            if (data.failed && data.failed.length > 0) alert(msg);
+        } else {
+            var errData = await resp.json().catch(function () { return null; });
+            alert('Bulk launch failed: ' + (errData || 'HTTP ' + resp.status));
+            if (btn) { btn.textContent = '🚀 Launch Selected'; btn.disabled = false; }
+        }
+    } catch (e) {
+        alert('Error launching: ' + e.message);
+        if (btn) { btn.textContent = '🚀 Launch Selected'; btn.disabled = false; }
     }
 }

@@ -20,16 +20,26 @@ else if (_session is not null)
     <a href="/sessions">← Sessions</a>
     <h1>@(_session.Summary ?? "(no summary)")</h1>
 
-    <div class="resume-command">
-        <code id="resume-cmd-@_session.Id">copilot --resume=@_session.Id</code>
-        <button class="copy-btn" onclick="narniaCopyText('resume-cmd-@_session.Id', this)" title="Copy to clipboard">Copy</button>
-        @{
-            var isArchived = _override?.IsArchived == true;
-        }
-        <button class="btn-archive @(isArchived ? "btn-archive--active" : "")"
-                onclick="narniaToggleArchive('@_session.Id', @(isArchived ? "false" : "true"))">
-            @(isArchived ? "📤 Unarchive" : "📦 Archive")
+    <div class="archive-action">
+        <button class="btn-archive @(_override?.IsArchived == true ? "btn-archive--active" : "")"
+                onclick="narniaToggleArchive('@_session.Id', @(_override?.IsArchived == true ? "false" : "true"))">
+            @(_override?.IsArchived == true ? "📤 Unarchive" : "📦 Archive")
         </button>
+    </div>
+
+    <div class="resume-commands">
+        @foreach (var (label, cmd, target, idx) in BuildResumeEntries())
+        {
+            <div class="resume-entry">
+                <span class="resume-label">@label</span>
+                <code id="resume-cmd-@idx">@cmd</code>
+                <button class="copy-btn" onclick="narniaCopyText('resume-cmd-@idx', this)" title="Copy to clipboard">📋 Copy</button>
+                @if (target != "none")
+                {
+                    <button class="launch-btn" onclick="narniaLaunch('@target', '@_session.Id', this)" title="Launch in terminal">🚀 Launch</button>
+                }
+            </div>
+        }
     </div>
 
     <dl class="session-meta">
@@ -79,6 +89,18 @@ else if (_session is not null)
             <div class="override-field">
                 <label for="ov-notes">Notes</label>
                 <textarea id="ov-notes" rows="3" placeholder="Personal notes about this session…">@(_override?.Notes ?? "")</textarea>
+            </div>
+            <div class="override-field">
+                <label for="ov-local-path">Local Path</label>
+                <input id="ov-local-path" type="text" value="@(_override?.LocalPath ?? "")"
+                       placeholder="Preferred directory for launching this session" />
+                <span class="ov-original">Used as the "Preferred Path" resume command</span>
+            </div>
+            <div class="override-field">
+                <label for="ov-terminal-title">Terminal Title</label>
+                <input id="ov-terminal-title" type="text" value="@(_override?.TerminalTitle ?? "")"
+                       placeholder="@(_session.Summary ?? "(session summary)")" />
+                <span class="ov-original">Shown in terminal title bar on launch (defaults to session summary)</span>
             </div>
             <div class="override-actions">
                 <button class="btn-save" onclick="narniaSaveOverride('@_session.Id')">Save</button>
@@ -236,4 +258,52 @@ else if (_session is not null)
                 scales = new { y = new { beginAtZero = false, ticks = new { stepSize = 1 } } }
             }
         });
+
+    private List<(string Label, string Command, string Target, string Index)> BuildResumeEntries()
+    {
+        var baseCmd = $"copilot --resume={_session!.Id}";
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var entries = new List<(string Label, string Command, string Target, string Index)>();
+
+        // Always show the base command (no cd)
+        entries.Add(("Resume", baseCmd, "none", $"{_session.Id}-0"));
+
+        // Preferred path (override local path)
+        if (!string.IsNullOrWhiteSpace(_override?.LocalPath))
+        {
+            var norm = NormalizePath(_override.LocalPath);
+            if (seen.Add(norm))
+            {
+                entries.Add(("Preferred Path", $"cd \"{_override.LocalPath}\" && {baseCmd}", "localPath", $"{_session.Id}-1"));
+            }
+        }
+
+        // CWD
+        if (!string.IsNullOrWhiteSpace(_session.Cwd))
+        {
+            var norm = NormalizePath(_session.Cwd);
+            if (seen.Add(norm))
+            {
+                entries.Add(("Working Dir", $"cd \"{_session.Cwd}\" && {baseCmd}", "cwd", $"{_session.Id}-2"));
+            }
+        }
+
+        // Git Root
+        var gitRoot = _workspace?.GitRoot ?? _session.GitRoot;
+        if (!string.IsNullOrWhiteSpace(gitRoot))
+        {
+            var norm = NormalizePath(gitRoot);
+            if (seen.Add(norm))
+            {
+                entries.Add(("Git Root", $"cd \"{gitRoot}\" && {baseCmd}", "gitRoot", $"{_session.Id}-3"));
+            }
+        }
+
+        return entries;
+    }
+
+    private static string NormalizePath(string path)
+    {
+        return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
 }

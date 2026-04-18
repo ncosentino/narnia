@@ -1,0 +1,54 @@
+@page "/settings"
+@using NexusLabs.Narnia.Core.Repositories
+@inject INarniaSettingsRepository SettingsRepo
+
+<PageTitle>Settings — Narnia</PageTitle>
+
+<h1>⚙️ Settings</h1>
+
+<div class="settings-section">
+    <h2>Shell Configuration</h2>
+    <p class="settings-hint">
+        Configure the shell used when launching resume commands from session pages.
+        The launch button opens a new terminal window in the selected directory and runs <code>copilot --resume</code>.
+    </p>
+
+    <div class="setting-field">
+        <label for="setting-shell-path">Shell Path</label>
+        <div class="setting-input-group">
+            <input id="setting-shell-path" type="text" value="@_shellPath"
+                   placeholder="pwsh.exe" />
+            <button class="btn-detect" onclick="narniaDetectShell()">Auto-detect</button>
+        </div>
+        <span class="setting-hint">
+            Full path to your preferred shell executable
+            (e.g., <code>C:\Program Files\PowerShell\7\pwsh.exe</code>)
+        </span>
+    </div>
+
+    <div class="setting-actions">
+        <button class="btn-save" onclick="narniaSaveSettings()">Save</button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_shellPath))
+    {
+        <div class="setting-current">
+            <strong>Current:</strong> <code>@_shellPath</code>
+        </div>
+    }
+    else
+    {
+        <div class="setting-current setting-current--warn">
+            <strong>No shell configured.</strong> Click <em>Auto-detect</em> to find one, or enter a path manually.
+        </div>
+    }
+</div>
+
+@code {
+    private string _shellPath = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _shellPath = await SettingsRepo.GetAsync("shell_path") ?? "";
+    }
+}

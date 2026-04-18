@@ -24,10 +24,12 @@
 @if (_sessions is not null && _sessions.Length > 0)
 {
     <p>@_sessions.Length result(s)</p>
-    <table class="sessions-table">
+    <table class="sessions-table" id="sessions-table">
         <thead>
             <tr>
+                <th class="col-select"><input type="checkbox" title="Select all" onclick="narniaToggleAll(this)" /></th>
                 <th>Summary</th>
+                <th>Status</th>
                 <th>Repository</th>
                 <th>Directory</th>
                 <th>Turns</th>
@@ -39,12 +41,21 @@
             @foreach (var s in _sessions)
             {
                 var isArchived = _archivedIds?.Contains(s.Id) == true;
+                string? nextStepsPreview = null;
+                _resumableMap?.TryGetValue(s.Id, out nextStepsPreview);
                 <tr class="@(isArchived ? "session-archived" : "")">
+                    <td class="col-select"><input type="checkbox" class="session-check" value="@s.Id" onclick="narniaUpdateBulkBar()" /></td>
                     <td>
                         <a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a>
                         @if (isArchived)
                         {
                             <span class="badge-archived">archived</span>
+                        }
+                    </td>
+                    <td class="col-status">
+                        @if (nextStepsPreview is not null)
+                        {
+                            <span class="badge-remaining-work" title="@nextStepsPreview">remaining work</span>
                         }
                     </td>
                     <td>@(s.Repository ?? "—")</td>
@@ -56,6 +67,11 @@
             }
         </tbody>
     </table>
+
+    <div class="bulk-action-bar" id="bulk-action-bar" style="display:none;">
+        <span id="bulk-count">0 selected</span>
+        <button class="btn-bulk-launch" onclick="narniaLaunchBulk()">🚀 Launch Selected</button>
+    </div>
 }
 else if (_sessions is not null)
 {
@@ -85,6 +101,7 @@ else if (_sessions is not null)
     private SessionSummary[]? _sessions;
     private SearchResult[]? _searchResults;
     private HashSet<string>? _archivedIds;
+    private Dictionary<string, string>? _resumableMap;
 
     protected override async Task OnInitializedAsync()
     {
@@ -100,5 +117,9 @@ else if (_sessions is not null)
 
         if (ShowArchived)
             _archivedIds = await OverridesRepository.GetArchivedSessionIdsAsync();
+
+        if (_sessions is { Length: > 0 })
+            _resumableMap = await Repository.GetResumableSessionIdsAsync(
+                _sessions.Select(s => s.Id).ToList());
     }
 }
