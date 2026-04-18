@@ -19,5 +19,6 @@ public interface ISessionRepository
     ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default);
     ValueTask<SessionSummary[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default);
     ValueTask<ResumeSuggestion[]> GetResumeSuggestionsAsync(int limit = 10, CancellationToken ct = default);
+    ValueTask<Dictionary<string, string>> GetResumableSessionIdsAsync(IReadOnlyList<string> sessionIds, CancellationToken ct = default);
     ValueTask<KeywordFrequency[]> GetTopKeywordsAsync(int topN = 50, CancellationToken ct = default);
 }

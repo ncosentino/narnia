@@ -500,6 +500,43 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         return [.. results];
     }
 
+    public async ValueTask<Dictionary<string, string>> GetResumableSessionIdsAsync(IReadOnlyList<string> sessionIds, CancellationToken ct = default)
+    {
+        if (sessionIds.Count == 0)
+            return [];
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        var paramNames = new string[sessionIds.Count];
+        for (var i = 0; i < sessionIds.Count; i++)
+            paramNames[i] = $"@id{i}";
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT s.id, c.next_steps
+            FROM sessions s
+            JOIN checkpoints c ON c.session_id = s.id
+                AND c.checkpoint_number = (
+                    SELECT MAX(checkpoint_number) FROM checkpoints WHERE session_id = s.id)
+            WHERE c.next_steps IS NOT NULL AND trim(c.next_steps) != ''
+            AND s.id IN ({string.Join(", ", paramNames)})
+            """;
+
+        for (var i = 0; i < sessionIds.Count; i++)
+            cmd.Parameters.AddWithValue(paramNames[i], sessionIds[i]);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var result = new Dictionary<string, string>();
+        while (await reader.ReadAsync(ct))
+        {
+            var id = reader.GetString(0);
+            var nextSteps = reader.GetString(1);
+            result[id] = nextSteps.Length > 200 ? nextSteps[..200] + "…" : nextSteps;
+        }
+        return result;
+    }
+
     public async ValueTask<KeywordFrequency[]> GetTopKeywordsAsync(int topN = 50, CancellationToken ct = default)
     {
         await using var connection = new SqliteConnection(_connectionString);

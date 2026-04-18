@@ -77,6 +77,9 @@ public sealed class OverridingSessionRepository(
         return await MergeAllAsync(suggestions, ct);
     }
 
+    public ValueTask<Dictionary<string, string>> GetResumableSessionIdsAsync(IReadOnlyList<string> sessionIds, CancellationToken ct = default) =>
+        inner.GetResumableSessionIdsAsync(sessionIds, ct);
+
     public ValueTask<KeywordFrequency[]> GetTopKeywordsAsync(int topN = 50, CancellationToken ct = default) =>
         inner.GetTopKeywordsAsync(topN, ct);
 

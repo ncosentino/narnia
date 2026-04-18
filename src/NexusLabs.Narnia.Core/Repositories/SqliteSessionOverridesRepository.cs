@@ -17,7 +17,7 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
             """
-            SELECT session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived
+            SELECT session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived, local_path, terminal_title
             FROM session_overrides
             WHERE session_id = @session_id
             """;
@@ -38,15 +38,17 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
             """
-            INSERT INTO session_overrides (session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived)
-            VALUES (@session_id, @display_name, @repository, @branch, @notes, @created_at, @updated_at, @is_archived)
+            INSERT INTO session_overrides (session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived, local_path, terminal_title)
+            VALUES (@session_id, @display_name, @repository, @branch, @notes, @created_at, @updated_at, @is_archived, @local_path, @terminal_title)
             ON CONFLICT(session_id) DO UPDATE SET
                 display_name = excluded.display_name,
                 repository   = excluded.repository,
                 branch       = excluded.branch,
                 notes        = excluded.notes,
                 updated_at   = excluded.updated_at,
-                is_archived  = excluded.is_archived
+                is_archived  = excluded.is_archived,
+                local_path   = excluded.local_path,
+                terminal_title = excluded.terminal_title
             """;
         cmd.Parameters.AddWithValue("@session_id", sessionOverride.SessionId);
         cmd.Parameters.AddWithValue("@display_name", (object?)sessionOverride.DisplayName ?? DBNull.Value);
@@ -56,6 +58,8 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         cmd.Parameters.AddWithValue("@created_at", sessionOverride.CreatedAt.ToString("o"));
         cmd.Parameters.AddWithValue("@updated_at", sessionOverride.UpdatedAt.ToString("o"));
         cmd.Parameters.AddWithValue("@is_archived", sessionOverride.IsArchived ? 1 : 0);
+        cmd.Parameters.AddWithValue("@local_path", (object?)sessionOverride.LocalPath ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@terminal_title", (object?)sessionOverride.TerminalTitle ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -97,10 +101,14 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         var createdAt = ParseDateTimeOffset(reader.IsDBNull(5) ? null : reader.GetString(5));
         var updatedAt = ParseDateTimeOffset(reader.IsDBNull(6) ? null : reader.GetString(6));
         var isArchived = !reader.IsDBNull(7) && reader.GetInt64(7) != 0;
+        var localPath = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
+        var terminalTitle = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
 
         return new SessionOverride(sessionId, displayName, repository, branch, notes, createdAt, updatedAt)
         {
             IsArchived = isArchived,
+            LocalPath = localPath,
+            TerminalTitle = terminalTitle,
         };
     }
 

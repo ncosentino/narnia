@@ -10,4 +10,16 @@ public sealed record SessionOverride(
     DateTimeOffset UpdatedAt)
 {
     public bool IsArchived { get; init; } = false;
+
+    /// <summary>
+    /// Optional local filesystem path for resuming sessions.
+    /// Shown as the "Preferred Path" resume command and used by the launch button.
+    /// </summary>
+    public string? LocalPath { get; init; }
+
+    /// <summary>
+    /// Custom terminal window title used by the Launch button.
+    /// Defaults to the session summary if not set.
+    /// </summary>
+    public string? TerminalTitle { get; init; }
 }
