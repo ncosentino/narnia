@@ -5,6 +5,15 @@ repo_url: https://github.com/ncosentino/narnia
 repo_name: ncosentino/narnia
 strict: true
 
+copyright: >
+  &copy; Nick Cosentino
+  <br>
+  <a href="https://www.devleader.ca">Dev Leader: software engineering blog and C# tutorials by Nick Cosentino</a>
+  <br>
+  <a href="https://links.devleader.ca">Dev Leader links: videos, courses, Discord, and social channels</a>
+  <br>
+  <a href="https://www.brandghost.ai">BrandGhost: social media and SEO automation for brands</a>
+
 theme:
   name: material
   custom_dir: docs/overrides
@@ -91,6 +100,7 @@ markdown_extensions:
       toc_depth: 4
 
 extra:
+  generator: false
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/ncosentino/narnia
