@@ -7,5 +7,6 @@
   },
   "homepage": "https://github.com/ncosentino/narnia",
   "repository": "https://github.com/ncosentino/narnia",
-  "skills": ["skills/"]
+  "skills": ["skills/"],
+  "mcpServers": ".mcp.json"
 }
