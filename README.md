@@ -90,6 +90,8 @@ Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Cod
 
 Narnia follows the standard plugin layout with `plugin.json` at the repo root.
 
+#### Option A: Direct Install
+
 **Copilot CLI:**
 
 ```bash
@@ -102,13 +104,31 @@ copilot plugin install ncosentino/narnia
 claude plugin install ncosentino/narnia
 ```
 
-**From a local clone:**
+#### Option B: Via Marketplace
+
+Register Narnia as a marketplace first, then install from it. This is useful if you want to browse available plugins before installing.
+
+**Copilot CLI** (from inside a session):
+
+```
+/plugin marketplace add ncosentino/narnia
+/plugin install narnia
+```
+
+**Claude Code:**
+
+```
+/plugin marketplace add ncosentino/narnia
+/plugin install narnia@ncosentino-narnia
+```
+
+#### From a Local Clone
 
 ```bash
 copilot plugin install ./path/to/narnia
 ```
 
-**Useful commands:**
+#### Managing the Plugin
 
 ```bash
 copilot plugin list              # List installed plugins
