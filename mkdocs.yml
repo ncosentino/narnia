@@ -48,7 +48,9 @@ nav:
     - get_session_workspace: tools/get-session-workspace.md
     - list_sessions_by_repository: tools/list-sessions-by-repository.md
     - list_sessions_by_cwd: tools/list-sessions-by-cwd.md
-    - open_narnia_ui: tools/open-narnia-ui.md
+  - Skills:
+    - Overview: skills/index.md
+    - narnia-web-server: skills/narnia-web-server.md
   - Troubleshooting: troubleshooting.md
   - Building from Source: building.md
   - Articles: articles.md

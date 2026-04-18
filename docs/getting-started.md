@@ -69,7 +69,7 @@ dotnet run --project src/NexusLabs.Narnia.Web
 
 Then navigate to `http://localhost:5244` in your browser.
 
-You can also ask your MCP client to open it for you via the [`open_narnia_ui`](tools/open-narnia-ui.md) tool.
+You can also ask your LLM to start it for you using the [`narnia-web-server` skill](skills/narnia-web-server.md).
 
 ## Next Steps
 

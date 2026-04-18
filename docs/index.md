@@ -18,7 +18,6 @@ Narnia is an MCP server and local web UI for browsing your [GitHub Copilot CLI](
 | [`get_session_workspace`](tools/get-session-workspace.md) | Workspace metadata and session artifact files |
 | [`list_sessions_by_repository`](tools/list-sessions-by-repository.md) | Filter sessions by git repository |
 | [`list_sessions_by_cwd`](tools/list-sessions-by-cwd.md) | Filter sessions by working directory |
-| [`open_narnia_ui`](tools/open-narnia-ui.md) | Start the Narnia web UI and open it in the browser |
 
 ## Why It Exists
 

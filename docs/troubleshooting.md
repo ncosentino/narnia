@@ -4,35 +4,28 @@ description: Troubleshooting common Narnia issues including web server startup f
 
 # Troubleshooting
 
-## Web Server Does Not Start from `open_narnia_ui`
+## Web Server Does Not Start
 
-**Symptom:** The `open_narnia_ui` tool returns an error like "Could not locate the Narnia web project."
-
-**Why it happens:** When running via `dotnet run`, the tool walks up from the MCP server binary directory to find `src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj`. If you've installed the MCP server binary somewhere other than the repo root, auto-detection fails.
-
-**Fix:** Set `NARNIA__WebProjectPath` explicitly in your MCP client config:
-
-```json
-"env": {
-  "NARNIA__WebProjectPath": "C:\\path\\to\\narnia\\src\\NexusLabs.Narnia.Web"
-}
-```
-
-Or point it at the directory (the tool will look for `NexusLabs.Narnia.Web.csproj` inside it).
-
----
-
-## Web Server Starts But Browser Doesn't Open
-
-**Symptom:** The tool says "Started the web server but it did not become reachable at http://localhost:5244 within 20 seconds."
-
-**Why it happens:** Either the server took longer than 20 seconds to start, or the port is blocked. The web server might still be starting in the background.
+**Symptom:** The web server fails to start or you can't reach `http://localhost:5244`.
 
 **Fix:**
 
-1. Wait a few seconds and navigate to `http://localhost:5244` manually.
-2. Check if something else is already using port 5244 (`netstat -an | findstr 5244` on Windows).
-3. Change the port by setting `NARNIA__WebUiUrl` to a different URL in both the MCP config and the web app's `appsettings.json`.
+1. Make sure you have the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) installed.
+2. Try starting manually: `dotnet run --project src/NexusLabs.Narnia.Web` and check the output for errors.
+3. Check if something else is already using port 5244 (`netstat -an | findstr 5244` on Windows).
+4. If using the `narnia-web-server` skill, the LLM will show you the build output and can diagnose issues automatically.
+
+---
+
+## Web Server Starts But Can't Connect
+
+**Symptom:** The server process is running but `http://localhost:5244` gives "connection refused."
+
+**Fix:**
+
+1. Wait a few seconds — cold builds can take 30-60+ seconds.
+2. Check the server process output for binding errors.
+3. If port 5244 is in use, change `applicationUrl` in `src/NexusLabs.Narnia.Web/Properties/launchSettings.json`.
 
 ---
 

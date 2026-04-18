@@ -15,7 +15,7 @@ _PREAMBLE = """\
 
 > MCP server and local Blazor web UI for browsing GitHub Copilot CLI session history. Find and resume sessions after a restart without losing context.
 
-It exposes nine MCP tools -- list_recent_sessions, search_sessions, get_session_details, get_session_checkpoints, get_session_turns, get_session_workspace, list_sessions_by_repository, list_sessions_by_cwd, and open_narnia_ui -- directly to AI assistants like Claude, GitHub Copilot, and Cursor.
+It exposes eight MCP tools -- list_recent_sessions, search_sessions, get_session_details, get_session_checkpoints, get_session_turns, get_session_workspace, list_sessions_by_repository, and list_sessions_by_cwd -- directly to AI assistants like Claude, GitHub Copilot, and Cursor. It also includes agentic skills (like narnia-web-server) for managing the web UI lifecycle.
 Author: Nick Cosentino (https://www.devleader.ca).
 
 """

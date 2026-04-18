@@ -1,14 +1,14 @@
 ---
-description: Overview of all nine Narnia MCP tools for searching and browsing GitHub Copilot CLI session history. Use these from any AI assistant that supports MCP.
+description: Overview of all eight Narnia MCP tools for searching and browsing GitHub Copilot CLI session history. Use these from any AI assistant that supports MCP.
 ---
 
 ---
-description: Reference for all nine Narnia MCP tools. Search sessions, browse checkpoints, read conversation history, and open the Narnia web UI from any MCP-enabled AI assistant.
+description: Reference for all eight Narnia MCP tools. Search sessions, browse checkpoints, and read conversation history from any MCP-enabled AI assistant.
 ---
 
 # MCP Tools
 
-Narnia exposes nine MCP tools for working with your local Copilot CLI session history. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
+Narnia exposes eight MCP tools for working with your local Copilot CLI session history. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
 
 ## Tool Reference
 
@@ -22,7 +22,9 @@ Narnia exposes nine MCP tools for working with your local Copilot CLI session hi
 | [`get_session_workspace`](get-session-workspace.md) | Git root and artifact file list | `sessionId` |
 | [`list_sessions_by_repository`](list-sessions-by-repository.md) | Filter by git repository | `repo` |
 | [`list_sessions_by_cwd`](list-sessions-by-cwd.md) | Filter by working directory | `cwd` |
-| [`open_narnia_ui`](open-narnia-ui.md) | Start web UI and open browser | _(none)_ |
+
+!!! note "Looking for the web UI launcher?"
+    The `open_narnia_ui` MCP tool has been replaced by the [`narnia-web-server` skill](../skills/narnia-web-server.md), which provides more reliable lifecycle management with full visibility into build output.
 
 ## Common Workflow
 

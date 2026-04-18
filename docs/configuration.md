@@ -12,8 +12,6 @@ Narnia reads configuration from environment variables. No API key is required â€
 |----------|---------|-------------|
 | `NARNIA__DatabasePath` | `~/.copilot/session-store.db` | Path to the Copilot CLI SQLite session database |
 | `NARNIA__SessionStatePath` | `~/.copilot/session-state/` | Directory containing per-session state folders |
-| `NARNIA__WebUiUrl` | `http://localhost:5244` | URL where the Narnia web UI will be served |
-| `NARNIA__WebProjectPath` | _(auto-detected)_ | Path to the `NexusLabs.Narnia.Web` project (used by `open_narnia_ui` when a published binary is not found) |
 
 ## Setting Variables in mcp-config.json
 
@@ -46,12 +44,4 @@ If your Copilot CLI data is in the default location, no configuration is require
 
 ## Web UI Port
 
-If port `5244` is in use, set `NARNIA__WebUiUrl` to a different port:
-
-```json
-"env": {
-  "NARNIA__WebUiUrl": "http://localhost:6244"
-}
-```
-
-The `open_narnia_ui` MCP tool uses this value to health-check and open the correct URL.
+The web UI listens on `http://localhost:5244` by default (configured in `src/NexusLabs.Narnia.Web/Properties/launchSettings.json`). To change the port, modify the `applicationUrl` in that file before building.

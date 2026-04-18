@@ -73,7 +73,50 @@ After publishing as a NativeAOT binary (`dotnet publish src/NexusLabs.Narnia.Mcp
 | `get_session_workspace` | Git root and session artifact files from the filesystem |
 | `list_sessions_by_repository` | Filter sessions by git repository |
 | `list_sessions_by_cwd` | Filter sessions by working directory |
-| `open_narnia_ui` | Start the web UI if not running and open it in the default browser |
+
+---
+
+## Skills (Plugin System)
+
+Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Code via their plugin systems. Skills let the LLM manage the web UI lifecycle directly — with full visibility into build output and adaptive error handling.
+
+### Available Skills
+
+| Skill | Description |
+|-------|-------------|
+| `narnia-web-server` | Start, stop, restart, and check status of the Narnia web UI |
+
+### Installing as a Plugin
+
+Narnia follows the standard plugin layout with `plugin.json` at the repo root.
+
+**Copilot CLI:**
+
+```bash
+copilot plugin install ncosentino/narnia
+```
+
+**Claude Code:**
+
+```bash
+claude plugin install ncosentino/narnia
+```
+
+**From a local clone:**
+
+```bash
+copilot plugin install ./path/to/narnia
+```
+
+**Useful commands:**
+
+```bash
+copilot plugin list              # List installed plugins
+copilot plugin update narnia     # Update to latest
+copilot plugin uninstall narnia  # Remove the plugin
+```
+
+Once installed, skills are automatically available. Just ask the LLM to perform the task (e.g., "start the Narnia web server").
 
 ---
 
@@ -95,8 +138,6 @@ Both the MCP server and web UI read configuration from environment variables:
 |----------|-------------|---------|
 | `NARNIA__DatabasePath` | Path to `session-store.db` | `~/.copilot/session-store.db` |
 | `NARNIA__SessionStatePath` | Path to session state directory | `~/.copilot/session-state` |
-| `NARNIA__WebUiUrl` | URL used by `open_narnia_ui` to check/open the web UI | `http://localhost:5244` |
-| `NARNIA__WebProjectPath` | Path to the Web project (for `open_narnia_ui` to start the server). Auto-detected from source layout if not set. | _(auto-detected)_ |
 
 ---
 
@@ -121,6 +162,8 @@ dotnet publish src/NexusLabs.Narnia.McpServer -c Release
 
 ```
 narnia/
+  skills/
+    narnia-web-server/            # Agentic skill for web UI lifecycle management
   src/
     NexusLabs.Narnia.Core/        # Shared library — trim-safe, AOT-compatible
     NexusLabs.Narnia.McpServer/   # MCP server — NativeAOT, stdio transport
