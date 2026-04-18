@@ -1,9 +1,6 @@
 using System.ComponentModel;
-using System.Diagnostics;
-using System.Net.Http;
 using System.Text.Json;
 using ModelContextProtocol.Server;
-using NexusLabs.Narnia.Core.Configuration;
 using NexusLabs.Narnia.Core.Repositories;
 using NexusLabs.Narnia.McpServer.Serialization;
 
@@ -15,14 +12,12 @@ internal sealed class SessionTools
     private readonly ISessionRepository _repository;
     private readonly ISessionSearch _search;
     private readonly IWorkspaceReader _workspaceReader;
-    private readonly NarniaOptions _options;
 
-    public SessionTools(ISessionRepository repository, ISessionSearch search, IWorkspaceReader workspaceReader, NarniaOptions options)
+    public SessionTools(ISessionRepository repository, ISessionSearch search, IWorkspaceReader workspaceReader)
     {
         _repository = repository;
         _search = search;
         _workspaceReader = workspaceReader;
-        _options = options;
     }
 
     [McpServerTool(Name = "list_recent_sessions")]
@@ -160,104 +155,4 @@ internal sealed class SessionTools
         return Task.FromResult(JsonSerializer.Serialize(info, McpJsonContext.Default.WorkspaceInfo));
     }
 
-    [McpServerTool(Name = "open_narnia_ui")]
-    [Description("Ensures the Narnia web UI is running and opens it in the default browser. Starts the web server automatically if it is not already running.")]
-    public async Task<string> OpenNarniaUiAsync(CancellationToken cancellationToken = default)
-    {
-        var url = _options.WebUiUrl;
-        bool alreadyRunning = await IsWebUiRunningAsync(url, cancellationToken);
-
-        if (!alreadyRunning)
-        {
-            var startResult = TryStartWebServer();
-            if (startResult is not null)
-                return startResult;
-
-            bool started = await WaitForWebUiAsync(url, timeoutSeconds: 20, cancellationToken);
-            if (!started)
-                return $"Started the web server but it did not become reachable at {url} within 20 seconds. Try opening {url} manually.";
-        }
-
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-
-        return alreadyRunning
-            ? $"Narnia web UI was already running. Opened {url} in your default browser."
-            : $"Started the Narnia web UI and opened {url} in your default browser.";
-    }
-
-    private static async Task<bool> IsWebUiRunningAsync(string url, CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var response = await client.GetAsync(url, cancellationToken);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private string? TryStartWebServer()
-    {
-        // Try published binary next to the MCP server binary first
-        var baseDir = AppContext.BaseDirectory;
-        var exeName = OperatingSystem.IsWindows() ? "NexusLabs.Narnia.Web.exe" : "NexusLabs.Narnia.Web";
-        var publishedExe = Path.Combine(baseDir, exeName);
-        if (File.Exists(publishedExe))
-        {
-            Process.Start(new ProcessStartInfo(publishedExe) { UseShellExecute = true });
-            return null;
-        }
-
-        // Resolve project path
-        var projectPath = ResolveWebProjectPath();
-        if (projectPath is null)
-            return "Could not locate the Narnia web project. Set the NARNIA__WebProjectPath environment variable to the path of NexusLabs.Narnia.Web.csproj or its directory.";
-
-        Process.Start(new ProcessStartInfo("dotnet")
-        {
-            Arguments = $"run --project \"{projectPath}\"",
-            UseShellExecute = true
-        });
-        return null;
-    }
-
-    private string? ResolveWebProjectPath()
-    {
-        if (!string.IsNullOrWhiteSpace(_options.WebProjectPath))
-        {
-            var p = _options.WebProjectPath;
-            if (File.Exists(p) && p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-                return p;
-            var candidate = Path.Combine(p, "NexusLabs.Narnia.Web.csproj");
-            if (File.Exists(candidate))
-                return candidate;
-            return null;
-        }
-
-        // Walk up from the MCP binary directory looking for the .csproj
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var csproj = Path.Combine(dir.FullName, "src", "NexusLabs.Narnia.Web", "NexusLabs.Narnia.Web.csproj");
-            if (File.Exists(csproj))
-                return csproj;
-            dir = dir.Parent;
-        }
-        return null;
-    }
-
-    private static async Task<bool> WaitForWebUiAsync(string url, int timeoutSeconds, CancellationToken cancellationToken)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-        while (DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(1000, cancellationToken);
-            if (await IsWebUiRunningAsync(url, cancellationToken))
-                return true;
-        }
-        return false;
-    }
 }
