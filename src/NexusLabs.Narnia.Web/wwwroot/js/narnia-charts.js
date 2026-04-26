@@ -190,6 +190,35 @@ function narniaUpdateBulkBar() {
     }
 }
 
+async function narniaArchiveBulk() {
+    var checks = document.querySelectorAll('.session-check:checked');
+    if (checks.length === 0) return;
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+
+    if (!confirm('Archive ' + ids.length + ' session(s)?')) return;
+
+    var btn = document.querySelector('.btn-bulk-archive');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Archiving…'; }
+    try {
+        var results = await Promise.all(ids.map(function (id) {
+            return fetch('/api/sessions/' + encodeURIComponent(id) + '/archive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ archived: true }),
+            }).then(function (r) { return { id: id, ok: r.ok }; });
+        }));
+        var failed = results.filter(function (r) { return !r.ok; });
+        if (failed.length > 0) {
+            alert('Failed to archive ' + failed.length + ' session(s).');
+        }
+        window.location.reload();
+    } catch (e) {
+        alert('Error archiving: ' + e.message);
+        if (btn) { btn.textContent = '📦 Archive Selected'; btn.disabled = false; }
+    }
+}
+
 async function narniaLaunchBulk() {
     var checks = document.querySelectorAll('.session-check:checked');
     if (checks.length === 0) return;

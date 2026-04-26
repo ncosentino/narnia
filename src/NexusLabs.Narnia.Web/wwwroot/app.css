@@ -373,6 +373,18 @@ a { color: #6c5ce7; }
 }
 .btn-bulk-launch:hover { background: #5a4bd1; }
 .btn-bulk-launch:disabled { opacity: .6; cursor: not-allowed; }
+.btn-bulk-archive {
+    background: #636e72;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    padding: .4rem 1rem;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-bulk-archive:hover { background: #535c5f; }
+.btn-bulk-archive:disabled { opacity: .6; cursor: not-allowed; }
 .btn-archive {
     background: none;
     border: 1px solid #d1d5db;
