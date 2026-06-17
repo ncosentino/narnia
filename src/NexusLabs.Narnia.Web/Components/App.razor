@@ -1,5 +1,8 @@
+@using NexusLabs.Narnia.Core.Repositories
+@inject INarniaSettingsRepository SettingsRepo
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="@_theme">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,6 +14,17 @@
 <body>
     <Routes />
     <script src="lib/chart.js/chart.umd.min.js"></script>
-    <script src="js/narnia-charts.js?v=3"></script>
+    <script src="js/narnia-charts.js?v=4"></script>
 </body>
 </html>
+
+@code {
+    // "dark" is Narnia's default theme; only an explicit "light" setting opts out.
+    private string _theme = "dark";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var saved = await SettingsRepo.GetAsync("theme");
+        _theme = saved == "light" ? "light" : "dark";
+    }
+}

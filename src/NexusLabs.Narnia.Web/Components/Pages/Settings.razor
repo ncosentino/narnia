@@ -7,6 +7,32 @@
 <h1>⚙️ Settings</h1>
 
 <div class="settings-section">
+    <h2>Appearance</h2>
+    <p class="settings-hint">
+        Choose the theme for the entire site. Narnia defaults to dark mode.
+        Your choice is saved and applied across sessions.
+    </p>
+
+    <div class="setting-field">
+        <span class="setting-label">Theme</span>
+        <div class="theme-options">
+            <label class="theme-option">
+                <input type="radio" name="theme" value="dark"
+                       checked="@(_theme == "dark")"
+                       onchange="narniaSetTheme('dark')" />
+                🌙 Dark
+            </label>
+            <label class="theme-option">
+                <input type="radio" name="theme" value="light"
+                       checked="@(_theme == "light")"
+                       onchange="narniaSetTheme('light')" />
+                ☀️ Light
+            </label>
+        </div>
+    </div>
+</div>
+
+<div class="settings-section">
     <h2>Shell Configuration</h2>
     <p class="settings-hint">
         Configure the shell used when launching resume commands from session pages.
@@ -46,9 +72,11 @@
 
 @code {
     private string _shellPath = "";
+    private string _theme = "dark";
 
     protected override async Task OnInitializedAsync()
     {
         _shellPath = await SettingsRepo.GetAsync("shell_path") ?? "";
+        _theme = await SettingsRepo.GetAsync("theme") == "light" ? "light" : "dark";
     }
 }
