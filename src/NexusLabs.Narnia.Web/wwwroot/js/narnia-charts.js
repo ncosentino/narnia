@@ -252,3 +252,24 @@ async function narniaLaunchBulk() {
         if (btn) { btn.textContent = '🚀 Launch Selected'; btn.disabled = false; }
     }
 }
+
+// ── Theme (dark/light) ───────────────────────────────────────────────────────
+async function narniaSetTheme(theme) {
+    var normalized = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', normalized);
+    try {
+        await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'theme', value: normalized }),
+        });
+    } catch (e) {
+        console.error('Narnia: failed to persist theme', e);
+    }
+    return normalized;
+}
+
+function narniaToggleTheme() {
+    var current = document.documentElement.getAttribute('data-theme');
+    narniaSetTheme(current === 'light' ? 'dark' : 'light');
+}
