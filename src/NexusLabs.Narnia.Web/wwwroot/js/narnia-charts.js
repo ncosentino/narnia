@@ -255,18 +255,18 @@ async function narniaLaunchBulk() {
 
 // ── Theme (dark/light) ───────────────────────────────────────────────────────
 async function narniaSetTheme(theme) {
-    var next = theme === 'light' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
+    var normalized = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', normalized);
     try {
         await fetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: 'theme', value: next }),
+            body: JSON.stringify({ key: 'theme', value: normalized }),
         });
     } catch (e) {
         console.error('Narnia: failed to persist theme', e);
     }
-    return next;
+    return normalized;
 }
 
 function narniaToggleTheme() {

@@ -19,7 +19,8 @@
 </html>
 
 @code {
-    // "dark" is Narnia's default theme; only an explicit "light" setting opts out.
+    // Dark is Narnia's default theme; the persisted setting overrides it to
+    // "light" only when explicitly chosen.
     private string _theme = "dark";
 
     protected override async Task OnInitializedAsync()
