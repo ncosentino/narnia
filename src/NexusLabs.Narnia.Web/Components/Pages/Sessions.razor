@@ -113,7 +113,26 @@ else if (_sessions is not null)
         else
         {
             _searchResults = await Search.SearchAsync(Query, 20);
-            _sessions = [];
+
+            var orderedIds = _searchResults
+                .Select(r => r.SessionId)
+                .Distinct()
+                .ToArray();
+
+            var sessions = await Task.WhenAll(
+                orderedIds.Select(id => Repository.GetByIdAsync(id).AsTask()));
+
+            var byId = sessions
+                .Where(s => s is not null)
+                .ToDictionary(s => s!.Id, s => s!);
+
+            _sessions = orderedIds
+                .Where(byId.ContainsKey)
+                .Select(id => byId[id])
+                .Select(s => new SessionSummary(
+                    s.Id, s.Cwd, s.Repository, s.Branch, s.Summary,
+                    s.CreatedAt, s.UpdatedAt, s.TurnCount, s.CheckpointCount))
+                .ToArray();
         }
 
         if (ShowArchived)
