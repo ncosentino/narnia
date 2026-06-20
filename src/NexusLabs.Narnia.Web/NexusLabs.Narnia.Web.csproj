@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <ProjectReference Include="..\NexusLabs.Narnia.Core\NexusLabs.Narnia.Core.csproj" />
   </ItemGroup>
 

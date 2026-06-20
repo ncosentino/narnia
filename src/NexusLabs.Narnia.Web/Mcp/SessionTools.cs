@@ -2,9 +2,8 @@ using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 using NexusLabs.Narnia.Core.Repositories;
-using NexusLabs.Narnia.McpServer.Serialization;
 
-namespace NexusLabs.Narnia.McpServer.Tools;
+namespace NexusLabs.Narnia.Web.Mcp;
 
 [McpServerToolType]
 internal sealed class SessionTools

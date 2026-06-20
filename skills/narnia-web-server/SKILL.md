@@ -15,7 +15,10 @@ allowed-tools: Bash(*) PowerShell(*) Read Write Fetch
 
 # Narnia Web Server
 
-Manage the lifecycle of the Narnia web UI (a Blazor Server app) on `http://127.0.0.1:5244`.
+Manage the lifecycle of the Narnia server (a Blazor Server app) on `http://127.0.0.1:5244`. The
+**same process also serves the MCP endpoint at `/mcp`** (Streamable HTTP), so starting this one
+server makes narnia's session-history MCP tools available to **every** Copilot CLI session — they
+all share this single instance (the plugin's `.mcp.json` points there as `type: http`).
 
 ## When to Use
 
@@ -44,7 +47,8 @@ Manage the lifecycle of the Narnia web UI (a Blazor Server app) on `http://127.0
 | Source | the narnia **plugin bundle** (resolve as below) |
 | Run dir (published server) | `<LocalAppData>/narnia/app` |
 | Run-state file (written by the server) | `<LocalAppData>/narnia/web-server.json` |
-| URL | `http://127.0.0.1:5244` (loopback only) |
+| Web UI | `http://127.0.0.1:5244` (loopback only) |
+| MCP endpoint | `http://127.0.0.1:5244/mcp` (Streamable HTTP; shared by all sessions) |
 
 `<LocalAppData>` is `%LOCALAPPDATA%` on Windows and the platform per-user data directory
 elsewhere (`~/.local/share` or `$XDG_DATA_HOME` on Linux, `~/Library/Application Support` on macOS).
