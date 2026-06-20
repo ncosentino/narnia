@@ -1,13 +1,18 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System.Diagnostics;
 using System.IO.Abstractions;
+using System.Net;
+using System.Reflection;
 using NexusLabs.Narnia.Core.Configuration;
 using NexusLabs.Narnia.Core.Models;
 using NexusLabs.Narnia.Core.Repositories;
 using NexusLabs.Narnia.Core.Services;
+using NexusLabs.Narnia.Web;
 using NexusLabs.Narnia.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -34,6 +39,26 @@ builder.Services.AddRazorComponents();
 var app = builder.Build();
 
 app.Services.GetRequiredService<NarniaSettingsDbMigrator>().MigrateUp();
+
+var serverVersion = Assembly.GetExecutingAssembly()
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+    ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var addresses = app.Services.GetRequiredService<IServer>()
+        .Features.Get<IServerAddressesFeature>()?.Addresses;
+    var url = addresses?.FirstOrDefault() ?? string.Empty;
+    var port = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Port : 0;
+    WebServerRunState.Write(new WebServerRunStateInfo(
+        Environment.ProcessId,
+        port,
+        url,
+        serverVersion,
+        Environment.ProcessPath,
+        DateTimeOffset.UtcNow));
+});
+app.Lifetime.ApplicationStopping.Register(WebServerRunState.Delete);
 
 if (!app.Environment.IsDevelopment())
 {
@@ -327,6 +352,25 @@ app.MapPost("/api/launch-bulk", async (
     }
 
     return Results.Ok(new { launched, failed });
+});
+
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "ok",
+    pid = Environment.ProcessId,
+    version = serverVersion,
+}));
+
+app.MapPost("/shutdown", (HttpContext context, IHostApplicationLifetime lifetime) =>
+{
+    var remoteIp = context.Connection.RemoteIpAddress;
+    if (remoteIp is null || !IPAddress.IsLoopback(remoteIp))
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    lifetime.StopApplication();
+    return Results.Ok(new { stopping = true });
 });
 
 app.Run();
