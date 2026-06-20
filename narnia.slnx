@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/NexusLabs.Narnia.Core/NexusLabs.Narnia.Core.csproj" />
-    <Project Path="src/NexusLabs.Narnia.McpServer/NexusLabs.Narnia.McpServer.csproj" />
     <Project Path="src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">

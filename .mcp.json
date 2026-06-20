@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "narnia": {
-      "type": "stdio",
-      "command": "dotnet",
-      "args": ["run", "--project", "src/NexusLabs.Narnia.McpServer"]
+      "type": "http",
+      "url": "http://127.0.0.1:5244/mcp",
+      "tools": ["*"]
     }
   }
 }
