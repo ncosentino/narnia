@@ -14,6 +14,7 @@ using NexusLabs.Narnia.Core.Repositories;
 using NexusLabs.Narnia.Core.Services;
 using NexusLabs.Narnia.Web;
 using NexusLabs.Narnia.Web.Components;
+using NexusLabs.Narnia.Web.Mcp;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,11 @@ builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
 builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredService<SqliteNarniaSettingsRepository>());
 
 builder.Services.AddRazorComponents();
+
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport(httpOptions => httpOptions.Stateless = true)
+    .WithTools<SessionTools>();
 
 var app = builder.Build();
 
@@ -69,7 +75,29 @@ if (!app.Environment.IsDevelopment())
 app.UseStaticFiles();
 app.UseAntiforgery();
 
+// DNS-rebinding defense for the MCP endpoint (MCP spec): the server binds loopback, but a
+// malicious web page could still cause a browser to POST here with an attacker Host header.
+// Reject /mcp requests whose Host is not a loopback name. Non-browser MCP clients send a
+// loopback Host and are unaffected.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/mcp"))
+    {
+        var host = context.Request.Host.Host;
+        var isLoopback = host is "localhost" or "127.0.0.1" or "::1" or "[::1]";
+        if (!isLoopback)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+    }
+
+    await next(context);
+});
+
 app.MapRazorComponents<App>();
+
+app.MapMcp("/mcp").DisableAntiforgery();
 
 app.MapPost("/api/sessions/{id}/overrides", async (
     string id,

@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using NexusLabs.Narnia.Core.Models;
 
-namespace NexusLabs.Narnia.McpServer.Serialization;
+namespace NexusLabs.Narnia.Web.Mcp;
 
 [JsonSerializable(typeof(Session))]
 [JsonSerializable(typeof(SessionSummary))]
