@@ -1,7 +1,15 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
+
+  <!-- Pin the transitive SQLite native bundle to the 3.x line. Microsoft.Data.Sqlite 10.0.x and
+       dbup-sqlite still resolve the 2.x line, whose last release (SQLitePCLRaw.lib.e_sqlite3 2.1.11)
+       carries GHSA-2m69-gcr7-jv3q. The 3.x bundle repackages the native library and is unaffected. -->
+  <ItemGroup Label="SQLite native">
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+  </ItemGroup>
 
   <ItemGroup Label="Microsoft">
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.3" />
