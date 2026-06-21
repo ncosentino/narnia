@@ -28,13 +28,13 @@
         <thead>
             <tr>
                 <th class="col-select"><input type="checkbox" title="Select all" onclick="narniaToggleAll(this)" /></th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Summary)">Summary@(SortIndicator(SessionSortColumn.Summary))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Summary)" aria-label="@SortAriaLabel("Summary", SessionSortColumn.Summary)">Summary@(SortIndicator(SessionSortColumn.Summary))</a></th>
                 <th>Status</th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Repository)">Repository@(SortIndicator(SessionSortColumn.Repository))</a></th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Directory)">Directory@(SortIndicator(SessionSortColumn.Directory))</a></th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Turns)">Turns@(SortIndicator(SessionSortColumn.Turns))</a></th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Checkpoints)">Checkpoints@(SortIndicator(SessionSortColumn.Checkpoints))</a></th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Updated)">Updated@(SortIndicator(SessionSortColumn.Updated))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Repository)" aria-label="@SortAriaLabel("Repository", SessionSortColumn.Repository)">Repository@(SortIndicator(SessionSortColumn.Repository))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Directory)" aria-label="@SortAriaLabel("Directory", SessionSortColumn.Directory)">Directory@(SortIndicator(SessionSortColumn.Directory))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Turns)" aria-label="@SortAriaLabel("Turns", SessionSortColumn.Turns)">Turns@(SortIndicator(SessionSortColumn.Turns))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Checkpoints)" aria-label="@SortAriaLabel("Checkpoints", SessionSortColumn.Checkpoints)">Checkpoints@(SortIndicator(SessionSortColumn.Checkpoints))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Updated)" aria-label="@SortAriaLabel("Updated", SessionSortColumn.Updated)">Updated@(SortIndicator(SessionSortColumn.Updated))</a></th>
             </tr>
         </thead>
         <tbody>
@@ -182,5 +182,14 @@ else if (_sessions is not null)
             return string.Empty;
 
         return SortDirection == SessionSortDirection.Ascending ? " ▲" : " ▼";
+    }
+
+    private string SortAriaLabel(string columnName, SessionSortColumn column)
+    {
+        if (SessionSummarySorting.ParseColumn(Sort) != column)
+            return $"Sort by {columnName}";
+
+        var current = SortDirection == SessionSortDirection.Ascending ? "ascending" : "descending";
+        return $"Sort by {columnName}, currently sorted {current}";
     }
 }
