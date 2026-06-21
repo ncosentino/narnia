@@ -16,7 +16,15 @@ using NexusLabs.Narnia.Web;
 using NexusLabs.Narnia.Web.Components;
 using NexusLabs.Narnia.Web.Mcp;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    // Pin the content root to the binary's own directory so wwwroot (and therefore static
+    // assets) resolve no matter what working directory the server is launched from. The
+    // server is started detached by hooks/skills whose cwd is arbitrary; without this,
+    // UseStaticFiles serves from the launcher's cwd and every asset 404s.
+    ContentRootPath = AppContext.BaseDirectory,
+});
 
 var options = new NarniaOptions();
 builder.Configuration.GetSection(NarniaOptions.SectionName).Bind(options);
