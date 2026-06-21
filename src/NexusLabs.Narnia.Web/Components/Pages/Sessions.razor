@@ -28,13 +28,13 @@
         <thead>
             <tr>
                 <th class="col-select"><input type="checkbox" title="Select all" onclick="narniaToggleAll(this)" /></th>
-                <th>Summary</th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Summary)" aria-label="@SortAriaLabel("Summary", SessionSortColumn.Summary)">Summary@(SortIndicator(SessionSortColumn.Summary))</a></th>
                 <th>Status</th>
-                <th>Repository</th>
-                <th>Directory</th>
-                <th>Turns</th>
-                <th>Checkpoints</th>
-                <th>Updated</th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Repository)" aria-label="@SortAriaLabel("Repository", SessionSortColumn.Repository)">Repository@(SortIndicator(SessionSortColumn.Repository))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Directory)" aria-label="@SortAriaLabel("Directory", SessionSortColumn.Directory)">Directory@(SortIndicator(SessionSortColumn.Directory))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Turns)" aria-label="@SortAriaLabel("Turns", SessionSortColumn.Turns)">Turns@(SortIndicator(SessionSortColumn.Turns))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Checkpoints)" aria-label="@SortAriaLabel("Checkpoints", SessionSortColumn.Checkpoints)">Checkpoints@(SortIndicator(SessionSortColumn.Checkpoints))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Updated)" aria-label="@SortAriaLabel("Updated", SessionSortColumn.Updated)">Updated@(SortIndicator(SessionSortColumn.Updated))</a></th>
             </tr>
         </thead>
         <tbody>
@@ -99,10 +99,19 @@ else if (_sessions is not null)
     [SupplyParameterFromQuery(Name = "showArchived")]
     public bool ShowArchived { get; set; }
 
+    [SupplyParameterFromQuery(Name = "sort")]
+    public string? Sort { get; set; }
+
+    [SupplyParameterFromQuery(Name = "dir")]
+    public string? Dir { get; set; }
+
     private SessionSummary[]? _sessions;
     private SearchResult[]? _searchResults;
     private HashSet<string>? _archivedIds;
     private Dictionary<string, string>? _resumableMap;
+
+    private SessionSortColumn SortColumn => SessionSummarySorting.ParseColumn(Sort) ?? SessionSortColumn.Updated;
+    private SessionSortDirection SortDirection => SessionSummarySorting.ParseDirection(Dir);
 
     protected override async Task OnInitializedAsync()
     {
@@ -138,8 +147,49 @@ else if (_sessions is not null)
         if (ShowArchived)
             _archivedIds = await OverridesRepository.GetArchivedSessionIdsAsync();
 
+        if (_sessions is { Length: > 0 } && SessionSummarySorting.ParseColumn(Sort) is not null)
+            _sessions = SessionSummarySorting.Sort(_sessions, SortColumn, SortDirection);
+
         if (_sessions is { Length: > 0 })
             _resumableMap = await Repository.GetResumableSessionIdsAsync(
                 _sessions.Select(s => s.Id).ToList());
+    }
+
+    private string SortUrl(SessionSortColumn column)
+    {
+        var nextDir = SessionSummarySorting.ParseColumn(Sort) == column && SortDirection == SessionSortDirection.Ascending
+            ? "desc"
+            : "asc";
+
+        var parameters = new List<string>
+        {
+            $"sort={SessionSummarySorting.ToQueryValue(column)}",
+            $"dir={nextDir}",
+        };
+
+        if (!string.IsNullOrWhiteSpace(Query))
+            parameters.Add($"q={Uri.EscapeDataString(Query)}");
+
+        if (ShowArchived)
+            parameters.Add("showArchived=true");
+
+        return "/sessions?" + string.Join("&", parameters);
+    }
+
+    private string SortIndicator(SessionSortColumn column)
+    {
+        if (SessionSummarySorting.ParseColumn(Sort) != column)
+            return string.Empty;
+
+        return SortDirection == SessionSortDirection.Ascending ? " ▲" : " ▼";
+    }
+
+    private string SortAriaLabel(string columnName, SessionSortColumn column)
+    {
+        if (SessionSummarySorting.ParseColumn(Sort) != column)
+            return $"Sort by {columnName}";
+
+        var current = SortDirection == SessionSortDirection.Ascending ? "ascending" : "descending";
+        return $"Sort by {columnName}, currently sorted {current}";
     }
 }
