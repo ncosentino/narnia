@@ -26,6 +26,19 @@ all share this single instance (the plugin's `.mcp.json` points there as `type: 
 - User asks to stop, restart, update, or check the status of the Narnia web server.
 - The `open_narnia_ui` MCP tool failed or is unavailable.
 
+## Auto-start hook
+
+The plugin ships a `sessionStart` hook (`hooks.json`) that **keeps the one server alive**: at the
+start of every Copilot CLI session it checks `http://127.0.0.1:5244/health` and, if the server is
+down **and already published** to the run dir, relaunches it (a fast no-op when it is already up).
+This is what makes the shared HTTP MCP endpoint reliably reachable across sessions and machine
+restarts.
+
+The hook deliberately does **not** build/publish — that is this skill's job. So the **first**
+start after a fresh install (run dir empty) is still done here (publish → launch); after that, the
+hook relaunches the published server automatically. If a session reports narnia's MCP tools or UI
+unavailable and the run dir has never been populated, run **Start** once.
+
 ## Design invariants (read before acting)
 
 - **Run from a published copy, never in place.** The server is `dotnet publish`ed to a run
