@@ -541,3 +541,39 @@ a { color: var(--link); }
     color: var(--text-faint);
     font-style: italic;
 }
+
+/* ── Terminal windows (recovery console) ──────────────────────────────────── */
+.window-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+.window-card--pinned { border-left: 3px solid var(--accent); }
+.window-card-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem .75rem;
+    margin-bottom: .75rem;
+}
+.window-title { font-weight: 600; font-size: 1rem; }
+.window-title .badge-archived { margin-left: .4rem; }
+.window-meta { font-size: .8rem; color: var(--text-subtle); }
+.window-actions { margin-left: auto; display: flex; gap: .4rem; }
+.window-tabs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+.window-tab {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 2fr);
+    gap: .75rem;
+    align-items: baseline;
+    padding: .35rem .5rem;
+    border-radius: 4px;
+    background: var(--surface-alt);
+}
+.window-tab-summary { font-size: .9rem; text-decoration: none; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.window-tab-summary:hover { text-decoration: underline; }
+.window-tab-repo { font-size: .8rem; color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.window-tab-dir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+

@@ -9,6 +9,25 @@ public sealed class NarniaOptions
     public string SessionStatePath { get; set; } = GetDefaultSessionStatePath();
 
     /// <summary>
+    /// Default interval, in seconds, between terminal-window snapshots. Overridable at
+    /// runtime via the <c>snapshotter_interval_seconds</c> setting. Clamped to a small
+    /// minimum to avoid a busy loop.
+    /// </summary>
+    public int SnapshotterIntervalSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Default number of most-recent closed windows to retain. Overridable at runtime via
+    /// the <c>snapshotter_retention_count</c> setting. Pinned windows are never pruned.
+    /// </summary>
+    public int SnapshotterRetentionCount { get; set; } = 50;
+
+    /// <summary>
+    /// Whether the snapshotter runs by default. Overridable at runtime via the
+    /// <c>snapshotter_enabled</c> setting (so it can be stopped/restarted without a server restart).
+    /// </summary>
+    public bool SnapshotterEnabled { get; set; } = true;
+
+    /// <summary>
     /// When set, used directly as the SQLite connection string instead of building one from <see cref="DatabasePath"/>.
     /// Intended for testing with in-memory SQLite databases.
     /// </summary>
