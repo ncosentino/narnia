@@ -33,21 +33,25 @@ public sealed class WindowSnapshotterHostedService(
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_cts is null || _loop is null)
+        var cts = _cts;
+        var loop = _loop;
+        if (cts is null || loop is null)
             return;
 
-        await _cts.CancelAsync();
+        _cts = null;
+        _loop = null;
+
+        await cts.CancelAsync();
         try
         {
-            await _loop.WaitAsync(cancellationToken);
+            await loop.WaitAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
         }
         finally
         {
-            _cts.Dispose();
-            _cts = null;
+            cts.Dispose();
         }
     }
 

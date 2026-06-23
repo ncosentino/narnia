@@ -87,21 +87,26 @@ var serverVersion = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
     ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString();
 
-app.Lifetime.ApplicationStarted.Register(() =>
+// The run-state file is global per-user state owned by a real running server. Integration
+// tests boot the app under the "Testing" environment and must not write or delete it.
+if (!app.Environment.IsEnvironment("Testing"))
 {
-    var addresses = app.Services.GetRequiredService<IServer>()
-        .Features.Get<IServerAddressesFeature>()?.Addresses;
-    var url = addresses?.FirstOrDefault() ?? string.Empty;
-    var port = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Port : 0;
-    WebServerRunState.Write(new WebServerRunStateInfo(
-        Environment.ProcessId,
-        port,
-        url,
-        serverVersion,
-        Environment.ProcessPath,
-        DateTimeOffset.UtcNow));
-});
-app.Lifetime.ApplicationStopping.Register(WebServerRunState.Delete);
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        var addresses = app.Services.GetRequiredService<IServer>()
+            .Features.Get<IServerAddressesFeature>()?.Addresses;
+        var url = addresses?.FirstOrDefault() ?? string.Empty;
+        var port = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Port : 0;
+        WebServerRunState.Write(new WebServerRunStateInfo(
+            Environment.ProcessId,
+            port,
+            url,
+            serverVersion,
+            Environment.ProcessPath,
+            DateTimeOffset.UtcNow));
+    });
+    app.Lifetime.ApplicationStopping.Register(WebServerRunState.Delete);
+}
 
 if (!app.Environment.IsDevelopment())
 {
@@ -660,3 +665,9 @@ internal sealed record BulkLaunchRequest(string[] SessionIds);
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);
 
 internal sealed record AutostartRequest(bool Enabled);
+
+/// <summary>
+/// Exposes the implicit top-level <c>Program</c> class so integration tests can boot the app
+/// with <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/>.
+/// </summary>
+public partial class Program;
