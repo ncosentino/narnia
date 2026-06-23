@@ -38,6 +38,12 @@ builder.Services.AddSingleton<SqliteTerminalWindowsRepository>();
 builder.Services.AddSingleton<ITerminalWindowsRepository>(sp => sp.GetRequiredService<SqliteTerminalWindowsRepository>());
 builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
 
+// Recovery-console window sources. The live snapshotter is the built-in source; additional
+// sources (e.g. a future launch-history source) can be registered here and will surface in the
+// console automatically via the aggregator.
+builder.Services.AddSingleton<ITerminalWindowSource, LiveTerminalWindowSource>();
+builder.Services.AddSingleton<ITerminalWindowAggregator, TerminalWindowAggregator>();
+
 if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<ILogonAutostartManager, WindowsLogonAutostartManager>();
 else
@@ -411,12 +417,11 @@ app.MapPost("/api/launch-bulk", async (
 
 // ── Terminal windows (recovery console) API ─────────────────────────────────
 app.MapGet("/api/windows", async (
-    ITerminalWindowsRepository windowsRepo,
+    ITerminalWindowAggregator windows,
     ISessionRepository sessionRepo,
     CancellationToken ct) =>
 {
-    var open = await windowsRepo.GetOpenAsync(ct);
-    var closed = await windowsRepo.GetClosedAsync(50, ct);
+    var snapshot = await windows.GetWindowsAsync(50, ct);
 
     async Task<object> ProjectAsync(TerminalWindow window)
     {
@@ -450,12 +455,12 @@ app.MapGet("/api/windows", async (
         };
     }
 
-    var openProjected = new List<object>(open.Count);
-    foreach (var window in open)
+    var openProjected = new List<object>(snapshot.Open.Count);
+    foreach (var window in snapshot.Open)
         openProjected.Add(await ProjectAsync(window));
 
-    var closedProjected = new List<object>(closed.Count);
-    foreach (var window in closed)
+    var closedProjected = new List<object>(snapshot.Closed.Count);
+    foreach (var window in snapshot.Closed)
         closedProjected.Add(await ProjectAsync(window));
 
     return Results.Ok(new { open = openProjected, closed = closedProjected });

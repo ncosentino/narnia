@@ -1,7 +1,8 @@
 @page "/windows"
 @using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Repositories
-@inject ITerminalWindowsRepository WindowsRepository
+@using NexusLabs.Narnia.Core.Services
+@inject ITerminalWindowAggregator WindowSources
 @inject ISessionRepository SessionRepository
 
 <PageTitle>Windows — Narnia</PageTitle>
@@ -51,8 +52,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _open = await WindowsRepository.GetOpenAsync();
-        _closed = await WindowsRepository.GetClosedAsync(50);
+        var snapshot = await WindowSources.GetWindowsAsync(50);
+        _open = snapshot.Open;
+        _closed = snapshot.Closed;
 
         var sessionIds = _open.Concat(_closed)
             .SelectMany(w => w.Tabs)
