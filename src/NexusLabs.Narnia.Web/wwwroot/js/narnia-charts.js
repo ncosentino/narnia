@@ -329,3 +329,52 @@ async function narniaDeleteWindow(id) {
         alert('Error deleting window: ' + e.message);
     }
 }
+
+// ── Snapshotter & autostart settings ─────────────────────────────────────────
+async function narniaSaveSetting(key, value, el) {
+    try {
+        var resp = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: key, value: value }),
+        });
+        if (!resp.ok) {
+            alert('Failed to save setting: HTTP ' + resp.status);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        alert('Error saving setting: ' + e.message);
+        return false;
+    }
+}
+
+async function narniaSaveSnapshotterConfig(btn) {
+    var interval = document.getElementById('setting-snap-interval');
+    var retention = document.getElementById('setting-snap-retention');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    var ok = await narniaSaveSetting('snapshotter_interval_seconds', interval.value);
+    ok = (await narniaSaveSetting('snapshotter_retention_count', retention.value)) && ok;
+    if (btn) {
+        btn.textContent = ok ? '✅ Saved!' : 'Save';
+        setTimeout(function () { btn.textContent = 'Save'; btn.disabled = false; }, 2500);
+    }
+}
+
+async function narniaSetAutostart(enabled, el) {
+    try {
+        var resp = await fetch('/api/autostart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled }),
+        });
+        if (!resp.ok) {
+            var data = await resp.json().catch(function () { return null; });
+            alert('Failed to update autostart: ' + (data || 'HTTP ' + resp.status));
+            if (el) el.checked = !enabled;
+        }
+    } catch (e) {
+        alert('Error updating autostart: ' + e.message);
+        if (el) el.checked = !enabled;
+    }
+}

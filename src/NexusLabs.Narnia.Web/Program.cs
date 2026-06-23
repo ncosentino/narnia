@@ -39,6 +39,11 @@ builder.Services.AddSingleton<ITerminalWindowsRepository>(sp => sp.GetRequiredSe
 builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
 
 if (OperatingSystem.IsWindows())
+    builder.Services.AddSingleton<ILogonAutostartManager, WindowsLogonAutostartManager>();
+else
+    builder.Services.AddSingleton<ILogonAutostartManager, UnsupportedLogonAutostartManager>();
+
+if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<IProcessSnapshotProvider, WmiProcessSnapshotProvider>();
     builder.Services.AddSingleton<ILiveWindowDetector, LiveWindowDetector>();
@@ -56,6 +61,21 @@ builder.Services
 var app = builder.Build();
 
 app.Services.GetRequiredService<NarniaSettingsDbMigrator>().MigrateUp();
+
+// Headless one-shot: `NexusLabs.Narnia.Web snapshot` records open terminal windows once and
+// exits, without starting the web server. Intended for a scheduled task that keeps recording
+// even when the server is not running.
+if (args.Contains("snapshot", StringComparer.OrdinalIgnoreCase))
+{
+    if (OperatingSystem.IsWindows())
+    {
+        var snapshotter = app.Services.GetRequiredService<ITerminalWindowSnapshotter>();
+        var retention = app.Services.GetRequiredService<NarniaOptions>().SnapshotterRetentionCount;
+        await snapshotter.SnapshotAsync(DateTimeOffset.UtcNow, retention);
+    }
+
+    return;
+}
 
 var serverVersion = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
@@ -517,6 +537,27 @@ app.MapDelete("/api/windows/{id}", async (
     return Results.NoContent();
 });
 
+// ── Logon autostart API ─────────────────────────────────────────────────────
+app.MapGet("/api/autostart", (ILogonAutostartManager autostart) =>
+    Results.Ok(new
+    {
+        supported = autostart.IsSupported,
+        enabled = autostart.IsSupported && autostart.IsEnabled(),
+    }));
+
+app.MapPost("/api/autostart", (AutostartRequest request, ILogonAutostartManager autostart) =>
+{
+    if (!autostart.IsSupported)
+        return Results.BadRequest("Logon autostart is only supported on Windows.");
+
+    if (request.Enabled)
+        autostart.Enable();
+    else
+        autostart.Disable();
+
+    return Results.Ok(new { enabled = autostart.IsEnabled() });
+});
+
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
@@ -612,3 +653,5 @@ internal sealed record LaunchRequest(string SessionId, string Target);
 internal sealed record BulkLaunchRequest(string[] SessionIds);
 
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);
+
+internal sealed record AutostartRequest(bool Enabled);
