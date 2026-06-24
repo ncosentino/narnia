@@ -44,4 +44,18 @@ public sealed class TerminalCommandBuilder : ITerminalCommandBuilder
     /// <inheritdoc />
     public string BuildWindowCommand(string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs) =>
         string.Join(" ; ", tabs.Select(tab => BuildNewTabSegment(shellPath, shellName, tab)));
+
+    /// <inheritdoc />
+    public string BuildDirectLaunchArguments(string shellName, TerminalLaunchTab tab)
+    {
+        var resumeCommand = $"copilot --resume={tab.SessionId}";
+        var safeTitle = tab.Title.Replace("\"", "\\\"");
+        return shellName switch
+        {
+            "pwsh" or "powershell" =>
+                $"-NoExit -Command \"$host.UI.RawUI.WindowTitle = '{tab.Title.Replace("'", "''")}'; {resumeCommand}\"",
+            "cmd" => $"/k title {tab.Title} & {resumeCommand}",
+            _ => $"-c \"printf '\\033]0;{safeTitle}\\007'; {resumeCommand}; exec $SHELL\"",
+        };
+    }
 }

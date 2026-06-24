@@ -39,4 +39,10 @@ public interface ITerminalCommandBuilder
     /// given tabs in order.
     /// </summary>
     string BuildWindowCommand(string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs);
+
+    /// <summary>
+    /// Builds the shell arguments for launching a tab directly (without Windows Terminal), including
+    /// a best-effort window-title set. Used as the fallback when <c>wt.exe</c> is unavailable.
+    /// </summary>
+    string BuildDirectLaunchArguments(string shellName, TerminalLaunchTab tab);
 }

@@ -52,9 +52,11 @@ public sealed class WindowsEndpointsTests
     }
 
     [Fact]
-    public async Task Reopen_WithoutWindowsTerminal_Returns400_AndNeverBuildsCommand()
+    public async Task Reopen_WithoutWindowsTerminal_FallsBackToDirectLaunch()
     {
         using var factory = new NarniaWebAppFactory();
+        // Default CommandBuilder reports no Windows Terminal, so the launcher uses the direct
+        // shell fallback instead of erroring — reopen is now consistent with launch/launch-bulk.
         var repo = factory.WindowsRepository;
         await repo.UpsertOpenAsync(100, "k", [Tab("sess-1", 0)], Now, Ct);
         var id = (await repo.GetOpenAsync(Ct)).Single().Id;
@@ -62,7 +64,11 @@ public sealed class WindowsEndpointsTests
         var client = factory.CreateClient();
         var response = await client.PostAsync($"/api/windows/{id}/reopen", null, Ct);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        response.EnsureSuccessStatusCode();
+        // The single tab is launched directly (no wt.exe), never as a joined window command.
+        factory.ProcessLauncher.Verify(
+            p => p.Start(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+            Times.Once);
         factory.CommandBuilder.Verify(
             b => b.BuildWindowCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<TerminalLaunchTab>>()),
             Times.Never);

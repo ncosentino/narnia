@@ -46,6 +46,8 @@ builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredSer
 builder.Services.AddSingleton<SqliteTerminalWindowsRepository>();
 builder.Services.AddSingleton<ITerminalWindowsRepository>(sp => sp.GetRequiredService<SqliteTerminalWindowsRepository>());
 builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
+builder.Services.AddSingleton<IProcessLauncher, ShellExecuteProcessLauncher>();
+builder.Services.AddSingleton<ITerminalLauncher, TerminalLauncher>();
 
 // Recovery-console window sources. The live snapshotter is the built-in source; additional
 // sources (e.g. a future launch-history source) can be registered here and will surface in the
@@ -240,7 +242,7 @@ app.MapPost("/api/launch", async (
     ISessionOverridesRepository overridesRepo,
     IWorkspaceReader workspaceReader,
     INarniaSettingsRepository settingsRepo,
-    ITerminalCommandBuilder commandBuilder,
+    ITerminalLauncher launcher,
     CancellationToken ct) =>
 {
     if (!Guid.TryParse(request.SessionId, out _))
@@ -273,47 +275,16 @@ app.MapPost("/api/launch", async (
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
 
-    var title = ov?.TerminalTitle ?? session.Summary ?? $"Narnia: {request.SessionId[..8]}";
-    var resumeCmd = $"copilot --resume={request.SessionId}";
+    var title = ov?.TerminalTitle ?? session.Summary ?? $"Narnia: {ShortSession(request.SessionId)}";
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
+    var tab = new TerminalLaunchTab(request.SessionId, title, directory);
 
-    // Prefer Windows Terminal (wt.exe) when available — its --title flag
-    // persists even after the child process tries to overwrite it.
-    var wtPath = commandBuilder.FindWindowsTerminalPath();
-
-    var psi = new ProcessStartInfo { UseShellExecute = true };
-
-    if (wtPath is not null)
-    {
-        psi.FileName = wtPath;
-        // wt new-tab --title keeps the title even when the shell inside tries to change it
-        psi.Arguments = commandBuilder.BuildNewTabSegment(
-            shellPath, shellName, new TerminalLaunchTab(request.SessionId, title, directory));
-    }
-    else
-    {
-        psi.FileName = shellPath;
-        if (directory is not null)
-            psi.WorkingDirectory = directory;
-
-        var safeTitle = title.Replace("\"", "\\\"");
-        psi.Arguments = shellName switch
-        {
-            "pwsh" or "powershell" => $"-NoExit -Command \"$host.UI.RawUI.WindowTitle = '{title.Replace("'", "''")}'; {resumeCmd}\"",
-            "cmd" => $"/k title {title} & {resumeCmd}",
-            _ => $"-c \"printf '\\033]0;{safeTitle}\\007'; {resumeCmd}; exec $SHELL\"",
-        };
-    }
-
-    try
-    {
-        Process.Start(psi);
-        return Results.Ok(new { launched = true });
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest($"Failed to launch shell: {ex.Message}");
-    }
+    // A single session opens in its own window; with one tab the mode is moot, but SeparateWindows
+    // keeps the semantics explicit and consistent with the unified launcher.
+    var outcome = launcher.Launch(shellPath, shellName, [tab], TerminalWindowMode.SeparateWindows);
+    return outcome.Failures.Count == 0
+        ? Results.Ok(new { launched = true })
+        : Results.BadRequest($"Failed to launch shell: {outcome.Failures[0].Reason}");
 });
 
 app.MapPost("/api/launch-bulk", async (
@@ -322,7 +293,7 @@ app.MapPost("/api/launch-bulk", async (
     ISessionOverridesRepository overridesRepo,
     IWorkspaceReader workspaceReader,
     INarniaSettingsRepository settingsRepo,
-    ITerminalCommandBuilder commandBuilder,
+    ITerminalLauncher launcher,
     CancellationToken ct) =>
 {
     if (request.SessionIds is not { Length: > 0 })
@@ -335,12 +306,9 @@ app.MapPost("/api/launch-bulk", async (
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
 
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
-    var wtPath = commandBuilder.FindWindowsTerminalPath();
-    var useWt = wtPath is not null;
 
-    var launched = new List<object>();
+    var tabs = new List<TerminalLaunchTab>();
     var failed = new List<object>();
-    var tabArgs = new List<string>();
 
     foreach (var sid in request.SessionIds)
     {
@@ -373,59 +341,17 @@ app.MapPost("/api/launch-bulk", async (
                 directory = gitRoot;
         }
 
-        var title = ov?.TerminalTitle ?? session.Summary ?? $"Narnia: {sid[..8]}";
-        var resumeCmd = $"copilot --resume={sid}";
-
-        if (useWt)
-        {
-            tabArgs.Add(commandBuilder.BuildNewTabSegment(
-                shellPath, shellName, new TerminalLaunchTab(sid, title, directory)));
-            launched.Add(new { sessionId = sid, title });
-        }
-        else
-        {
-            // Non-WT fallback: launch each as a separate process
-            var psi = new ProcessStartInfo { FileName = shellPath, UseShellExecute = true };
-            if (directory is not null) psi.WorkingDirectory = directory;
-            var safeTitle = title.Replace("\"", "\\\"");
-            psi.Arguments = shellName switch
-            {
-                "pwsh" or "powershell" => $"-NoExit -Command \"$host.UI.RawUI.WindowTitle = '{title.Replace("'", "''")}'; {resumeCmd}\"",
-                "cmd" => $"/k title {title} & {resumeCmd}",
-                _ => $"-c \"printf '\\033]0;{safeTitle}\\007'; {resumeCmd}; exec $SHELL\"",
-            };
-            try
-            {
-                Process.Start(psi);
-                launched.Add(new { sessionId = sid, title });
-            }
-            catch (Exception ex)
-            {
-                failed.Add(new { sessionId = sid, reason = ex.Message });
-            }
-        }
+        var title = ov?.TerminalTitle ?? session.Summary ?? $"Narnia: {ShortSession(sid)}";
+        tabs.Add(new TerminalLaunchTab(sid, title, directory));
     }
 
-    // For WT: launch all tabs in a single command
-    if (useWt && tabArgs.Count > 0)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = wtPath!,
-            Arguments = string.Join(" ; ", tabArgs),
-            UseShellExecute = true,
-        };
-        try
-        {
-            Process.Start(psi);
-        }
-        catch (Exception ex)
-        {
-            // If the whole WT command fails, move all to failed
-            failed.AddRange(launched.Select(l => new { sessionId = ((dynamic)l).sessionId, reason = ex.Message }));
-            launched.Clear();
-        }
-    }
+    var mode = request.SeparateWindows
+        ? TerminalWindowMode.SeparateWindows
+        : TerminalWindowMode.SingleWindow;
+    var outcome = launcher.Launch(shellPath, shellName, tabs, mode);
+
+    var launched = outcome.LaunchedSessionIds.Select(id => new { sessionId = id }).ToList();
+    failed.AddRange(outcome.Failures.Select(f => new { sessionId = f.SessionId, reason = f.Reason }));
 
     return Results.Ok(new { launched, failed });
 });
@@ -488,7 +414,7 @@ app.MapPost("/api/windows/{id}/reopen", async (
     IWorkspaceReader workspaceReader,
     INarniaSettingsRepository settingsRepo,
     ITerminalWindowsRepository windowsRepo,
-    ITerminalCommandBuilder commandBuilder,
+    ITerminalLauncher launcher,
     CancellationToken ct) =>
 {
     var window = await windowsRepo.GetByIdAsync(id, ct);
@@ -496,10 +422,6 @@ app.MapPost("/api/windows/{id}/reopen", async (
         return Results.NotFound("Window not found");
     if (window.Tabs.Count == 0)
         return Results.BadRequest("Window has no tabs to reopen");
-
-    var wtPath = commandBuilder.FindWindowsTerminalPath();
-    if (wtPath is null)
-        return Results.BadRequest("Windows Terminal (wt.exe) is required to reopen a window.");
 
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
@@ -513,26 +435,14 @@ app.MapPost("/api/windows/{id}/reopen", async (
         var ov = await overridesRepo.GetOverrideAsync(tab.SessionId, ct);
         var workspace = workspaceReader.ReadWorkspace(tab.SessionId);
         var directory = ResolveReopenDirectory(tab.Directory, ov, session, workspace);
-        var title = ov?.TerminalTitle ?? session?.Summary ?? $"Narnia: {tab.SessionId[..8]}";
+        var title = ov?.TerminalTitle ?? session?.Summary ?? $"Narnia: {ShortSession(tab.SessionId)}";
         launchTabs.Add(new TerminalLaunchTab(tab.SessionId, title, directory));
     }
 
-    var psi = new ProcessStartInfo
-    {
-        FileName = wtPath,
-        Arguments = commandBuilder.BuildWindowCommand(shellPath, shellName, launchTabs),
-        UseShellExecute = true,
-    };
-
-    try
-    {
-        Process.Start(psi);
-        return Results.Ok(new { reopened = true, tabs = launchTabs.Count });
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest($"Failed to reopen window: {ex.Message}");
-    }
+    var outcome = launcher.Launch(shellPath, shellName, launchTabs, TerminalWindowMode.SingleWindow);
+    return outcome.Failures.Count == 0
+        ? Results.Ok(new { reopened = true, tabs = outcome.LaunchedSessionIds.Count })
+        : Results.BadRequest($"Failed to reopen window: {outcome.Failures[0].Reason}");
 });
 
 app.MapPost("/api/windows/{id}/name", async (
@@ -599,6 +509,11 @@ app.MapPost("/shutdown", (HttpContext context, IHostApplicationLifetime lifetime
 
 app.Run();
 return;
+
+// A short, display-only session label. Real session ids are GUIDs, but guard against shorter
+// ids so a malformed value never crashes a launch/reopen title fallback.
+static string ShortSession(string sessionId) =>
+    sessionId.Length >= 8 ? sessionId[..8] : sessionId;
 
 static string? DetectDefaultShell()
 {
@@ -670,7 +585,7 @@ internal sealed record SettingRequest(string Key, string? Value);
 
 internal sealed record LaunchRequest(string SessionId, string Target);
 
-internal sealed record BulkLaunchRequest(string[] SessionIds);
+internal sealed record BulkLaunchRequest(string[] SessionIds, bool SeparateWindows = false);
 
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);
 
