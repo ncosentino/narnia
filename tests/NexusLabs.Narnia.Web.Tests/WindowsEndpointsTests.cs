@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
 using NexusLabs.Narnia.Core.Models;
+using NexusLabs.Narnia.Core.Repositories;
 using NexusLabs.Narnia.Core.Services;
 
 namespace NexusLabs.Narnia.Web.Tests;
@@ -146,6 +148,48 @@ public sealed class WindowsEndpointsTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         factory.Autostart.Verify(a => a.Enable(), Times.Never);
     }
+
+    [Fact]
+    public async Task BulkReopen_SelectedSessions_LaunchesEachViaFallback()
+    {
+        using var factory = new NarniaWebAppFactory();
+        await factory.Services.GetRequiredService<INarniaSettingsRepository>()
+            .SetAsync("shell_path", "pwsh.exe", Ct);
+        var repo = factory.WindowsRepository;
+        await repo.UpsertOpenAsync(100, "k1", [Tab("11111111-1111-4111-8111-111111111111", 0)], Now, Ct);
+        await repo.UpsertOpenAsync(200, "k2", [Tab("22222222-2222-4222-8222-222222222222", 0)], Now, Ct);
+        var ids = (await repo.GetOpenAsync(Ct)).Select(w => w.Id).ToArray();
+        foreach (var id in ids)
+            await repo.CloseAsync(id, Now.AddMinutes(1), Ct);
+
+        var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/windows/reopen", new { ids, separateWindows = true }, Ct);
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<BulkReopenResponse>(Ct);
+        Assert.Equal(2, body!.Reopened);
+        // No Windows Terminal in tests → each selected session launches via the direct fallback.
+        factory.ProcessLauncher.Verify(
+            p => p.Start(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task BulkReopen_EmptySelection_Returns400()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/windows/reopen", new { ids = Array.Empty<string>() }, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        factory.ProcessLauncher.Verify(
+            p => p.Start(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    private sealed record BulkReopenResponse(int Reopened);
 
     private sealed record WindowsResponse(List<WindowDto> Open, List<WindowDto> Closed);
 
