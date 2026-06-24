@@ -30,7 +30,13 @@
 
 @if (_open.Count > 0)
 {
-    <h2>Open now <span class="window-meta">@_open.Count session@(_open.Count == 1 ? "" : "s")</span></h2>
+    <div class="page-actions">
+        <h2>Open now <span class="window-meta">@_open.Count session@(_open.Count == 1 ? "" : "s")</span></h2>
+        <div class="closed-controls">
+            <label class="closed-control"><input type="checkbox" id="open-check-all" onchange="narniaToggleAllOpen(this)" /> Select all</label>
+            <button class="btn-bulk-group" id="btn-save-open-group" onclick="narniaSaveOpenAsGroup(this)" disabled>💾 Save selected as group (0)</button>
+        </div>
+    </div>
     <div class="window-card">
         <ul class="window-tabs">
             @foreach (var record in _open)
@@ -91,10 +97,15 @@
         var tab = record.Tabs.OrderBy(t => t.TabOrder).FirstOrDefault();
         var sessionId = tab?.SessionId;
         var session = sessionId is not null ? Lookup(sessionId) : null;
-        <li class="window-tab @(isClosed ? "window-tab--actionable" : "")">
+        var selectable = isClosed || sessionId is not null;
+        <li class="window-tab @(selectable ? "window-tab--actionable" : "")">
             @if (isClosed)
             {
                 <input type="checkbox" class="closed-check" value="@record.Id" onchange="narniaClosedSelectionChanged()" aria-label="Select session" />
+            }
+            else if (sessionId is not null)
+            {
+                <input type="checkbox" class="open-check" value="@sessionId" onchange="narniaOpenSelectionChanged()" aria-label="Select session" />
             }
             <a class="window-tab-summary" href="/sessions/@sessionId">@(session?.Summary ?? Short(sessionId))</a>
             <span class="window-tab-repo">@(session?.Repository ?? "—")</span>

@@ -466,6 +466,18 @@ a { color: var(--link); }
 }
 .btn-bulk-archive:hover { background: #535c5f; }
 .btn-bulk-archive:disabled { opacity: .6; cursor: not-allowed; }
+.btn-bulk-group {
+    background: #8e7cc3;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    padding: .4rem 1rem;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-bulk-group:hover { background: #7a68b0; }
+.btn-bulk-group:disabled { opacity: .6; cursor: not-allowed; }
 .btn-archive {
     background: none;
     border: 1px solid var(--border);
@@ -590,5 +602,11 @@ a { color: var(--link); }
 .closed-controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .closed-control { display: inline-flex; align-items: center; gap: .35rem; font-size: .85rem; color: var(--text-subtle); cursor: pointer; }
 .closed-check { cursor: pointer; }
+.open-check { cursor: pointer; }
 #btn-reopen-selected:disabled { opacity: .5; cursor: not-allowed; }
+#btn-save-open-group:disabled { opacity: .5; cursor: not-allowed; }
+
+.group-card { margin-bottom: 1.5rem; }
+.group-head { align-items: center; }
+.group-head h2 { margin: 0; }
 

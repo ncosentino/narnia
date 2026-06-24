@@ -189,6 +189,29 @@ public sealed class WindowsEndpointsTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task Reopen_KeepsClosedRecord_SoItStaysInRecentlyClosed()
+    {
+        // Reopening a closed window must not consume its record: the user expects a group of
+        // sessions they always restore to remain available in "Recently closed" afterwards.
+        using var factory = new NarniaWebAppFactory();
+        await factory.Services.GetRequiredService<INarniaSettingsRepository>()
+            .SetAsync("shell_path", "pwsh.exe", Ct);
+        var repo = factory.WindowsRepository;
+        await repo.UpsertOpenAsync(100, "k", [Tab("11111111-1111-4111-8111-111111111111", 0)], Now, Ct);
+        var id = (await repo.GetOpenAsync(Ct)).Single().Id;
+        await repo.CloseAsync(id, Now.AddMinutes(1), Ct);
+
+        var client = factory.CreateClient();
+        var response = await client.PostAsync($"/api/windows/{id}/reopen", null, Ct);
+
+        response.EnsureSuccessStatusCode();
+        var stillClosed = await repo.GetByIdAsync(id, Ct);
+        Assert.NotNull(stillClosed);
+        Assert.Equal(TerminalWindowStatus.Closed, stillClosed!.Status);
+        Assert.Contains(await repo.GetClosedAsync(50, Ct), w => w.Id == id);
+    }
+
     private sealed record BulkReopenResponse(int Reopened);
 
     private sealed record WindowsResponse(List<WindowDto> Open, List<WindowDto> Closed);

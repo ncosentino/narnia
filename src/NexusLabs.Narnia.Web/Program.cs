@@ -45,6 +45,8 @@ builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
 builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredService<SqliteNarniaSettingsRepository>());
 builder.Services.AddSingleton<SqliteTerminalWindowsRepository>();
 builder.Services.AddSingleton<ITerminalWindowsRepository>(sp => sp.GetRequiredService<SqliteTerminalWindowsRepository>());
+builder.Services.AddSingleton<SqliteSessionGroupsRepository>();
+builder.Services.AddSingleton<ISessionGroupsRepository>(sp => sp.GetRequiredService<SqliteSessionGroupsRepository>());
 builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
 builder.Services.AddSingleton<IProcessLauncher, ShellExecuteProcessLauncher>();
 builder.Services.AddSingleton<ITerminalLauncher, TerminalLauncher>();
@@ -508,6 +510,147 @@ app.MapDelete("/api/windows/{id}", async (
     return Results.NoContent();
 });
 
+// ── Session groups API ──────────────────────────────────────────────────────
+app.MapGet("/api/groups", async (
+    ISessionGroupsRepository groupsRepo,
+    ISessionRepository sessionRepo,
+    CancellationToken ct) =>
+{
+    var groups = await groupsRepo.GetAllAsync(ct);
+
+    var projected = new List<object>(groups.Count);
+    foreach (var group in groups)
+    {
+        var members = new List<object>(group.Members.Count);
+        foreach (var member in group.Members)
+        {
+            var session = await sessionRepo.GetByIdAsync(member.SessionId, ct);
+            members.Add(new
+            {
+                sessionId = member.SessionId,
+                order = member.MemberOrder,
+                summary = session?.Summary,
+                repository = session?.Repository,
+                branch = session?.Branch,
+            });
+        }
+
+        projected.Add(new
+        {
+            id = group.Id,
+            name = group.Name,
+            createdAt = group.CreatedAt,
+            updatedAt = group.UpdatedAt,
+            members,
+        });
+    }
+
+    return Results.Ok(new { groups = projected });
+});
+
+app.MapPost("/api/groups", async (
+    GroupRequest request,
+    ISessionGroupsRepository groupsRepo,
+    CancellationToken ct) =>
+{
+    var name = request.Name?.Trim();
+    if (string.IsNullOrWhiteSpace(name))
+        return Results.BadRequest("A group name is required.");
+    if (request.SessionIds is not { Length: > 0 })
+        return Results.BadRequest("Select at least one session for the group.");
+
+    var group = await groupsRepo.CreateAsync(name, request.SessionIds, DateTimeOffset.UtcNow, ct);
+    return Results.Ok(new { id = group.Id, name = group.Name, count = group.Members.Count });
+});
+
+app.MapPost("/api/groups/{id}/rename", async (
+    string id,
+    GroupRenameRequest request,
+    ISessionGroupsRepository groupsRepo,
+    CancellationToken ct) =>
+{
+    var name = request.Name?.Trim();
+    if (string.IsNullOrWhiteSpace(name))
+        return Results.BadRequest("A group name is required.");
+
+    var group = await groupsRepo.GetByIdAsync(id, ct);
+    if (group is null)
+        return Results.NotFound("Group not found");
+
+    await groupsRepo.RenameAsync(id, name, DateTimeOffset.UtcNow, ct);
+    return Results.Ok(new { id, name });
+});
+
+app.MapPost("/api/groups/{id}/members", async (
+    string id,
+    GroupMembersRequest request,
+    ISessionGroupsRepository groupsRepo,
+    CancellationToken ct) =>
+{
+    if (request.SessionIds is not { Length: > 0 })
+        return Results.BadRequest("Select at least one session for the group.");
+
+    var group = await groupsRepo.GetByIdAsync(id, ct);
+    if (group is null)
+        return Results.NotFound("Group not found");
+
+    await groupsRepo.SetMembersAsync(id, request.SessionIds, DateTimeOffset.UtcNow, ct);
+    return Results.Ok(new { id, count = request.SessionIds.Length });
+});
+
+app.MapDelete("/api/groups/{id}", async (
+    string id,
+    ISessionGroupsRepository groupsRepo,
+    CancellationToken ct) =>
+{
+    await groupsRepo.DeleteAsync(id, ct);
+    return Results.NoContent();
+});
+
+app.MapPost("/api/groups/{id}/reopen", async (
+    string id,
+    GroupReopenRequest request,
+    ISessionGroupsRepository groupsRepo,
+    ISessionRepository sessionRepo,
+    ISessionOverridesRepository overridesRepo,
+    IWorkspaceReader workspaceReader,
+    INarniaSettingsRepository settingsRepo,
+    ITerminalLauncher launcher,
+    CancellationToken ct) =>
+{
+    var group = await groupsRepo.GetByIdAsync(id, ct);
+    if (group is null)
+        return Results.NotFound("Group not found");
+    if (group.Members.Count == 0)
+        return Results.BadRequest("Group has no sessions to reopen.");
+
+    var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
+    if (string.IsNullOrWhiteSpace(shellPath))
+        return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
+
+    var launchTabs = new List<TerminalLaunchTab>(group.Members.Count);
+    foreach (var member in group.Members.OrderBy(m => m.MemberOrder))
+    {
+        launchTabs.Add(await BuildLaunchTabAsync(
+            member.SessionId, null, sessionRepo, overridesRepo, workspaceReader, ct));
+    }
+
+    // SeparateWindows opens each session in its own window; otherwise the whole group opens as
+    // tabs in a single window. Reusing the unified launcher keeps this identical to every other
+    // launch path.
+    var mode = request.SeparateWindows
+        ? TerminalWindowMode.SeparateWindows
+        : TerminalWindowMode.SingleWindow;
+    var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode);
+
+    return Results.Ok(new
+    {
+        reopened = outcome.LaunchedSessionIds.Count,
+        failed = outcome.Failures.Select(f => new { sessionId = f.SessionId, reason = f.Reason }).ToList(),
+    });
+});
+
 // ── Logon autostart API ─────────────────────────────────────────────────────
 app.MapGet("/api/autostart", (ILogonAutostartManager autostart) =>
     Results.Ok(new
@@ -624,15 +767,31 @@ static async Task<List<TerminalLaunchTab>> BuildReopenTabsAsync(
     var launchTabs = new List<TerminalLaunchTab>(window.Tabs.Count);
     foreach (var tab in window.Tabs.OrderBy(t => t.TabOrder))
     {
-        var session = await sessionRepo.GetByIdAsync(tab.SessionId, ct);
-        var ov = await overridesRepo.GetOverrideAsync(tab.SessionId, ct);
-        var workspace = workspaceReader.ReadWorkspace(tab.SessionId);
-        var directory = ResolveReopenDirectory(tab.Directory, ov, session, workspace);
-        var title = ov?.TerminalTitle ?? session?.Summary ?? $"Narnia: {ShortSession(tab.SessionId)}";
-        launchTabs.Add(new TerminalLaunchTab(tab.SessionId, title, directory));
+        launchTabs.Add(await BuildLaunchTabAsync(
+            tab.SessionId, tab.Directory, sessionRepo, overridesRepo, workspaceReader, ct));
     }
 
     return launchTabs;
+}
+
+// Resolves a single session id into a launch tab (directory + title), shared by window reopen and
+// session-group reopen. A captured directory (when a window recorded one) takes precedence;
+// otherwise the directory falls back to the session override's local path, the session cwd, then
+// the git root.
+static async Task<TerminalLaunchTab> BuildLaunchTabAsync(
+    string sessionId,
+    string? capturedDirectory,
+    ISessionRepository sessionRepo,
+    ISessionOverridesRepository overridesRepo,
+    IWorkspaceReader workspaceReader,
+    CancellationToken ct)
+{
+    var session = await sessionRepo.GetByIdAsync(sessionId, ct);
+    var ov = await overridesRepo.GetOverrideAsync(sessionId, ct);
+    var workspace = workspaceReader.ReadWorkspace(sessionId);
+    var directory = ResolveReopenDirectory(capturedDirectory, ov, session, workspace);
+    var title = ov?.TerminalTitle ?? session?.Summary ?? $"Narnia: {ShortSession(sessionId)}";
+    return new TerminalLaunchTab(sessionId, title, directory);
 }
 
 internal sealed record OverrideRequest(
@@ -653,6 +812,11 @@ internal sealed record BulkLaunchRequest(string[] SessionIds, bool SeparateWindo
 internal sealed record BulkReopenRequest(string[] Ids, bool SeparateWindows = false);
 
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);
+
+internal sealed record GroupRequest(string? Name, string[] SessionIds);
+internal sealed record GroupRenameRequest(string? Name);
+internal sealed record GroupMembersRequest(string[] SessionIds);
+internal sealed record GroupReopenRequest(bool SeparateWindows = false);
 
 internal sealed record AutostartRequest(bool Enabled);
 

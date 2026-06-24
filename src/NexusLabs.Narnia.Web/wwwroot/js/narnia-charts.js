@@ -390,6 +390,152 @@ async function narniaDeleteWindow(id) {
     }
 }
 
+// ── Session groups ───────────────────────────────────────────────────────────
+// Shared create flow: prompt for a name, then POST the chosen session ids as a new group.
+async function narniaCreateGroup(sessionIds, btn) {
+    if (!sessionIds || sessionIds.length === 0) return;
+    var name = prompt('Name this group (' + sessionIds.length + ' session' + (sessionIds.length === 1 ? '' : 's') + '):', '');
+    if (name === null) return;
+    name = name.trim();
+    if (name === '') { alert('A group name is required.'); return; }
+
+    var origText = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Saving…'; }
+    try {
+        var resp = await fetch('/api/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, sessionIds: sessionIds }),
+        });
+        if (resp.ok) {
+            if (btn) {
+                btn.textContent = '✅ Saved!';
+                setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 2500);
+            } else {
+                alert('Saved group "' + name + '".');
+            }
+        } else {
+            var err = await resp.json().catch(function () { return null; });
+            alert('Failed to save group: ' + (err || 'HTTP ' + resp.status));
+            if (btn) { btn.textContent = origText; btn.disabled = false; }
+        }
+    } catch (e) {
+        alert('Error saving group: ' + e.message);
+        if (btn) { btn.textContent = origText; btn.disabled = false; }
+    }
+}
+
+// Manual curation entry point: the checked sessions on the Sessions list.
+function narniaSaveSessionsAsGroup(btn) {
+    var checks = document.querySelectorAll('.session-check:checked');
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    if (ids.length === 0) return;
+    narniaCreateGroup(ids, btn);
+}
+
+// Snapshot entry point: the checked sessions in the "Open now" list on the Windows page.
+function narniaOpenSelectedIds() {
+    var checks = document.querySelectorAll('.open-check:checked');
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    return ids;
+}
+
+function narniaOpenSelectionChanged() {
+    var all = document.querySelectorAll('.open-check');
+    var selected = narniaOpenSelectedIds();
+    var btn = document.getElementById('btn-save-open-group');
+    if (btn) {
+        btn.disabled = selected.length === 0;
+        btn.textContent = '💾 Save selected as group (' + selected.length + ')';
+    }
+    var master = document.getElementById('open-check-all');
+    if (master) {
+        master.checked = selected.length > 0 && selected.length === all.length;
+        master.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+}
+
+function narniaToggleAllOpen(master) {
+    var checks = document.querySelectorAll('.open-check');
+    for (var i = 0; i < checks.length; i++) checks[i].checked = master.checked;
+    narniaOpenSelectionChanged();
+}
+
+function narniaSaveOpenAsGroup(btn) {
+    var ids = narniaOpenSelectedIds();
+    if (ids.length === 0) return;
+    narniaCreateGroup(ids, btn);
+}
+
+// Groups page: reopen an entire group, honoring its per-group window-mode toggle.
+async function narniaReopenGroup(id, btn) {
+    var oneWindowEl = document.getElementById('group-one-window-' + id);
+    var separateWindows = !(oneWindowEl && oneWindowEl.checked);
+
+    var origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Reopening…';
+    try {
+        var resp = await fetch('/api/groups/' + id + '/reopen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ separateWindows: separateWindows }),
+        });
+        if (resp.ok) {
+            var data = await resp.json();
+            btn.textContent = '✅ Reopened ' + (data.reopened || 0);
+            setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 3000);
+        } else {
+            var err = await resp.json().catch(function () { return null; });
+            alert('Reopen failed: ' + (err?.message || err || 'HTTP ' + resp.status));
+            btn.textContent = origText;
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert('Error reopening group: ' + e.message);
+        btn.textContent = origText;
+        btn.disabled = false;
+    }
+}
+
+async function narniaRenameGroup(id, btn) {
+    var current = btn ? (btn.getAttribute('data-name') || '') : '';
+    var name = prompt('Rename group:', current);
+    if (name === null) return;
+    name = name.trim();
+    if (name === '') { alert('A group name is required.'); return; }
+    try {
+        var resp = await fetch('/api/groups/' + id + '/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name }),
+        });
+        if (resp.ok) {
+            location.reload();
+        } else {
+            alert('Failed to rename group: HTTP ' + resp.status);
+        }
+    } catch (e) {
+        alert('Error renaming group: ' + e.message);
+    }
+}
+
+async function narniaDeleteGroup(id) {
+    if (!confirm('Delete this group? The sessions themselves are not affected.')) return;
+    try {
+        var resp = await fetch('/api/groups/' + id, { method: 'DELETE' });
+        if (resp.ok) {
+            location.reload();
+        } else {
+            alert('Failed to delete group: HTTP ' + resp.status);
+        }
+    } catch (e) {
+        alert('Error deleting group: ' + e.message);
+    }
+}
+
 // ── Snapshotter & autostart settings ─────────────────────────────────────────
 async function narniaSaveSetting(key, value, el) {
     try {
@@ -478,7 +624,7 @@ function narniaWindowsSignature(data) {
                 if (narniaWindowsSignature(data) !== baseline) {
                     // Don't yank the page out from under an in-progress multi-select — wait until
                     // the user clears their selection, then pick up the change on a later tick.
-                    if (document.querySelector('.closed-check:checked')) return;
+                    if (document.querySelector('.closed-check:checked, .open-check:checked')) return;
                     if (live) live.textContent = '↻ updating…';
                     location.reload();
                 }
