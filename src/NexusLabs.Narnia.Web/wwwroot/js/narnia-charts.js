@@ -297,6 +297,38 @@ async function narniaReopenWindow(id, btn) {
     }
 }
 
+async function narniaReopenAllClosed(btn) {
+    if (!confirm('Reopen every recently-closed session? Each opens in a new terminal window.')) return;
+    var origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Reopening…';
+    try {
+        var resp = await fetch('/api/windows', { headers: { 'Accept': 'application/json' } });
+        var data = await resp.json();
+        var closed = (data && data.closed) || [];
+        if (closed.length === 0) {
+            btn.textContent = 'Nothing to reopen';
+            setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 2000);
+            return;
+        }
+        var ok = 0;
+        for (var i = 0; i < closed.length; i++) {
+            try {
+                var r = await fetch('/api/windows/' + closed[i].id + '/reopen', { method: 'POST' });
+                if (r.ok) ok++;
+            } catch (e) {
+                // Continue reopening the rest even if one fails.
+            }
+        }
+        btn.textContent = '✅ Reopened ' + ok + '/' + closed.length;
+        setTimeout(function () { location.reload(); }, 1500);
+    } catch (e) {
+        alert('Error reopening all: ' + e.message);
+        btn.textContent = origText;
+        btn.disabled = false;
+    }
+}
+
 async function narniaNameWindow(id, current) {
     var name = prompt('Name this window (naming it pins it so it is never auto-pruned). Leave blank to clear:', current || '');
     if (name === null) return;

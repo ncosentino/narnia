@@ -4,9 +4,11 @@ using NexusLabs.Narnia.Core.Repositories;
 namespace NexusLabs.Narnia.Core.Services;
 
 /// <summary>
-/// Reconciles detected live terminal windows against persisted state: open windows are
-/// upserted (keyed by terminal process id), windows that have vanished since the previous
-/// pass are closed, and closed history is pruned to the retention bound.
+/// Reconciles detected live Copilot sessions against persisted state. Each session is tracked
+/// as its own record (keyed by composition), because a single terminal process can host many
+/// independent session windows/tabs — so grouping by terminal process id would collapse them and
+/// make an individual close undetectable. Live sessions are upserted; sessions that have vanished
+/// since the previous pass are closed; closed history is pruned to the retention bound.
 /// </summary>
 public sealed class TerminalWindowSnapshotter(
     ILiveWindowDetector detector,
@@ -18,22 +20,26 @@ public sealed class TerminalWindowSnapshotter(
         var detected = detector.DetectWindows();
         var openBefore = await repository.GetOpenAsync(ct);
 
-        var detectedPids = new HashSet<int>();
+        var liveCompositionKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var window in detected)
         {
-            detectedPids.Add(window.TerminalProcessId);
+            foreach (var tab in window.Tabs)
+            {
+                var sessionId = tab.SessionId;
+                var compositionKey = TerminalWindowComposition.Key([sessionId]);
+                liveCompositionKeys.Add(compositionKey);
 
-            var tabs = window.Tabs
-                .Select(tab => new TerminalWindowTab(tab.SessionId, tab.Order, tab.Directory))
-                .ToList();
-            var compositionKey = TerminalWindowComposition.Key(window.Tabs.Select(tab => tab.SessionId));
-
-            await repository.UpsertOpenAsync(window.TerminalProcessId, compositionKey, tabs, now, ct);
+                var sessionTabs = new List<TerminalWindowTab>
+                {
+                    new(sessionId, 0, tab.Directory),
+                };
+                await repository.UpsertOpenAsync(window.TerminalProcessId, compositionKey, sessionTabs, now, ct);
+            }
         }
 
         foreach (var window in openBefore)
         {
-            if (window.TerminalProcessId is { } pid && !detectedPids.Contains(pid))
+            if (!liveCompositionKeys.Contains(window.CompositionKey))
                 await repository.CloseAsync(window.Id, now, ct);
         }
 

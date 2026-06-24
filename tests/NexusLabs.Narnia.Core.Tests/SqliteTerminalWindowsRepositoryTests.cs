@@ -52,19 +52,22 @@ public sealed class SqliteTerminalWindowsRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task UpsertOpenAsync_SamePid_UpdatesInPlaceWithoutDuplicating()
+    public async Task UpsertOpenAsync_SameComposition_DifferentPid_UpdatesInPlace()
     {
         await _repository.UpsertOpenAsync(100, Key("s1"), [new TerminalWindowTab("s1", 0, null)], _base, Ct);
+        // The same session is re-detected later under a different terminal process id (e.g. it was
+        // relaunched). It must update the existing open record in place, not create a duplicate.
         await _repository.UpsertOpenAsync(
-            100,
-            Key("s1", "s2"),
-            [new TerminalWindowTab("s1", 0, null), new TerminalWindowTab("s2", 1, null)],
+            200,
+            Key("s1"),
+            [new TerminalWindowTab("s1", 0, @"C:\dev\one")],
             _base.AddSeconds(60),
             Ct);
 
         var window = Assert.Single(await _repository.GetOpenAsync(Ct));
-        Assert.Equal(2, window.Tabs.Count);
-        Assert.Equal(Key("s1", "s2"), window.CompositionKey);
+        Assert.Equal(Key("s1"), window.CompositionKey);
+        Assert.Equal(200, window.TerminalProcessId);
+        Assert.Equal(@"C:\dev\one", Assert.Single(window.Tabs).Directory);
     }
 
     [Fact]

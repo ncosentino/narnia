@@ -21,13 +21,15 @@ public interface ITerminalWindowsRepository
     ValueTask<TerminalWindow?> GetByIdAsync(string id, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates an open window keyed by its terminal process id. When a record
-    /// with the same live process id already exists it is refreshed in place (tabs,
-    /// composition, recency); otherwise a new open record is created.
+    /// Inserts or updates an open record keyed by its <paramref name="compositionKey"/>. When an
+    /// open record with the same composition already exists it is refreshed in place (tabs,
+    /// owning process id, recency); otherwise a new open record is created. Keying by composition
+    /// (rather than the terminal process id) lets each session be tracked independently even when
+    /// many sessions share one terminal process.
     /// </summary>
-    /// <param name="terminalProcessId">The owning terminal process id.</param>
-    /// <param name="compositionKey">The composition key for the window's session set.</param>
-    /// <param name="tabs">The window's tabs in tab order.</param>
+    /// <param name="terminalProcessId">The owning terminal process id (stored for reference).</param>
+    /// <param name="compositionKey">The composition key identifying this record's session set.</param>
+    /// <param name="tabs">The record's tabs in tab order.</param>
     /// <param name="now">The current timestamp.</param>
     /// <param name="ct">A cancellation token.</param>
     ValueTask UpsertOpenAsync(

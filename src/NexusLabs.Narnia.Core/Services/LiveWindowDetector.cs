@@ -31,6 +31,16 @@ public sealed partial class LiveWindowDetector(IProcessSnapshotProvider processS
             if (process.CommandLine is null)
                 continue;
 
+            // The owning terminal process keeps the `--resume=<id>` arguments it was launched
+            // with in its OWN command line permanently — even after that tab or window is closed.
+            // Counting the terminal process itself as a tab would therefore resurrect a closed
+            // session forever (it never disappears until the entire terminal app exits). Only the
+            // terminal's descendant shell/agent processes represent genuinely live tabs, so skip
+            // the terminal process here; its launch command line is still parsed separately for
+            // per-tab title/directory enrichment.
+            if (string.Equals(process.Name, WindowsTerminalProcessName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
             var match = ResumeRegex().Match(process.CommandLine);
             if (!match.Success)
                 continue;
