@@ -88,7 +88,7 @@ not by cloning here. Record the resolved path as `$NARNIA_ROOT`.
 | Start   | If `/health` is up → reuse. Else publish → launch detached → poll `/health` |
 | Stop    | `POST /shutdown` → wait for `/health` to go dark → fallback: identity-checked `Stop-Process` of the recorded pid |
 | Restart | Stop → Start |
-| Update  | Stop → re-publish from the bundle → Start |
+| Update  | Record running version → Stop → re-publish from the bundle → Start → report old → new version |
 
 ## Procedures
 
@@ -159,12 +159,24 @@ Run **Stop**, then **Start**.
 Newer narnia code arrives by updating the plugin (`/plugin update narnia`), which replaces the
 bundle this skill resolves. To roll a running server onto the current bundle:
 
-1. **Stop** (graceful) — releases any file lock on the run dir.
-2. **Re-publish** from `$NARNIA_ROOT` to the run dir (overwrites the previous copy; safe because
+1. **Record the running version.** `GET /health` and keep its `version` field (or read `Version`
+   from the run-state file `<LocalAppData>/narnia/web-server.json`) as the *before* version. If the
+   server is down, note that — this becomes a first **Start**, not a version swap.
+2. **Stop** (graceful) — releases any file lock on the run dir.
+3. **Re-publish** from `$NARNIA_ROOT` to the run dir (overwrites the previous copy; safe because
    the server is stopped).
-3. **Start.**
+4. **Start**, then poll `/health` until it returns 200.
+5. **Report old → new version.** Read the new `version` from `/health` and report the transition
+   (e.g. `1.0.0+0ef3ff2 → 1.0.0+a390668`). Identical before/after is **not** an error — it means the
+   bundle was already current; say so plainly.
 
 Never re-publish or rebuild into the run dir while the server is running — stop it first.
+
+**Optional pre-check (git sources only).** When `$NARNIA_ROOT` is a git checkout
+(`$env:NARNIA_REPO_PATH` or a dev clone), compare its `git rev-parse --short HEAD` with the running
+`version`'s `+<sha>` suffix. If they match, the server is already on the bundle's code — report
+"already current" and skip the republish. A plain plugin-bundle install has no cheap SHA to read,
+so just republish (it is cheap and idempotent) and rely on step 5's old → new report.
 
 ## Important notes
 
