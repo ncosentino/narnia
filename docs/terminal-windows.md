@@ -97,9 +97,9 @@ runs at logon and repeats periodically.
 ## Where it is stored
 
 All window data lives in Narnia's own settings database
-(`~/.copilot/narnia-settings.db`) in the `terminal_windows` and
-`terminal_window_tabs` tables. The Copilot CLI's `session-store.db` is only ever
-read, never modified.
+(`<LocalAppData>/narnia/settings.db` — `%LOCALAPPDATA%\narnia\settings.db` on
+Windows) in the `terminal_windows` and `terminal_window_tabs` tables. The Copilot
+CLI's `session-store.db` is only ever read, never modified.
 
 ## Extending the sources
 

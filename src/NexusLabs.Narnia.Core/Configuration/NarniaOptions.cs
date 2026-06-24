@@ -45,7 +45,24 @@ public sealed class NarniaOptions
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".copilot", "session-store.db");
 
+    /// <summary>
+    /// The current default location for Narnia's own settings database: a dedicated per-app
+    /// folder under the platform local-application-data directory
+    /// (<c>%LOCALAPPDATA%\narnia\settings.db</c> on Windows, the XDG/Application Support
+    /// equivalent elsewhere). This is Narnia's own data and lives in Narnia's own folder —
+    /// it is deliberately not placed inside the Copilot-owned <c>~/.copilot</c> directory.
+    /// </summary>
     private static string GetDefaultSettingsDatabasePath() =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "narnia", "settings.db");
+
+    /// <summary>
+    /// The pre-1.x location of the settings database: a flat file inside the Copilot-owned
+    /// <c>~/.copilot</c> directory. Retained so the settings database can be migrated to
+    /// <see cref="GetDefaultSettingsDatabasePath"/> on first run after upgrade.
+    /// </summary>
+    public static string GetLegacySettingsDatabasePath() =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".copilot", "narnia-settings.db");
