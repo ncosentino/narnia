@@ -80,6 +80,58 @@ There is **no** `git clone` and **no** well-known-path search. If neither resolv
 clear error. Getting newer narnia code is done by updating the plugin (`/plugin update narnia`),
 not by cloning here. Record the resolved path as `$NARNIA_ROOT`.
 
+## Stamp a build identity (so updates are verifiable)
+
+Narnia sets no explicit assembly version, so the .NET SDK only appends a `+<sha>` to the
+informational version when it builds from a **git checkout**. A plain plugin-bundle install is not
+a git checkout, so an un-stamped publish degrades to a bare `1.0.0` — and a later update could then
+report `1.0.0 → 1.0.0`, telling you nothing about whether the refresh actually took. To make every
+publish carry a meaningful, comparable identity, compute one at publish time and stamp it in.
+
+Compute `$buildId` from `$NARNIA_ROOT`:
+
+```powershell
+function Get-NarniaBuildId([string]$root) {
+  # Git checkout (dev clone or $env:NARNIA_REPO_PATH): use the real commit.
+  if (Test-Path (Join-Path $root '.git')) {
+    $sha = (& git -C $root rev-parse --short=12 HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $sha) { return "git.$sha" }
+  }
+  # Plugin bundle (no git): a deterministic hash of the source content. It changes iff the code
+  # changes — exactly the "did this update actually change anything?" signal we want.
+  $src = Join-Path $root 'src'
+  $sha256 = [System.Security.Cryptography.SHA256]::Create()
+  $ms = New-Object System.IO.MemoryStream
+  Get-ChildItem $src -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
+    Sort-Object FullName |
+    ForEach-Object {
+      $rel = [System.Text.Encoding]::UTF8.GetBytes($_.FullName.Substring($root.Length))
+      $ms.Write($rel, 0, $rel.Length)
+      $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+      $ms.Write($bytes, 0, $bytes.Length)
+    }
+  $ms.Position = 0
+  $hex = ([System.BitConverter]::ToString($sha256.ComputeHash($ms)) -replace '-', '').ToLower()
+  return "content.$($hex.Substring(0, 12))"
+}
+```
+
+Then **always publish with the stamp** so `/health` (and the run-state file) report it verbatim:
+
+```powershell
+$buildId = Get-NarniaBuildId $NARNIA_ROOT
+dotnet publish "$NARNIA_ROOT/src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" `
+  -c Release -o $runDir `
+  -p:IncludeSourceRevisionInInformationalVersion=false `
+  -p:InformationalVersion="1.0.0+$buildId"
+```
+
+`IncludeSourceRevisionInInformationalVersion=false` stops the SDK appending its own git suffix so
+the stamped value is used verbatim. `Program.cs` reads this informational version, so it surfaces
+as the `version` in `/health` — making the **Update** old → new comparison meaningful for *every*
+install type, bundle or git.
+
 ## Quick reference
 
 | Action  | What happens |
@@ -104,11 +156,15 @@ not by cloning here. Record the resolved path as `$NARNIA_ROOT`.
 1. **Status check first.** If `/health` returns 200, it is already running — report the URL (and
    open the browser if asked) and stop. Do not launch another instance.
 2. **Resolve source** → `$NARNIA_ROOT` (see above).
-3. **Publish to the run dir** (a frozen copy, decoupled from the source tree):
+3. **Publish to the run dir** (a frozen copy, decoupled from the source tree), stamped with a
+   build identity (see *Stamp a build identity*):
    ```powershell
    $runDir = Join-Path $env:LOCALAPPDATA 'narnia\app'
+   $buildId = Get-NarniaBuildId $NARNIA_ROOT
    dotnet publish "$NARNIA_ROOT/src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" `
-     -c Release -o $runDir
+     -c Release -o $runDir `
+     -p:IncludeSourceRevisionInInformationalVersion=false `
+     -p:InformationalVersion="1.0.0+$buildId"
    ```
    If publish fails, show the full output to the user and stop.
 4. **Launch detached** from the run dir, bound to loopback so it survives the session:
@@ -162,21 +218,20 @@ bundle this skill resolves. To roll a running server onto the current bundle:
 1. **Record the running version.** `GET /health` and keep its `version` field (or read `Version`
    from the run-state file `<LocalAppData>/narnia/web-server.json`) as the *before* version. If the
    server is down, note that — this becomes a first **Start**, not a version swap.
-2. **Stop** (graceful) — releases any file lock on the run dir.
-3. **Re-publish** from `$NARNIA_ROOT` to the run dir (overwrites the previous copy; safe because
-   the server is stopped).
-4. **Start**, then poll `/health` until it returns 200.
-5. **Report old → new version.** Read the new `version` from `/health` and report the transition
-   (e.g. `1.0.0+0ef3ff2 → 1.0.0+a390668`). Identical before/after is **not** an error — it means the
-   bundle was already current; say so plainly.
+2. **Pre-check (skip a needless republish).** Compute `Get-NarniaBuildId $NARNIA_ROOT` and compare
+   `1.0.0+<buildId>` to the running `version`. If they match, the server is already on the bundle's
+   code — report "already current" and stop. Because the build id is content-derived, this now works
+   for **bundle installs too**, not just git checkouts.
+3. **Stop** (graceful) — releases any file lock on the run dir.
+4. **Re-publish** from `$NARNIA_ROOT` to the run dir **with the build-identity stamp** (see *Stamp a
+   build identity*); overwrites the previous copy, safe because the server is stopped.
+5. **Start**, then poll `/health` until it returns 200.
+6. **Report old → new version.** Read the new `version` from `/health` and report the transition
+   (e.g. `1.0.0+content.ab12cd34ef56 → 1.0.0+content.99aa88bb77cc`). Because the id is stamped, a
+   real code change always shows a changed value, and an identical before/after genuinely means the
+   code did not change.
 
 Never re-publish or rebuild into the run dir while the server is running — stop it first.
-
-**Optional pre-check (git sources only).** When `$NARNIA_ROOT` is a git checkout
-(`$env:NARNIA_REPO_PATH` or a dev clone), compare its `git rev-parse --short HEAD` with the running
-`version`'s `+<sha>` suffix. If they match, the server is already on the bundle's code — report
-"already current" and skip the republish. A plain plugin-bundle install has no cheap SHA to read,
-so just republish (it is cheap and idempotent) and rely on step 5's old → new report.
 
 ## Important notes
 
