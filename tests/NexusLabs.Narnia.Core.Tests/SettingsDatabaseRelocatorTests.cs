@@ -12,8 +12,16 @@ public sealed class SettingsDatabaseRelocatorTests
 
     private static NarniaOptions Options() => new() { SettingsDatabasePath = DestPath };
 
+    private static List<string> LegacyBackups(IFileSystem fs)
+    {
+        var dir = fs.Path.GetDirectoryName(LegacyPath)!;
+        return fs.Directory.GetFiles(dir)
+            .Where(f => f.Contains(".migrated-") && f.EndsWith(".bak"))
+            .ToList();
+    }
+
     [Fact]
-    public void RelocateIfNeeded_LegacyPresentDestAbsent_MovesDatabase()
+    public void RelocateIfNeeded_LegacyPresentDestAbsent_CopiesAndBacksUpLegacy()
     {
         var fs = new MockFileSystem(new Dictionary<string, MockFileData>
         {
@@ -25,11 +33,16 @@ public sealed class SettingsDatabaseRelocatorTests
 
         Assert.True(fs.File.Exists(DestPath));
         Assert.Equal("legacy-db-bytes", fs.File.ReadAllText(DestPath));
+        // The legacy file is retired (renamed), not present under its original name...
         Assert.False(fs.File.Exists(LegacyPath));
+        // ...but its bytes survive as a recoverable timestamped backup so a migration can
+        // never destroy the user's data.
+        var backup = Assert.Single(LegacyBackups(fs));
+        Assert.Equal("legacy-db-bytes", fs.File.ReadAllText(backup));
     }
 
     [Fact]
-    public void RelocateIfNeeded_MovesWalAndShmSidecars()
+    public void RelocateIfNeeded_CopiesSidecars_AndBacksUpLegacySidecars()
     {
         var fs = new MockFileSystem(new Dictionary<string, MockFileData>
         {
@@ -43,8 +56,13 @@ public sealed class SettingsDatabaseRelocatorTests
 
         Assert.Equal("wal", fs.File.ReadAllText(DestPath + "-wal"));
         Assert.Equal("shm", fs.File.ReadAllText(DestPath + "-shm"));
+        // Legacy sidecars retired under their original names...
         Assert.False(fs.File.Exists(LegacyPath + "-wal"));
         Assert.False(fs.File.Exists(LegacyPath + "-shm"));
+        // ...but preserved as backups alongside the main database backup.
+        var backups = LegacyBackups(fs);
+        Assert.Contains(backups, b => b.Contains("narnia-settings.db-wal.migrated-"));
+        Assert.Contains(backups, b => b.Contains("narnia-settings.db-shm.migrated-"));
     }
 
     [Fact]
@@ -109,19 +127,23 @@ public sealed class SettingsDatabaseRelocatorTests
 
         Assert.Equal("legacy", fs.File.ReadAllText(DestPath));
         Assert.False(fs.File.Exists(LegacyPath));
+        // The second (no-op) run must not produce a second backup.
+        Assert.Single(LegacyBackups(fs));
     }
 
     [Fact]
-    public void RelocateIfNeeded_CopyThrows_DoesNotPropagate_AndCleansPartialDest()
+    public void RelocateIfNeeded_CopyThrows_DoesNotPropagate_CleansPartialDest_AndNeverTouchesLegacy()
     {
         // A copy failure (e.g. the legacy database momentarily locked by an old server) must not
-        // crash startup; the legacy stays intact and any partial destination is removed.
+        // crash startup. Any partial file left at the destination is removed, and the legacy data
+        // is never deleted or renamed — so the user's original is always recoverable.
         var file = new Mock<IFile>(MockBehavior.Strict);
-        file.Setup(f => f.Exists(DestPath)).Returns(false);
+        // Top guard sees no destination; cleanup then finds a partial file the throwing copy left.
+        file.SetupSequence(f => f.Exists(DestPath)).Returns(false).Returns(true);
         file.Setup(f => f.Exists(LegacyPath)).Returns(true);
-        file.Setup(f => f.Exists(LegacyPath + "-wal")).Returns(false);
-        file.Setup(f => f.Exists(LegacyPath + "-shm")).Returns(false);
         file.Setup(f => f.Copy(LegacyPath, DestPath, false)).Throws(new IOException("locked"));
+        file.Setup(f => f.Exists(DestPath + "-wal")).Returns(false);
+        file.Setup(f => f.Exists(DestPath + "-shm")).Returns(false);
         file.Setup(f => f.Delete(DestPath));
 
         var directory = new Mock<IDirectory>(MockBehavior.Loose);
@@ -141,5 +163,6 @@ public sealed class SettingsDatabaseRelocatorTests
         Assert.Null(exception);
         file.Verify(f => f.Delete(DestPath), Times.Once);
         file.Verify(f => f.Delete(LegacyPath), Times.Never);
+        file.Verify(f => f.Move(LegacyPath, It.IsAny<string>()), Times.Never);
     }
 }
