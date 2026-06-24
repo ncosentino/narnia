@@ -35,6 +35,10 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     public ITerminalWindowsRepository WindowsRepository =>
         Services.GetRequiredService<ITerminalWindowsRepository>();
 
+    /// <summary>The real (temp-database-backed) session groups repository, for seeding.</summary>
+    public ISessionGroupsRepository GroupsRepository =>
+        Services.GetRequiredService<ISessionGroupsRepository>();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");

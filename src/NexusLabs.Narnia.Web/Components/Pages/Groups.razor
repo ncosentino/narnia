@@ -1,0 +1,86 @@
+@page "/groups"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject ISessionGroupsRepository GroupsRepository
+@inject ISessionRepository SessionRepository
+
+<PageTitle>Session groups — Narnia</PageTitle>
+
+<div class="page-actions">
+    <h1>📁 Session Groups</h1>
+    <a href="/groups" class="btn-refresh">↻ Refresh</a>
+</div>
+
+<p class="settings-hint">
+    Groups are named sets of sessions you can reopen together — handy for a workspace of sessions you
+    always want to restore after a crash or a machine restart. Create a group by selecting sessions on
+    the <a href="/sessions">Sessions</a> page and choosing <em>Save as Group</em>, or by snapshotting
+    your open sessions on the <a href="/windows">Windows</a> page. Reopening a group never affects the
+    sessions themselves.
+</p>
+
+@if (_groups.Count == 0)
+{
+    <p>
+        No groups yet. Select sessions on the <a href="/sessions">Sessions</a> page or the
+        <a href="/windows">Windows</a> page and choose <em>Save as group</em>.
+    </p>
+}
+else
+{
+    @foreach (var group in _groups)
+    {
+        <div class="group-card">
+            <div class="page-actions group-head">
+                <h2>@group.Name <span class="window-meta">@group.Members.Count session@(group.Members.Count == 1 ? "" : "s")</span></h2>
+                <div class="closed-controls">
+                    <label class="closed-control" title="Off: each session opens in its own window. On: the whole group opens as tabs in one window."><input type="checkbox" id="group-one-window-@group.Id" /> Open as tabs in one window</label>
+                    <button class="launch-btn" onclick="narniaReopenGroup('@group.Id', this)" title="Reopen every session in this group">🚀 Reopen group</button>
+                    <button class="btn-refresh" data-name="@group.Name" onclick="narniaRenameGroup('@group.Id', this)" title="Rename this group">✏️ Rename</button>
+                    <button class="btn-bulk-archive" onclick="narniaDeleteGroup('@group.Id')" title="Delete this group">🗑 Delete</button>
+                </div>
+            </div>
+            <div class="window-card">
+                <ul class="window-tabs">
+                    @foreach (var member in group.Members)
+                    {
+                        var session = Lookup(member.SessionId);
+                        <li class="window-tab">
+                            <a class="window-tab-summary" href="/sessions/@member.SessionId">@(session?.Summary ?? Short(member.SessionId))</a>
+                            <span class="window-tab-repo">@(session?.Repository ?? "—")</span>
+                            <span class="window-tab-dir cwd">@(session?.Branch ?? "—")</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private IReadOnlyList<SessionGroup> _groups = [];
+    private readonly Dictionary<string, Session> _sessions = new(StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _groups = await GroupsRepository.GetAllAsync();
+
+        var sessionIds = _groups
+            .SelectMany(g => g.Members)
+            .Select(m => m.SessionId)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var sessionId in sessionIds)
+        {
+            var session = await SessionRepository.GetByIdAsync(sessionId);
+            if (session is not null)
+                _sessions[sessionId] = session;
+        }
+    }
+
+    private Session? Lookup(string sessionId) =>
+        _sessions.TryGetValue(sessionId, out var session) ? session : null;
+
+    private static string Short(string? sessionId) =>
+        sessionId is null ? "(unknown session)" : (sessionId.Length >= 8 ? sessionId[..8] : sessionId);
+}
