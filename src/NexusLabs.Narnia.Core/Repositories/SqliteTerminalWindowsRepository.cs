@@ -67,8 +67,8 @@ public sealed class SqliteTerminalWindowsRepository(NarniaOptions options) : ITe
         {
             find.Transaction = tx;
             find.CommandText =
-                $"SELECT id FROM terminal_windows WHERE status = '{OpenStatus}' AND terminal_pid = @pid LIMIT 1";
-            find.Parameters.AddWithValue("@pid", terminalProcessId);
+                $"SELECT id FROM terminal_windows WHERE status = '{OpenStatus}' AND composition_key = @key LIMIT 1";
+            find.Parameters.AddWithValue("@key", compositionKey);
             existingId = await find.ExecuteScalarAsync(ct) as string;
         }
 
@@ -77,8 +77,9 @@ public sealed class SqliteTerminalWindowsRepository(NarniaOptions options) : ITe
             await using var update = conn.CreateCommand();
             update.Transaction = tx;
             update.CommandText =
-                "UPDATE terminal_windows SET composition_key = @key, last_seen_at = @now WHERE id = @id";
+                "UPDATE terminal_windows SET composition_key = @key, terminal_pid = @pid, last_seen_at = @now WHERE id = @id";
             update.Parameters.AddWithValue("@key", compositionKey);
+            update.Parameters.AddWithValue("@pid", terminalProcessId);
             update.Parameters.AddWithValue("@now", now.ToString("o"));
             update.Parameters.AddWithValue("@id", existingId);
             await update.ExecuteNonQueryAsync(ct);

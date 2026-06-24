@@ -21,7 +21,7 @@ public sealed class TerminalWindowSnapshotterTests
             Tabs: sessionIds.Select((s, i) => new TerminalWindowTab(s, i, null)).ToList());
 
     [Fact]
-    public async Task SnapshotAsync_NewDetectedWindow_IsUpserted()
+    public async Task SnapshotAsync_DetectedWindowWithTabs_UpsertsEachSessionIndividually()
     {
         var detector = new Mock<ILiveWindowDetector>();
         detector.Setup(d => d.DetectWindows()).Returns([Window(100, "s1", "s2")]);
@@ -33,14 +33,22 @@ public sealed class TerminalWindowSnapshotterTests
 
         await snapshotter.SnapshotAsync(Now, retentionCount: 50, Ct);
 
-        var expectedKey = TerminalWindowComposition.Key(["s1", "s2"]);
+        // Each session in a terminal window is tracked as its own record (keyed by its own
+        // single-session composition), so one OS terminal hosting many sessions does not collapse
+        // them into a single record that can never individually close.
+        var keyS1 = TerminalWindowComposition.Key(["s1"]);
+        var keyS2 = TerminalWindowComposition.Key(["s2"]);
         repository.Verify(
             r => r.UpsertOpenAsync(
-                100,
-                expectedKey,
-                It.Is<IReadOnlyList<TerminalWindowTab>>(t => t.Count == 2),
-                Now,
-                It.IsAny<CancellationToken>()),
+                100, keyS1,
+                It.Is<IReadOnlyList<TerminalWindowTab>>(t => t.Count == 1 && t[0].SessionId == "s1"),
+                Now, It.IsAny<CancellationToken>()),
+            Times.Once);
+        repository.Verify(
+            r => r.UpsertOpenAsync(
+                100, keyS2,
+                It.Is<IReadOnlyList<TerminalWindowTab>>(t => t.Count == 1 && t[0].SessionId == "s2"),
+                Now, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -80,6 +88,27 @@ public sealed class TerminalWindowSnapshotterTests
 
         repository.Verify(r => r.CloseAsync("w-200", Now, It.IsAny<CancellationToken>()), Times.Once);
         repository.Verify(r => r.CloseAsync("w-100", It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SnapshotAsync_OneSessionInSharedTerminalVanishes_OnlyThatSessionIsClosed()
+    {
+        // The real-world failure: many session windows share ONE WindowsTerminal.exe process, so
+        // the terminal pid never vanishes. s1 is still live; s2 has been closed. s2 must still be
+        // detected as closed individually even though its terminal pid (100) is still alive via s1.
+        var detector = new Mock<ILiveWindowDetector>();
+        detector.Setup(d => d.DetectWindows()).Returns([Window(100, "s1")]);
+
+        var repository = new Mock<ITerminalWindowsRepository>();
+        repository.Setup(r => r.GetOpenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([OpenRecord("rec-s1", 100, "s1"), OpenRecord("rec-s2", 100, "s2")]);
+
+        var snapshotter = new TerminalWindowSnapshotter(detector.Object, repository.Object);
+
+        await snapshotter.SnapshotAsync(Now, retentionCount: 50, Ct);
+
+        repository.Verify(r => r.CloseAsync("rec-s2", Now, It.IsAny<CancellationToken>()), Times.Once);
+        repository.Verify(r => r.CloseAsync("rec-s1", It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

@@ -174,6 +174,27 @@ public sealed class LiveWindowDetectorTests
     }
 
     [Fact]
+    public void DetectWindows_TerminalProcessOwnResumeArg_IsNotCountedAsLiveTab()
+    {
+        // A WindowsTerminal.exe process keeps the --resume arg it was launched with in its OWN
+        // command line forever, even after that tab/window is closed. Only its descendant shell
+        // carries a *live* tab. Here the launch session (closed) lives only in the terminal's
+        // command line, while a different session is live via a child shell. Only the live one
+        // must be detected — otherwise closed sessions never disappear.
+        const string closedLaunchSession = "11111111-1111-4111-8111-111111111111";
+        const string liveSession = "22222222-2222-4222-8222-222222222222";
+        var detector = Detector(
+            new ProcessRecord(100, 1, TerminalName,
+                $"wt.exe new-tab -- pwsh.exe -NoExit -Command \"copilot --resume={closedLaunchSession}\""),
+            Pwsh(200, 100, liveSession));
+
+        var window = Assert.Single(detector.DetectWindows());
+
+        var tab = Assert.Single(window.Tabs);
+        Assert.Equal(liveSession, tab.SessionId);
+    }
+
+    [Fact]
     public void DetectWindows_NullCommandLines_AreSkippedSafely()
     {
         var detector = Detector(
