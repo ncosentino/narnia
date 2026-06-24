@@ -175,7 +175,9 @@ Never re-publish or rebuild into the run dir while the server is running — sto
 - **.NET SDK required.** .NET 10+. If `dotnet` is not found, tell the user to install it from
   https://dot.net/download.
 - **Databases.** The UI reads `~/.copilot/session-store.db` (owned by the Copilot CLI — never
-  modify its schema) and migrates its own `~/.copilot/narnia-settings.db` (overrides, settings,
-  and the recorded terminal windows used by the **🪟 Windows** recovery console). While the
-  server is running, a background snapshotter records open Windows Terminal windows of Copilot
-  tabs once a minute so a closed window can be reopened.
+  modify its schema) and migrates its own settings database at
+  `<LocalAppData>/narnia/settings.db` (overrides, settings, and the recorded terminal windows
+  used by the **🪟 Windows** recovery console; migrated automatically from the legacy
+  `~/.copilot/narnia-settings.db`). While the server is running, a background snapshotter
+  records open Windows Terminal windows of Copilot tabs once a minute so a closed window can be
+  reopened.

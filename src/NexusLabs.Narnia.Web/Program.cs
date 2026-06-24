@@ -30,6 +30,7 @@ builder.Services.AddSingleton<ISessionOverridesRepository>(sp => sp.GetRequiredS
 builder.Services.AddSingleton<OverridingSessionRepository>();
 builder.Services.AddSingleton<ISessionRepository>(sp => sp.GetRequiredService<OverridingSessionRepository>());
 builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
+builder.Services.AddSingleton<SettingsDatabaseRelocator>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<IWorkspaceReader, WorkspaceReader>();
 builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
@@ -66,6 +67,7 @@ builder.Services
 
 var app = builder.Build();
 
+app.Services.GetRequiredService<SettingsDatabaseRelocator>().RelocateIfNeeded();
 app.Services.GetRequiredService<NarniaSettingsDbMigrator>().MigrateUp();
 
 // Headless one-shot: `NexusLabs.Narnia.Web snapshot` records open terminal windows once and

@@ -12,7 +12,7 @@ Narnia reads configuration from environment variables. No API key is required â€
 |----------|---------|-------------|
 | `NARNIA__DatabasePath` | `~/.copilot/session-store.db` | Path to the Copilot CLI SQLite session database |
 | `NARNIA__SessionStatePath` | `~/.copilot/session-state/` | Directory containing per-session state folders |
-| `NARNIA__SettingsDatabasePath` | `~/.copilot/narnia-settings.db` | Path to Narnia's own settings database (overrides, settings, recorded terminal windows) |
+| `NARNIA__SettingsDatabasePath` | `<LocalAppData>/narnia/settings.db` | Path to Narnia's own settings database (overrides, settings, recorded terminal windows). On Windows this is `%LOCALAPPDATA%\narnia\settings.db`. Migrated automatically from the legacy `~/.copilot/narnia-settings.db` on first run. |
 | `NARNIA__SnapshotterEnabled` | `true` | Default for the [terminal-window snapshotter](terminal-windows.md); overridable at runtime from Settings |
 | `NARNIA__SnapshotterIntervalSeconds` | `60` | Default snapshot interval (minimum 5) |
 | `NARNIA__SnapshotterRetentionCount` | `50` | Default number of recently-closed windows to retain |
