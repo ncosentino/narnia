@@ -25,6 +25,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock command builder; by default reports no Windows Terminal so reopen never spawns.</summary>
     public Mock<ITerminalCommandBuilder> CommandBuilder { get; } = new();
 
+    /// <summary>Mock process launcher so endpoint tests never spawn a real terminal.</summary>
+    public Mock<IProcessLauncher> ProcessLauncher { get; } = new();
+
     /// <summary>Mock autostart manager so endpoint tests never touch the real registry.</summary>
     public Mock<ILogonAutostartManager> Autostart { get; } = new();
 
@@ -45,6 +48,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<ITerminalCommandBuilder>();
             services.AddSingleton(CommandBuilder.Object);
+
+            services.RemoveAll<IProcessLauncher>();
+            services.AddSingleton(ProcessLauncher.Object);
 
             services.RemoveAll<ILogonAutostartManager>();
             services.AddSingleton(Autostart.Object);

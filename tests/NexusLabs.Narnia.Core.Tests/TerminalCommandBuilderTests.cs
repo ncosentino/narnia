@@ -83,6 +83,34 @@ public sealed class TerminalCommandBuilderTests
         Assert.Contains("--resume=22222222-2222-4222-8222-222222222222", segments[1]);
     }
 
+    [Theory]
+    [InlineData("pwsh")]
+    [InlineData("powershell")]
+    public void BuildDirectLaunchArguments_PowerShell_SetsTitleAndResumes(string shellName)
+    {
+        var args = _builder.BuildDirectLaunchArguments(shellName, new TerminalLaunchTab(SessionId, "My Tab", null));
+
+        Assert.Contains("$host.UI.RawUI.WindowTitle = 'My Tab'", args);
+        Assert.Contains($"copilot --resume={SessionId}", args);
+    }
+
+    [Fact]
+    public void BuildDirectLaunchArguments_Cmd_UsesTitleAndSlashK()
+    {
+        var args = _builder.BuildDirectLaunchArguments("cmd", new TerminalLaunchTab(SessionId, "My Tab", null));
+
+        Assert.Equal($"/k title My Tab & copilot --resume={SessionId}", args);
+    }
+
+    [Fact]
+    public void BuildDirectLaunchArguments_OtherShell_UsesPosixTitleEscape()
+    {
+        var args = _builder.BuildDirectLaunchArguments("bash", new TerminalLaunchTab(SessionId, "My Tab", null));
+
+        Assert.Contains("printf '\\033]0;My Tab\\007'", args);
+        Assert.Contains($"copilot --resume={SessionId}; exec $SHELL", args);
+    }
+
     [Fact]
     public void FindWindowsTerminalPath_DoesNotThrow_AndReturnsNullOrWtPath()
     {
