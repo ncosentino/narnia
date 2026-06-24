@@ -273,3 +273,108 @@ function narniaToggleTheme() {
     var current = document.documentElement.getAttribute('data-theme');
     narniaSetTheme(current === 'light' ? 'dark' : 'light');
 }
+
+// ── Terminal windows (recovery console) ──────────────────────────────────────
+async function narniaReopenWindow(id, btn) {
+    var origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Reopening…';
+    try {
+        var resp = await fetch('/api/windows/' + id + '/reopen', { method: 'POST' });
+        if (resp.ok) {
+            btn.textContent = '✅ Reopened!';
+            setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 3000);
+        } else {
+            var data = await resp.json().catch(function () { return null; });
+            alert('Reopen failed: ' + (data?.message || data || 'HTTP ' + resp.status));
+            btn.textContent = origText;
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert('Error reopening: ' + e.message);
+        btn.textContent = origText;
+        btn.disabled = false;
+    }
+}
+
+async function narniaNameWindow(id, current) {
+    var name = prompt('Name this window (naming it pins it so it is never auto-pruned). Leave blank to clear:', current || '');
+    if (name === null) return;
+    try {
+        var resp = await fetch('/api/windows/' + id + '/name', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name }),
+        });
+        if (resp.ok) {
+            location.reload();
+        } else {
+            alert('Failed to name window: HTTP ' + resp.status);
+        }
+    } catch (e) {
+        alert('Error naming window: ' + e.message);
+    }
+}
+
+async function narniaDeleteWindow(id) {
+    if (!confirm('Delete this recorded window? This cannot be undone.')) return;
+    try {
+        var resp = await fetch('/api/windows/' + id, { method: 'DELETE' });
+        if (resp.ok) {
+            location.reload();
+        } else {
+            alert('Failed to delete window: HTTP ' + resp.status);
+        }
+    } catch (e) {
+        alert('Error deleting window: ' + e.message);
+    }
+}
+
+// ── Snapshotter & autostart settings ─────────────────────────────────────────
+async function narniaSaveSetting(key, value, el) {
+    try {
+        var resp = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: key, value: value }),
+        });
+        if (!resp.ok) {
+            alert('Failed to save setting: HTTP ' + resp.status);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        alert('Error saving setting: ' + e.message);
+        return false;
+    }
+}
+
+async function narniaSaveSnapshotterConfig(btn) {
+    var interval = document.getElementById('setting-snap-interval');
+    var retention = document.getElementById('setting-snap-retention');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    var ok = await narniaSaveSetting('snapshotter_interval_seconds', interval.value);
+    ok = (await narniaSaveSetting('snapshotter_retention_count', retention.value)) && ok;
+    if (btn) {
+        btn.textContent = ok ? '✅ Saved!' : 'Save';
+        setTimeout(function () { btn.textContent = 'Save'; btn.disabled = false; }, 2500);
+    }
+}
+
+async function narniaSetAutostart(enabled, el) {
+    try {
+        var resp = await fetch('/api/autostart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled }),
+        });
+        if (!resp.ok) {
+            var data = await resp.json().catch(function () { return null; });
+            alert('Failed to update autostart: ' + (data || 'HTTP ' + resp.status));
+            if (el) el.checked = !enabled;
+        }
+    } catch (e) {
+        alert('Error updating autostart: ' + e.message);
+        if (el) el.checked = !enabled;
+    }
+}

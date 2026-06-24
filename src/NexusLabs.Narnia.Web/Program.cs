@@ -38,10 +38,33 @@ builder.Services.AddSingleton<ISessionOverridesRepository>(sp => sp.GetRequiredS
 builder.Services.AddSingleton<OverridingSessionRepository>();
 builder.Services.AddSingleton<ISessionRepository>(sp => sp.GetRequiredService<OverridingSessionRepository>());
 builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
+builder.Services.AddSingleton<SettingsDatabaseRelocator>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<IWorkspaceReader, WorkspaceReader>();
 builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
 builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredService<SqliteNarniaSettingsRepository>());
+builder.Services.AddSingleton<SqliteTerminalWindowsRepository>();
+builder.Services.AddSingleton<ITerminalWindowsRepository>(sp => sp.GetRequiredService<SqliteTerminalWindowsRepository>());
+builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
+
+// Recovery-console window sources. The live snapshotter is the built-in source; additional
+// sources (e.g. a future launch-history source) can be registered here and will surface in the
+// console automatically via the aggregator.
+builder.Services.AddSingleton<ITerminalWindowSource, LiveTerminalWindowSource>();
+builder.Services.AddSingleton<ITerminalWindowAggregator, TerminalWindowAggregator>();
+
+if (OperatingSystem.IsWindows())
+    builder.Services.AddSingleton<ILogonAutostartManager, WindowsLogonAutostartManager>();
+else
+    builder.Services.AddSingleton<ILogonAutostartManager, UnsupportedLogonAutostartManager>();
+
+if (OperatingSystem.IsWindows())
+{
+    builder.Services.AddSingleton<IProcessSnapshotProvider, WmiProcessSnapshotProvider>();
+    builder.Services.AddSingleton<ILiveWindowDetector, LiveWindowDetector>();
+    builder.Services.AddSingleton<ITerminalWindowSnapshotter, TerminalWindowSnapshotter>();
+    builder.Services.AddHostedService<WindowSnapshotterHostedService>();
+}
 
 builder.Services.AddRazorComponents();
 
@@ -52,27 +75,48 @@ builder.Services
 
 var app = builder.Build();
 
+app.Services.GetRequiredService<SettingsDatabaseRelocator>().RelocateIfNeeded();
 app.Services.GetRequiredService<NarniaSettingsDbMigrator>().MigrateUp();
+
+// Headless one-shot: `NexusLabs.Narnia.Web snapshot` records open terminal windows once and
+// exits, without starting the web server. Intended for a scheduled task that keeps recording
+// even when the server is not running.
+if (args.Contains("snapshot", StringComparer.OrdinalIgnoreCase))
+{
+    if (OperatingSystem.IsWindows())
+    {
+        var snapshotter = app.Services.GetRequiredService<ITerminalWindowSnapshotter>();
+        var retention = app.Services.GetRequiredService<NarniaOptions>().SnapshotterRetentionCount;
+        await snapshotter.SnapshotAsync(DateTimeOffset.UtcNow, retention);
+    }
+
+    return;
+}
 
 var serverVersion = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
     ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString();
 
-app.Lifetime.ApplicationStarted.Register(() =>
+// The run-state file is global per-user state owned by a real running server. Integration
+// tests boot the app under the "Testing" environment and must not write or delete it.
+if (!app.Environment.IsEnvironment("Testing"))
 {
-    var addresses = app.Services.GetRequiredService<IServer>()
-        .Features.Get<IServerAddressesFeature>()?.Addresses;
-    var url = addresses?.FirstOrDefault() ?? string.Empty;
-    var port = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Port : 0;
-    WebServerRunState.Write(new WebServerRunStateInfo(
-        Environment.ProcessId,
-        port,
-        url,
-        serverVersion,
-        Environment.ProcessPath,
-        DateTimeOffset.UtcNow));
-});
-app.Lifetime.ApplicationStopping.Register(WebServerRunState.Delete);
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        var addresses = app.Services.GetRequiredService<IServer>()
+            .Features.Get<IServerAddressesFeature>()?.Addresses;
+        var url = addresses?.FirstOrDefault() ?? string.Empty;
+        var port = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Port : 0;
+        WebServerRunState.Write(new WebServerRunStateInfo(
+            Environment.ProcessId,
+            port,
+            url,
+            serverVersion,
+            Environment.ProcessPath,
+            DateTimeOffset.UtcNow));
+    });
+    app.Lifetime.ApplicationStopping.Register(WebServerRunState.Delete);
+}
 
 if (!app.Environment.IsDevelopment())
 {
@@ -196,6 +240,7 @@ app.MapPost("/api/launch", async (
     ISessionOverridesRepository overridesRepo,
     IWorkspaceReader workspaceReader,
     INarniaSettingsRepository settingsRepo,
+    ITerminalCommandBuilder commandBuilder,
     CancellationToken ct) =>
 {
     if (!Guid.TryParse(request.SessionId, out _))
@@ -234,19 +279,16 @@ app.MapPost("/api/launch", async (
 
     // Prefer Windows Terminal (wt.exe) when available — its --title flag
     // persists even after the child process tries to overwrite it.
-    var wtPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Microsoft", "WindowsApps", "wt.exe");
-    var useWt = OperatingSystem.IsWindows() && File.Exists(wtPath);
+    var wtPath = commandBuilder.FindWindowsTerminalPath();
 
     var psi = new ProcessStartInfo { UseShellExecute = true };
 
-    if (useWt)
+    if (wtPath is not null)
     {
         psi.FileName = wtPath;
-        var dirArg = directory is not null ? $"--startingDirectory \"{directory}\" " : "";
         // wt new-tab --title keeps the title even when the shell inside tries to change it
-        psi.Arguments = $"new-tab --title \"{title.Replace("\"", "\\\"")}\" --suppressApplicationTitle {dirArg}-- \"{shellPath}\" {BuildShellArgs(shellName, resumeCmd)}";
+        psi.Arguments = commandBuilder.BuildNewTabSegment(
+            shellPath, shellName, new TerminalLaunchTab(request.SessionId, title, directory));
     }
     else
     {
@@ -280,6 +322,7 @@ app.MapPost("/api/launch-bulk", async (
     ISessionOverridesRepository overridesRepo,
     IWorkspaceReader workspaceReader,
     INarniaSettingsRepository settingsRepo,
+    ITerminalCommandBuilder commandBuilder,
     CancellationToken ct) =>
 {
     if (request.SessionIds is not { Length: > 0 })
@@ -292,10 +335,8 @@ app.MapPost("/api/launch-bulk", async (
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
 
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
-    var wtPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Microsoft", "WindowsApps", "wt.exe");
-    var useWt = OperatingSystem.IsWindows() && File.Exists(wtPath);
+    var wtPath = commandBuilder.FindWindowsTerminalPath();
+    var useWt = wtPath is not null;
 
     var launched = new List<object>();
     var failed = new List<object>();
@@ -337,9 +378,8 @@ app.MapPost("/api/launch-bulk", async (
 
         if (useWt)
         {
-            var safeTitle = title.Replace("\"", "\\\"");
-            var dirArg = directory is not null ? $"--startingDirectory \"{directory}\" " : "";
-            tabArgs.Add($"new-tab --title \"{safeTitle}\" --suppressApplicationTitle {dirArg}-- \"{shellPath}\" {BuildShellArgs(shellName, resumeCmd)}");
+            tabArgs.Add(commandBuilder.BuildNewTabSegment(
+                shellPath, shellName, new TerminalLaunchTab(sid, title, directory)));
             launched.Add(new { sessionId = sid, title });
         }
         else
@@ -371,7 +411,7 @@ app.MapPost("/api/launch-bulk", async (
     {
         var psi = new ProcessStartInfo
         {
-            FileName = wtPath,
+            FileName = wtPath!,
             Arguments = string.Join(" ; ", tabArgs),
             UseShellExecute = true,
         };
@@ -388,6 +428,154 @@ app.MapPost("/api/launch-bulk", async (
     }
 
     return Results.Ok(new { launched, failed });
+});
+
+// ── Terminal windows (recovery console) API ─────────────────────────────────
+app.MapGet("/api/windows", async (
+    ITerminalWindowAggregator windows,
+    ISessionRepository sessionRepo,
+    CancellationToken ct) =>
+{
+    var snapshot = await windows.GetWindowsAsync(50, ct);
+
+    async Task<object> ProjectAsync(TerminalWindow window)
+    {
+        var tabs = new List<object>(window.Tabs.Count);
+        foreach (var tab in window.Tabs)
+        {
+            var session = await sessionRepo.GetByIdAsync(tab.SessionId, ct);
+            tabs.Add(new
+            {
+                sessionId = tab.SessionId,
+                order = tab.TabOrder,
+                directory = tab.Directory,
+                summary = session?.Summary,
+                repository = session?.Repository,
+                branch = session?.Branch,
+            });
+        }
+
+        return new
+        {
+            id = window.Id,
+            name = window.Name,
+            pinned = window.Pinned,
+            status = window.Status.ToString().ToLowerInvariant(),
+            terminalPid = window.TerminalProcessId,
+            occurrenceCount = window.OccurrenceCount,
+            firstSeenAt = window.FirstSeenAt,
+            lastSeenAt = window.LastSeenAt,
+            closedAt = window.ClosedAt,
+            tabs,
+        };
+    }
+
+    var openProjected = new List<object>(snapshot.Open.Count);
+    foreach (var window in snapshot.Open)
+        openProjected.Add(await ProjectAsync(window));
+
+    var closedProjected = new List<object>(snapshot.Closed.Count);
+    foreach (var window in snapshot.Closed)
+        closedProjected.Add(await ProjectAsync(window));
+
+    return Results.Ok(new { open = openProjected, closed = closedProjected });
+});
+
+app.MapPost("/api/windows/{id}/reopen", async (
+    string id,
+    ISessionRepository sessionRepo,
+    ISessionOverridesRepository overridesRepo,
+    IWorkspaceReader workspaceReader,
+    INarniaSettingsRepository settingsRepo,
+    ITerminalWindowsRepository windowsRepo,
+    ITerminalCommandBuilder commandBuilder,
+    CancellationToken ct) =>
+{
+    var window = await windowsRepo.GetByIdAsync(id, ct);
+    if (window is null)
+        return Results.NotFound("Window not found");
+    if (window.Tabs.Count == 0)
+        return Results.BadRequest("Window has no tabs to reopen");
+
+    var wtPath = commandBuilder.FindWindowsTerminalPath();
+    if (wtPath is null)
+        return Results.BadRequest("Windows Terminal (wt.exe) is required to reopen a window.");
+
+    var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
+    if (string.IsNullOrWhiteSpace(shellPath))
+        return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
+
+    var launchTabs = new List<TerminalLaunchTab>(window.Tabs.Count);
+    foreach (var tab in window.Tabs.OrderBy(t => t.TabOrder))
+    {
+        var session = await sessionRepo.GetByIdAsync(tab.SessionId, ct);
+        var ov = await overridesRepo.GetOverrideAsync(tab.SessionId, ct);
+        var workspace = workspaceReader.ReadWorkspace(tab.SessionId);
+        var directory = ResolveReopenDirectory(tab.Directory, ov, session, workspace);
+        var title = ov?.TerminalTitle ?? session?.Summary ?? $"Narnia: {tab.SessionId[..8]}";
+        launchTabs.Add(new TerminalLaunchTab(tab.SessionId, title, directory));
+    }
+
+    var psi = new ProcessStartInfo
+    {
+        FileName = wtPath,
+        Arguments = commandBuilder.BuildWindowCommand(shellPath, shellName, launchTabs),
+        UseShellExecute = true,
+    };
+
+    try
+    {
+        Process.Start(psi);
+        return Results.Ok(new { reopened = true, tabs = launchTabs.Count });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest($"Failed to reopen window: {ex.Message}");
+    }
+});
+
+app.MapPost("/api/windows/{id}/name", async (
+    string id,
+    WindowNameRequest request,
+    ITerminalWindowsRepository windowsRepo,
+    CancellationToken ct) =>
+{
+    var name = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
+    // Naming a window pins it against retention pruning unless the caller says otherwise.
+    var pinned = request.Pinned ?? name is not null;
+    await windowsRepo.SetNameAsync(id, name, pinned, ct);
+    return Results.Ok(new { id, name, pinned });
+});
+
+app.MapDelete("/api/windows/{id}", async (
+    string id,
+    ITerminalWindowsRepository windowsRepo,
+    CancellationToken ct) =>
+{
+    await windowsRepo.DeleteAsync(id, ct);
+    return Results.NoContent();
+});
+
+// ── Logon autostart API ─────────────────────────────────────────────────────
+app.MapGet("/api/autostart", (ILogonAutostartManager autostart) =>
+    Results.Ok(new
+    {
+        supported = autostart.IsSupported,
+        enabled = autostart.IsSupported && autostart.IsEnabled(),
+    }));
+
+app.MapPost("/api/autostart", (AutostartRequest request, ILogonAutostartManager autostart) =>
+{
+    if (!autostart.IsSupported)
+        return Results.BadRequest("Logon autostart is only supported on Windows.");
+
+    if (request.Enabled)
+        autostart.Enable();
+    else
+        autostart.Disable();
+
+    return Results.Ok(new { enabled = autostart.IsEnabled() });
 });
 
 app.MapGet("/health", () => Results.Ok(new
@@ -448,12 +636,25 @@ static string? DetectDefaultShell()
     return null;
 }
 
-static string BuildShellArgs(string shellName, string resumeCmd) => shellName switch
+static string? ResolveReopenDirectory(
+    string? capturedDirectory,
+    SessionOverride? ov,
+    Session? session,
+    WorkspaceInfo? workspace)
 {
-    "pwsh" or "powershell" => $"-NoExit -Command \"{resumeCmd}\"",
-    "cmd" => $"/k {resumeCmd}",
-    _ => $"-c \"{resumeCmd}; exec $SHELL\"",
-};
+    if (!string.IsNullOrWhiteSpace(capturedDirectory) && Directory.Exists(capturedDirectory))
+        return capturedDirectory;
+    if (ov?.LocalPath is not null && Directory.Exists(ov.LocalPath))
+        return ov.LocalPath;
+    if (session?.Cwd is not null && Directory.Exists(session.Cwd))
+        return session.Cwd;
+
+    var gitRoot = workspace?.GitRoot ?? session?.GitRoot;
+    if (gitRoot is not null && Directory.Exists(gitRoot))
+        return gitRoot;
+
+    return null;
+}
 
 internal sealed record OverrideRequest(
     string? DisplayName,
@@ -470,3 +671,13 @@ internal sealed record SettingRequest(string Key, string? Value);
 internal sealed record LaunchRequest(string SessionId, string Target);
 
 internal sealed record BulkLaunchRequest(string[] SessionIds);
+
+internal sealed record WindowNameRequest(string? Name, bool? Pinned);
+
+internal sealed record AutostartRequest(bool Enabled);
+
+/// <summary>
+/// Exposes the implicit top-level <c>Program</c> class so integration tests can boot the app
+/// with <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/>.
+/// </summary>
+public partial class Program;

@@ -10,6 +10,7 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 
 - **MCP Server** — exposes tools that any MCP-compatible client (including Copilot CLI) can call to search and browse your session history
 - **Web UI** — Blazor-based local web interface for browsing, searching, and reading session details, checkpoints, and conversation turns
+- **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
 - **Session workspace** — reads supplemental metadata from `~/.copilot/session-state/` including git root and session artifact files
 
 ---

@@ -1,0 +1,154 @@
+@page "/windows"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@using NexusLabs.Narnia.Core.Services
+@inject ITerminalWindowAggregator WindowSources
+@inject ISessionRepository SessionRepository
+
+<PageTitle>Windows — Narnia</PageTitle>
+
+<div class="page-actions">
+    <h1>🪟 Terminal Windows</h1>
+    <a href="/windows" class="btn-refresh">↻ Refresh</a>
+</div>
+
+<p class="settings-hint">
+    Narnia continuously records your open Windows Terminal windows of Copilot tabs, so you can
+    reopen a whole window after it is closed or lost — like restoring a browser window.
+    Recording happens automatically in the background; reopening is always manual.
+</p>
+
+@if (_open.Count == 0 && _closed.Count == 0)
+{
+    <p>
+        No terminal windows recorded yet. Launch Copilot sessions in Windows Terminal (for example
+        with <strong>Launch Selected</strong> on the Sessions page) and they will appear here within
+        a minute.
+    </p>
+}
+
+@if (_open.Count > 0)
+{
+    <h2>Open now</h2>
+    @foreach (var window in _open)
+    {
+        @RenderWindow(window, isClosed: false)
+    }
+}
+
+@if (_closed.Count > 0)
+{
+    <h2>Recently closed</h2>
+    @foreach (var window in _closed)
+    {
+        @RenderWindow(window, isClosed: true)
+    }
+}
+
+@code {
+    private IReadOnlyList<TerminalWindow> _open = [];
+    private IReadOnlyList<TerminalWindow> _closed = [];
+    private readonly Dictionary<string, Session> _sessions = new(StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var snapshot = await WindowSources.GetWindowsAsync(50);
+        _open = snapshot.Open;
+        _closed = snapshot.Closed;
+
+        var sessionIds = _open.Concat(_closed)
+            .SelectMany(w => w.Tabs)
+            .Select(t => t.SessionId)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var sessionId in sessionIds)
+        {
+            var session = await SessionRepository.GetByIdAsync(sessionId);
+            if (session is not null)
+                _sessions[sessionId] = session;
+        }
+    }
+
+    private RenderFragment RenderWindow(TerminalWindow window, bool isClosed) => __builder =>
+    {
+        <div class="window-card @(window.Pinned ? "window-card--pinned" : "")">
+            <div class="window-card-header">
+                <span class="window-title">
+                    @(window.Name ?? DefaultName(window))
+                    @if (window.Pinned)
+                    {
+                        <span class="badge-archived">pinned</span>
+                    }
+                </span>
+                <span class="window-meta">
+                    @window.Tabs.Count tab@(window.Tabs.Count == 1 ? "" : "s")
+                    @if (isClosed)
+                    {
+                        <text> · closed @Ago(window.ClosedAt)</text>
+                        @if (window.OccurrenceCount > 1)
+                        {
+                            <text> · seen @window.OccurrenceCount×</text>
+                        }
+                    }
+                    else
+                    {
+                        <text> · live</text>
+                    }
+                </span>
+                <div class="window-actions">
+                    @if (isClosed)
+                    {
+                        <button class="launch-btn" onclick="narniaReopenWindow('@window.Id', this)" title="Reopen this window">🚀 Reopen</button>
+                    }
+                    <button class="copy-btn" onclick="narniaNameWindow('@window.Id', '@JsString(window.Name)')" title="Name / pin this window">✏️ Name</button>
+                    @if (isClosed)
+                    {
+                        <button class="btn-bulk-archive" onclick="narniaDeleteWindow('@window.Id')" title="Delete this record">🗑 Delete</button>
+                    }
+                </div>
+            </div>
+            <ul class="window-tabs">
+                @foreach (var tab in window.Tabs)
+                {
+                    var session = Lookup(tab.SessionId);
+                    <li class="window-tab">
+                        <a class="window-tab-summary" href="/sessions/@tab.SessionId">@(session?.Summary ?? Short(tab.SessionId))</a>
+                        <span class="window-tab-repo">@(session?.Repository ?? "—")</span>
+                        <span class="window-tab-dir cwd">@(tab.Directory ?? "—")</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    };
+
+    private Session? Lookup(string sessionId) =>
+        _sessions.TryGetValue(sessionId, out var session) ? session : null;
+
+    private string DefaultName(TerminalWindow window)
+    {
+        var first = window.Tabs.OrderBy(t => t.TabOrder).FirstOrDefault();
+        var summary = first is not null ? Lookup(first.SessionId)?.Summary : null;
+        return summary ?? "Untitled window";
+    }
+
+    private static string Short(string sessionId) =>
+        sessionId.Length >= 8 ? sessionId[..8] : sessionId;
+
+    private static string JsString(string? value) =>
+        (value ?? "").Replace("\\", "\\\\").Replace("'", "\\'");
+
+    private static string Ago(DateTimeOffset? when)
+    {
+        if (when is null)
+            return "unknown";
+
+        var delta = DateTimeOffset.UtcNow - when.Value;
+        if (delta < TimeSpan.FromMinutes(1))
+            return "just now";
+        if (delta < TimeSpan.FromHours(1))
+            return $"{(int)delta.TotalMinutes}m ago";
+        if (delta < TimeSpan.FromDays(1))
+            return $"{(int)delta.TotalHours}h ago";
+        return $"{(int)delta.TotalDays}d ago";
+    }
+}

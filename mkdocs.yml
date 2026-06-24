@@ -47,6 +47,7 @@ nav:
   - Getting Started: getting-started.md
   - Setup by Tool: setup-by-tool.md
   - Configuration: configuration.md
+  - Terminal Window Recovery: terminal-windows.md
   - MCP Tools:
     - Overview: tools/index.md
     - list_recent_sessions: tools/list-recent-sessions.md

@@ -1,6 +1,10 @@
 @page "/settings"
+@using NexusLabs.Narnia.Core.Configuration
 @using NexusLabs.Narnia.Core.Repositories
+@using NexusLabs.Narnia.Core.Services
 @inject INarniaSettingsRepository SettingsRepo
+@inject ILogonAutostartManager Autostart
+@inject NarniaOptions Options
 
 <PageTitle>Settings — Narnia</PageTitle>
 
@@ -70,13 +74,88 @@
     }
 </div>
 
+<div class="settings-section">
+    <h2>Terminal Window Snapshots</h2>
+    <p class="settings-hint">
+        Narnia records your open Windows Terminal windows of Copilot tabs in the background so you
+        can reopen a whole window after it is closed or lost. See <a href="/windows">🪟 Windows</a>.
+    </p>
+
+    <div class="setting-field">
+        <label class="theme-option">
+            <input type="checkbox" checked="@_snapEnabled"
+                   onchange="narniaSaveSetting('snapshotter_enabled', this.checked ? 'true' : 'false', this)" />
+            Record terminal windows in the background
+        </label>
+        <span class="setting-hint">Turn recording off or on without restarting the server.</span>
+    </div>
+
+    <div class="setting-field">
+        <label for="setting-snap-interval">Snapshot interval (seconds)</label>
+        <div class="setting-input-group">
+            <input id="setting-snap-interval" type="number" min="5" value="@_snapInterval" />
+        </div>
+        <span class="setting-hint">How often to record open windows. Minimum 5 seconds; default 60.</span>
+    </div>
+
+    <div class="setting-field">
+        <label for="setting-snap-retention">Closed windows to keep</label>
+        <div class="setting-input-group">
+            <input id="setting-snap-retention" type="number" min="0" value="@_snapRetention" />
+        </div>
+        <span class="setting-hint">How many recently-closed windows to retain. Pinned windows are always kept.</span>
+    </div>
+
+    <div class="setting-actions">
+        <button class="btn-save" onclick="narniaSaveSnapshotterConfig(this)">Save</button>
+    </div>
+</div>
+
+<div class="settings-section">
+    <h2>Start at Login</h2>
+    @if (_autostartSupported)
+    {
+        <p class="settings-hint">
+            Launch the Narnia server automatically when you sign in to Windows, so terminal windows
+            are being recorded <em>before</em> you ever need to recover one. Off by default.
+        </p>
+        <div class="setting-field">
+            <label class="theme-option">
+                <input type="checkbox" checked="@_autostartEnabled"
+                       onchange="narniaSetAutostart(this.checked, this)" />
+                Start Narnia when I sign in to Windows
+            </label>
+        </div>
+    }
+    else
+    {
+        <p class="settings-hint">Logon autostart is only available on Windows.</p>
+    }
+</div>
+
 @code {
     private string _shellPath = "";
     private string _theme = "dark";
+    private bool _snapEnabled = true;
+    private int _snapInterval = 60;
+    private int _snapRetention = 50;
+    private bool _autostartSupported;
+    private bool _autostartEnabled;
 
     protected override async Task OnInitializedAsync()
     {
         _shellPath = await SettingsRepo.GetAsync("shell_path") ?? "";
         _theme = await SettingsRepo.GetAsync("theme") == "light" ? "light" : "dark";
+
+        _snapEnabled = await SettingsRepo.GetAsync(SnapshotterSettingKeys.Enabled) != "false";
+        _snapInterval = int.TryParse(await SettingsRepo.GetAsync(SnapshotterSettingKeys.IntervalSeconds), out var interval)
+            ? interval
+            : Options.SnapshotterIntervalSeconds;
+        _snapRetention = int.TryParse(await SettingsRepo.GetAsync(SnapshotterSettingKeys.RetentionCount), out var retention)
+            ? retention
+            : Options.SnapshotterRetentionCount;
+
+        _autostartSupported = Autostart.IsSupported;
+        _autostartEnabled = _autostartSupported && Autostart.IsEnabled();
     }
 }
