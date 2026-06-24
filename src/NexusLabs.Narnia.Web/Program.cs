@@ -428,21 +428,62 @@ app.MapPost("/api/windows/{id}/reopen", async (
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
-    var launchTabs = new List<TerminalLaunchTab>(window.Tabs.Count);
-    foreach (var tab in window.Tabs.OrderBy(t => t.TabOrder))
-    {
-        var session = await sessionRepo.GetByIdAsync(tab.SessionId, ct);
-        var ov = await overridesRepo.GetOverrideAsync(tab.SessionId, ct);
-        var workspace = workspaceReader.ReadWorkspace(tab.SessionId);
-        var directory = ResolveReopenDirectory(tab.Directory, ov, session, workspace);
-        var title = ov?.TerminalTitle ?? session?.Summary ?? $"Narnia: {ShortSession(tab.SessionId)}";
-        launchTabs.Add(new TerminalLaunchTab(tab.SessionId, title, directory));
-    }
+    var launchTabs = await BuildReopenTabsAsync(window, sessionRepo, overridesRepo, workspaceReader, ct);
 
     var outcome = launcher.Launch(shellPath, shellName, launchTabs, TerminalWindowMode.SingleWindow);
     return outcome.Failures.Count == 0
         ? Results.Ok(new { reopened = true, tabs = outcome.LaunchedSessionIds.Count })
         : Results.BadRequest($"Failed to reopen window: {outcome.Failures[0].Reason}");
+});
+
+app.MapPost("/api/windows/reopen", async (
+    BulkReopenRequest request,
+    ISessionRepository sessionRepo,
+    ISessionOverridesRepository overridesRepo,
+    IWorkspaceReader workspaceReader,
+    INarniaSettingsRepository settingsRepo,
+    ITerminalWindowsRepository windowsRepo,
+    ITerminalLauncher launcher,
+    CancellationToken ct) =>
+{
+    if (request.Ids is not { Length: > 0 })
+        return Results.BadRequest("No sessions selected");
+
+    var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
+    if (string.IsNullOrWhiteSpace(shellPath))
+        return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
+
+    var launchTabs = new List<TerminalLaunchTab>();
+    var notFound = new List<string>();
+    foreach (var id in request.Ids)
+    {
+        var window = await windowsRepo.GetByIdAsync(id, ct);
+        if (window is null || window.Tabs.Count == 0)
+        {
+            notFound.Add(id);
+            continue;
+        }
+
+        launchTabs.AddRange(await BuildReopenTabsAsync(window, sessionRepo, overridesRepo, workspaceReader, ct));
+    }
+
+    if (launchTabs.Count == 0)
+        return Results.BadRequest("No reopenable sessions in the selection.");
+
+    // SeparateWindows opens each session in its own window (the original "reopen all" behavior);
+    // otherwise all selected sessions open as tabs in a single window.
+    var mode = request.SeparateWindows
+        ? TerminalWindowMode.SeparateWindows
+        : TerminalWindowMode.SingleWindow;
+    var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode);
+
+    return Results.Ok(new
+    {
+        reopened = outcome.LaunchedSessionIds.Count,
+        failed = outcome.Failures.Select(f => new { sessionId = f.SessionId, reason = f.Reason }).ToList(),
+        notFound,
+    });
 });
 
 app.MapPost("/api/windows/{id}/name", async (
@@ -571,6 +612,29 @@ static string? ResolveReopenDirectory(
     return null;
 }
 
+// Resolves a recorded window's tabs into launch tabs (directory + title per session), shared by the
+// single-window reopen and the multi-select reopen so both resolve identically.
+static async Task<List<TerminalLaunchTab>> BuildReopenTabsAsync(
+    TerminalWindow window,
+    ISessionRepository sessionRepo,
+    ISessionOverridesRepository overridesRepo,
+    IWorkspaceReader workspaceReader,
+    CancellationToken ct)
+{
+    var launchTabs = new List<TerminalLaunchTab>(window.Tabs.Count);
+    foreach (var tab in window.Tabs.OrderBy(t => t.TabOrder))
+    {
+        var session = await sessionRepo.GetByIdAsync(tab.SessionId, ct);
+        var ov = await overridesRepo.GetOverrideAsync(tab.SessionId, ct);
+        var workspace = workspaceReader.ReadWorkspace(tab.SessionId);
+        var directory = ResolveReopenDirectory(tab.Directory, ov, session, workspace);
+        var title = ov?.TerminalTitle ?? session?.Summary ?? $"Narnia: {ShortSession(tab.SessionId)}";
+        launchTabs.Add(new TerminalLaunchTab(tab.SessionId, title, directory));
+    }
+
+    return launchTabs;
+}
+
 internal sealed record OverrideRequest(
     string? DisplayName,
     string? Repository,
@@ -586,6 +650,7 @@ internal sealed record SettingRequest(string Key, string? Value);
 internal sealed record LaunchRequest(string SessionId, string Target);
 
 internal sealed record BulkLaunchRequest(string[] SessionIds, bool SeparateWindows = false);
+internal sealed record BulkReopenRequest(string[] Ids, bool SeparateWindows = false);
 
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);
 

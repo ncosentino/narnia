@@ -297,33 +297,61 @@ async function narniaReopenWindow(id, btn) {
     }
 }
 
-async function narniaReopenAllClosed(btn) {
-    if (!confirm('Reopen every recently-closed session? Each opens in a new terminal window.')) return;
+function narniaSelectedClosedIds() {
+    var checks = document.querySelectorAll('.closed-check:checked');
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    return ids;
+}
+
+function narniaClosedSelectionChanged() {
+    var all = document.querySelectorAll('.closed-check');
+    var selected = narniaSelectedClosedIds();
+    var btn = document.getElementById('btn-reopen-selected');
+    if (btn) {
+        btn.disabled = selected.length === 0;
+        btn.textContent = '🚀 Reopen selected (' + selected.length + ')';
+    }
+    var master = document.getElementById('closed-check-all');
+    if (master) {
+        master.checked = selected.length > 0 && selected.length === all.length;
+        master.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+}
+
+function narniaToggleAllClosed(master) {
+    var checks = document.querySelectorAll('.closed-check');
+    for (var i = 0; i < checks.length; i++) checks[i].checked = master.checked;
+    narniaClosedSelectionChanged();
+}
+
+async function narniaReopenSelected(btn) {
+    var ids = narniaSelectedClosedIds();
+    if (ids.length === 0) return;
+    var oneWindowEl = document.getElementById('closed-one-window');
+    var separateWindows = !(oneWindowEl && oneWindowEl.checked);
+
     var origText = btn.textContent;
     btn.disabled = true;
     btn.textContent = '⏳ Reopening…';
     try {
-        var resp = await fetch('/api/windows', { headers: { 'Accept': 'application/json' } });
-        var data = await resp.json();
-        var closed = (data && data.closed) || [];
-        if (closed.length === 0) {
-            btn.textContent = 'Nothing to reopen';
-            setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 2000);
-            return;
+        var resp = await fetch('/api/windows/reopen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: ids, separateWindows: separateWindows }),
+        });
+        if (resp.ok) {
+            var data = await resp.json();
+            btn.textContent = '✅ Reopened ' + (data.reopened || 0);
+            setTimeout(function () { location.reload(); }, 1200);
+        } else {
+            var err = await resp.json().catch(function () { return null; });
+            alert('Reopen failed: ' + (err?.message || err || 'HTTP ' + resp.status));
+            btn.textContent = origText;
+            btn.disabled = false;
         }
-        var ok = 0;
-        for (var i = 0; i < closed.length; i++) {
-            try {
-                var r = await fetch('/api/windows/' + closed[i].id + '/reopen', { method: 'POST' });
-                if (r.ok) ok++;
-            } catch (e) {
-                // Continue reopening the rest even if one fails.
-            }
-        }
-        btn.textContent = '✅ Reopened ' + ok + '/' + closed.length;
-        setTimeout(function () { location.reload(); }, 1500);
     } catch (e) {
-        alert('Error reopening all: ' + e.message);
+        alert('Error reopening selection: ' + e.message);
         btn.textContent = origText;
         btn.disabled = false;
     }
@@ -448,6 +476,9 @@ function narniaWindowsSignature(data) {
                 if (!resp.ok) return;
                 var data = await resp.json();
                 if (narniaWindowsSignature(data) !== baseline) {
+                    // Don't yank the page out from under an in-progress multi-select — wait until
+                    // the user clears their selection, then pick up the change on a later tick.
+                    if (document.querySelector('.closed-check:checked')) return;
                     if (live) live.textContent = '↻ updating…';
                     location.reload();
                 }
