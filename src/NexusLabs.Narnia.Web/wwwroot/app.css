@@ -508,6 +508,7 @@ a { color: var(--link); }
 .setting-hint code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 3px; }
 .settings-hint { font-size: .85rem; color: var(--text-subtle); }
 .settings-hint code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 3px; }
+.windows-live { display: inline-block; margin-left: .5rem; color: var(--accent, #8b5cf6); font-weight: 600; }
 .theme-options { display: flex; gap: 1rem; flex-wrap: wrap; }
 .theme-option {
     display: flex;

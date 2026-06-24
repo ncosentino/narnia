@@ -16,8 +16,10 @@
     Narnia continuously records your open Windows Terminal windows of Copilot tabs, so you can
     reopen a whole window after it is closed or lost — like restoring a browser window.
     Recording happens automatically in the background; reopening is always manual.
+    <span id="windows-live-indicator" class="windows-live">● live — auto-refreshes when a window opens or closes</span>
 </p>
 
+<div id="windows-root" data-signature="@Signature()">
 @if (_open.Count == 0 && _closed.Count == 0)
 {
     <p>
@@ -44,6 +46,7 @@
         @RenderWindow(window, isClosed: true)
     }
 }
+</div>
 
 @code {
     private IReadOnlyList<TerminalWindow> _open = [];
@@ -123,6 +126,20 @@
 
     private Session? Lookup(string sessionId) =>
         _sessions.TryGetValue(sessionId, out var session) ? session : null;
+
+    private string Signature()
+    {
+        var tokens = _open.Concat(_closed)
+            .OrderBy(w => w.Id, StringComparer.Ordinal)
+            .Select(w => string.Join(":",
+                w.Id,
+                w.Status == TerminalWindowStatus.Open ? "open" : "closed",
+                w.Tabs.Count.ToString(),
+                w.Pinned ? "1" : "0",
+                w.OccurrenceCount.ToString(),
+                w.Name ?? ""));
+        return string.Join("|", tokens);
+    }
 
     private string DefaultName(TerminalWindow window)
     {

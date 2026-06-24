@@ -378,3 +378,56 @@ async function narniaSetAutostart(enabled, el) {
         if (el) el.checked = !enabled;
     }
 }
+
+// ── Terminal Windows live refresh ────────────────────────────────────────────
+// The UI is static server-rendered, so the windows page would otherwise never
+// reflect a window opening or closing until a manual reload. This watcher polls
+// the windows API and reloads only when the open/closed set actually changes
+// (identity, status, tab count, name, pin, occurrence) — never on the snapshotter's
+// routine last-seen heartbeat, so a steady state does not flash.
+function narniaWindowsSignature(data) {
+    var all = (data.open || []).concat(data.closed || []);
+    all.sort(function (a, b) { return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); });
+    return all.map(function (w) {
+        return [
+            w.id,
+            w.status,
+            (w.tabs ? w.tabs.length : 0),
+            (w.pinned ? 1 : 0),
+            (w.occurrenceCount || 0),
+            (w.name || '')
+        ].join(':');
+    }).join('|');
+}
+
+(function () {
+    var POLL_MS = 8000;
+
+    function startWindowsWatch() {
+        var root = document.getElementById('windows-root');
+        if (!root) return;
+
+        var baseline = root.getAttribute('data-signature') || '';
+        var live = document.getElementById('windows-live-indicator');
+
+        setInterval(async function () {
+            try {
+                var resp = await fetch('/api/windows', { headers: { 'Accept': 'application/json' } });
+                if (!resp.ok) return;
+                var data = await resp.json();
+                if (narniaWindowsSignature(data) !== baseline) {
+                    if (live) live.textContent = '↻ updating…';
+                    location.reload();
+                }
+            } catch (e) {
+                // Transient (server restarting, etc.) — try again on the next tick.
+            }
+        }, POLL_MS);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startWindowsWatch);
+    } else {
+        startWindowsWatch();
+    }
+})();
