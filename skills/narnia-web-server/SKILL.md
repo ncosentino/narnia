@@ -88,39 +88,18 @@ a git checkout, so an un-stamped publish degrades to a bare `1.0.0` — and a la
 report `1.0.0 → 1.0.0`, telling you nothing about whether the refresh actually took. To make every
 publish carry a meaningful, comparable identity, compute one at publish time and stamp it in.
 
-Compute `$buildId` from `$NARNIA_ROOT`:
+The bundled script **[`scripts/Get-NarniaBuildId.ps1`](scripts/Get-NarniaBuildId.ps1)** (beside
+this skill) computes that identity for a narnia source tree — the short git SHA for a checkout, else
+a deterministic SHA-256 of the `src` content (which changes iff the code changes). Invoke it with
+the resolved `$NARNIA_ROOT`:
 
 ```powershell
-function Get-NarniaBuildId([string]$root) {
-  # Git checkout (dev clone or $env:NARNIA_REPO_PATH): use the real commit.
-  if (Test-Path (Join-Path $root '.git')) {
-    $sha = (& git -C $root rev-parse --short=12 HEAD 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $sha) { return "git.$sha" }
-  }
-  # Plugin bundle (no git): a deterministic hash of the source content. It changes iff the code
-  # changes — exactly the "did this update actually change anything?" signal we want.
-  $src = Join-Path $root 'src'
-  $sha256 = [System.Security.Cryptography.SHA256]::Create()
-  $ms = New-Object System.IO.MemoryStream
-  Get-ChildItem $src -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
-    Sort-Object FullName |
-    ForEach-Object {
-      $rel = [System.Text.Encoding]::UTF8.GetBytes($_.FullName.Substring($root.Length))
-      $ms.Write($rel, 0, $rel.Length)
-      $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
-      $ms.Write($bytes, 0, $bytes.Length)
-    }
-  $ms.Position = 0
-  $hex = ([System.BitConverter]::ToString($sha256.ComputeHash($ms)) -replace '-', '').ToLower()
-  return "content.$($hex.Substring(0, 12))"
-}
+$buildId = & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Get-NarniaBuildId.ps1" -Root $NARNIA_ROOT
 ```
 
 Then **always publish with the stamp** so `/health` (and the run-state file) report it verbatim:
 
 ```powershell
-$buildId = Get-NarniaBuildId $NARNIA_ROOT
 dotnet publish "$NARNIA_ROOT/src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" `
   -c Release -o $runDir `
   -p:IncludeSourceRevisionInInformationalVersion=false `
@@ -160,7 +139,7 @@ install type, bundle or git.
    build identity (see *Stamp a build identity*):
    ```powershell
    $runDir = Join-Path $env:LOCALAPPDATA 'narnia\app'
-   $buildId = Get-NarniaBuildId $NARNIA_ROOT
+   $buildId = & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Get-NarniaBuildId.ps1" -Root $NARNIA_ROOT
    dotnet publish "$NARNIA_ROOT/src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" `
      -c Release -o $runDir `
      -p:IncludeSourceRevisionInInformationalVersion=false `
@@ -218,10 +197,10 @@ bundle this skill resolves. To roll a running server onto the current bundle:
 1. **Record the running version.** `GET /health` and keep its `version` field (or read `Version`
    from the run-state file `<LocalAppData>/narnia/web-server.json`) as the *before* version. If the
    server is down, note that — this becomes a first **Start**, not a version swap.
-2. **Pre-check (skip a needless republish).** Compute `Get-NarniaBuildId $NARNIA_ROOT` and compare
-   `1.0.0+<buildId>` to the running `version`. If they match, the server is already on the bundle's
-   code — report "already current" and stop. Because the build id is content-derived, this now works
-   for **bundle installs too**, not just git checkouts.
+2. **Pre-check (skip a needless republish).** Run `scripts/Get-NarniaBuildId.ps1 -Root $NARNIA_ROOT`
+   and compare `1.0.0+<buildId>` to the running `version`. If they match, the server is already on
+   the bundle's code — report "already current" and stop. Because the build id is content-derived,
+   this now works for **bundle installs too**, not just git checkouts.
 3. **Stop** (graceful) — releases any file lock on the run dir.
 4. **Re-publish** from `$NARNIA_ROOT` to the run dir **with the build-identity stamp** (see *Stamp a
    build identity*); overwrites the previous copy, safe because the server is stopped.
