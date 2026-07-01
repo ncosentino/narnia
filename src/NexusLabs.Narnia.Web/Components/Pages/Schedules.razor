@@ -1,0 +1,224 @@
+@page "/schedules"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@using NexusLabs.Narnia.Core.Services
+@inject IScheduledJobRegistry Registry
+@inject IScheduledTaskProvider TaskProvider
+
+<PageTitle>Scheduled Jobs — Narnia</PageTitle>
+
+<div class="page-actions">
+    <h1>⏱️ Scheduled Jobs</h1>
+    <a href="/schedules" class="btn-refresh">↻ Refresh</a>
+</div>
+
+<p class="settings-hint">
+    A catalog of your scheduled Copilot jobs. Narnia is a registry only — <strong>Windows Task
+    Scheduler still runs everything</strong>; this page joins each cataloged job to what the
+    scheduler actually reports (last run, next run, result) and flags anything that has drifted.
+    @if (!TaskProvider.IsSupported)
+    {
+        <span class="schedule-warn">Live task status is unavailable on this platform.</span>
+    }
+</p>
+
+@if (_jobs.Count == 0 && _untracked.Count == 0)
+{
+    <p>
+        No scheduled jobs cataloged yet. Once a job is registered under the Narnia standard it will
+        appear here with its live status.
+    </p>
+}
+
+@if (_jobs.Count > 0)
+{
+    <h2>Cataloged <span class="window-meta">@_jobs.Count job@(_jobs.Count == 1 ? "" : "s")</span></h2>
+    <table class="schedule-table">
+        <thead>
+            <tr>
+                <th>Job</th>
+                <th>Cadence</th>
+                <th>Health</th>
+                <th>Last run</th>
+                <th>Next run</th>
+                <th>Working dir</th>
+                <th>Skills</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var view in _jobs)
+            {
+                <tr>
+                    <td>
+                        <div class="schedule-name">@view.Job.Name</div>
+                        <div class="schedule-sub">
+                            <span class="schedule-task">@view.Job.TaskFolder@view.Job.TaskName</span>
+                        </div>
+                    </td>
+                    <td>@(view.Job.Cadence ?? "—")</td>
+                    <td>@RenderHealth(view.Status)</td>
+                    <td>@FormatTime(view.Status?.LastRunTime)</td>
+                    <td>@FormatTime(view.Status?.NextRunTime)</td>
+                    <td class="cwd">@(view.Job.Cwd ?? "—")</td>
+                    <td>
+                        @if (view.Job.Skills.Count == 0)
+                        {
+                            <span>—</span>
+                        }
+                        else
+                        {
+                            @foreach (var skill in view.Job.Skills)
+                            {
+                                <span class="badge-skill" title="@skill.Resolution">@skill.Skill</span>
+                            }
+                        }
+                    </td>
+                    <td class="schedule-actions">
+                        <button class="btn-refresh" onclick="narniaScheduleEdit('@view.Job.Id')" title="Edit">✏️ Edit</button>
+                        <button class="launch-btn" onclick="narniaScheduleRun('@view.Job.Id')" title="Run now">▶</button>
+                        <button class="btn-refresh" onclick="narniaScheduleEnable('@view.Job.Id', false)" title="Disable">⏸</button>
+                        <button class="btn-refresh" onclick="narniaScheduleEnable('@view.Job.Id', true)" title="Enable">⏵</button>
+                        <button class="btn-bulk-archive" onclick="narniaScheduleDelete('@view.Job.Id')" title="Delete">🗑</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<div class="sched-create">
+    <button type="button" class="sched-toggle-btn" id="sched-form-title" onclick="narniaToggleScheduleForm()">➕ New scheduled job</button>
+    <div class="sched-form" id="sched-form-panel" style="display:none;">
+        <input type="hidden" id="sched-edit-id" value="" />
+        <label>Name <input id="sched-name" type="text" /></label>
+        <label>Description <input id="sched-desc" type="text" /></label>
+        <label class="sched-wide">Prompt (what Copilot runs)
+            <textarea id="sched-prompt" rows="3" placeholder="Run example-issue-radar with --lookback 24h"></textarea>
+        </label>
+        <label>Working dir <input id="sched-cwd" type="text" placeholder="(optional)" /></label>
+        <label>Copilot args <input id="sched-copilotargs" type="text" placeholder="(optional, e.g. --model ...)" /></label>
+        <label>Allow flags <input id="sched-flags" type="text" value="--allow-all-tools --allow-all-paths" /></label>
+        <label>Cadence
+            <select id="sched-cadence"><option value="daily">Daily</option><option value="weekly">Weekly</option></select>
+        </label>
+        <label>Time <input id="sched-time" type="text" value="05:00" /></label>
+        <div class="sched-days">
+            @foreach (var d in new[] { "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday" })
+            {
+                <label><input type="checkbox" class="sched-day" value="@d" /> @d[..3]</label>
+            }
+        </div>
+        <label>Skill (metadata) <input id="sched-skill" type="text" /></label>
+        <label>Resolution
+            <select id="sched-skill-res"><option value="plugin">plugin</option><option value="repolocal">repo-local</option></select>
+        </label>
+        <div class="sched-buttons">
+            <button class="launch-btn" onclick="narniaScheduleSubmit(true)">Save & register</button>
+            <button class="btn-refresh" onclick="narniaScheduleSubmit(false)">Show script + command</button>
+            <button class="btn-refresh" onclick="narniaScheduleResetForm()">Clear</button>
+        </div>
+        <div id="sched-copyout" class="sched-wide" style="display:none;">
+            <label>Generated wrapper script <textarea id="sched-script-box" class="sched-command" readonly></textarea></label>
+            <label>Registration command <textarea id="sched-command" class="sched-command" readonly></textarea></label>
+        </div>
+    </div>
+</div>
+
+@if (_untracked.Count > 0)
+{
+    <h2>Orphaned tasks in <code>\Narnia\</code> <span class="window-meta">@_untracked.Count task@(_untracked.Count == 1 ? "" : "s")</span></h2>
+    <p class="settings-hint">
+        These scheduled tasks are in the Narnia folder but have no matching job — likely left over
+        from an older version. You can remove them from Task Scheduler directly.
+    </p>
+    <table class="schedule-table">
+        <thead>
+            <tr>
+                <th>Task</th>
+                <th>State</th>
+                <th>Health</th>
+                <th>Last run</th>
+                <th>Next run</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var task in _untracked)
+            {
+                <tr>
+                    <td class="schedule-task">@task.TaskFolder@task.TaskName</td>
+                    <td>@task.State.ToString().ToLowerInvariant()</td>
+                    <td>@RenderHealth(task)</td>
+                    <td>@FormatTime(task.LastRunTime)</td>
+                    <td>@FormatTime(task.NextRunTime)</td>
+                    <td class="cwd">@(task.ActionSummary ?? "—")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private const string NarniaFolder = @"\Narnia\";
+
+    private IReadOnlyList<JobView> _jobs = [];
+    private IReadOnlyList<ScheduledTaskStatus> _untracked = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var jobs = await Registry.GetAllAsync();
+        var narniaTasks = await TaskProvider.ListInFolderAsync(NarniaFolder);
+
+        var tasksByKey = new Dictionary<string, ScheduledTaskStatus>(StringComparer.OrdinalIgnoreCase);
+        foreach (var task in narniaTasks)
+            tasksByKey[Key(task.TaskFolder, task.TaskName)] = task;
+
+        var matched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var views = new List<JobView>(jobs.Count);
+        foreach (var job in jobs)
+        {
+            var key = Key(job.TaskFolder, job.TaskName);
+            if (!tasksByKey.TryGetValue(key, out var status))
+                status = await TaskProvider.GetAsync(job.TaskFolder, job.TaskName);
+
+            if (status is not null)
+                matched.Add(key);
+
+            views.Add(new JobView(job, status));
+        }
+
+        _jobs = views;
+        _untracked = narniaTasks
+            .Where(t => !matched.Contains(Key(t.TaskFolder, t.TaskName)))
+            .ToList();
+    }
+
+    private static string Key(string folder, string name) => $"{folder.Trim('\\')}|{name}";
+
+    private static string FormatTime(DateTimeOffset? time) =>
+        time?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—";
+
+    private RenderFragment RenderHealth(ScheduledTaskStatus? status) => __builder =>
+    {
+        if (status is null)
+        {
+            <span class="badge-health badge-drift" title="No matching scheduled task found">drift</span>
+            return;
+        }
+
+        var (cssClass, label) = Health(status.LastResult);
+        <span class="badge-health @cssClass">@label</span>
+    };
+
+    // Interprets a Windows Task Scheduler last-result code. 0 = success; 0x41303 (267011) =
+    // SCHED_S_TASK_HAS_NOT_RUN_YET; anything else is a failure surfaced with its hex code.
+    private static (string CssClass, string Label) Health(int? lastResult) => lastResult switch
+    {
+        null or 267011 => ("badge-neutral", "never run"),
+        0 => ("badge-ok", "ok"),
+        _ => ("badge-fail", $"failed (0x{lastResult.Value:X})"),
+    };
+
+    private sealed record JobView(ScheduledJob Job, ScheduledTaskStatus? Status);
+}

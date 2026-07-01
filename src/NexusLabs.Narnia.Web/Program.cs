@@ -47,6 +47,9 @@ builder.Services.AddSingleton<SqliteTerminalWindowsRepository>();
 builder.Services.AddSingleton<ITerminalWindowsRepository>(sp => sp.GetRequiredService<SqliteTerminalWindowsRepository>());
 builder.Services.AddSingleton<SqliteSessionGroupsRepository>();
 builder.Services.AddSingleton<ISessionGroupsRepository>(sp => sp.GetRequiredService<SqliteSessionGroupsRepository>());
+builder.Services.AddSingleton<SqliteScheduledJobRegistry>();
+builder.Services.AddSingleton<IScheduledJobRegistry>(sp => sp.GetRequiredService<SqliteScheduledJobRegistry>());
+builder.Services.AddSingleton<IScheduledJobWorkspace, ScheduledJobWorkspace>();
 builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
 builder.Services.AddSingleton<IProcessLauncher, ShellExecuteProcessLauncher>();
 builder.Services.AddSingleton<ITerminalLauncher, TerminalLauncher>();
@@ -61,6 +64,16 @@ if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<ILogonAutostartManager, WindowsLogonAutostartManager>();
 else
     builder.Services.AddSingleton<ILogonAutostartManager, UnsupportedLogonAutostartManager>();
+
+if (OperatingSystem.IsWindows())
+    builder.Services.AddSingleton<IScheduledTaskProvider, WindowsScheduledTaskProvider>();
+else
+    builder.Services.AddSingleton<IScheduledTaskProvider, UnsupportedScheduledTaskProvider>();
+
+if (OperatingSystem.IsWindows())
+    builder.Services.AddSingleton<IScheduledTaskRegistrar, WindowsScheduledTaskRegistrar>();
+else
+    builder.Services.AddSingleton<IScheduledTaskRegistrar, UnsupportedScheduledTaskRegistrar>();
 
 if (OperatingSystem.IsWindows())
 {
@@ -651,6 +664,197 @@ app.MapPost("/api/groups/{id}/reopen", async (
     });
 });
 
+// ── Scheduled jobs registry API (read-only) ─────────────────────────────────
+app.MapGet("/api/schedules", async (
+    IScheduledJobRegistry registry,
+    IScheduledTaskProvider taskProvider,
+    CancellationToken ct) =>
+{
+    const string narniaFolder = @"\Narnia\";
+
+    var jobs = await registry.GetAllAsync(ct);
+    var narniaTasks = await taskProvider.ListInFolderAsync(narniaFolder, ct);
+
+    var tasksByKey = new Dictionary<string, ScheduledTaskStatus>(StringComparer.OrdinalIgnoreCase);
+    foreach (var task in narniaTasks)
+        tasksByKey[TaskKey(task.TaskFolder, task.TaskName)] = task;
+
+    var matchedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    var projectedJobs = new List<object>(jobs.Count);
+    foreach (var job in jobs)
+    {
+        var key = TaskKey(job.TaskFolder, job.TaskName);
+        if (!tasksByKey.TryGetValue(key, out var status))
+            status = await taskProvider.GetAsync(job.TaskFolder, job.TaskName, ct);
+
+        if (status is not null)
+            matchedKeys.Add(key);
+
+        projectedJobs.Add(new
+        {
+            id = job.Id,
+            name = job.Name,
+            description = job.Description,
+            cwd = job.Cwd,
+            cadence = job.Cadence,
+            args = job.Args,
+            scriptPath = job.ScriptPath,
+            logDir = job.LogDir,
+            allowFlags = job.AllowFlags,
+            taskFolder = job.TaskFolder,
+            taskName = job.TaskName,
+            notes = job.Notes,
+            createdAt = job.CreatedAt,
+            updatedAt = job.UpdatedAt,
+            prompt = job.Prompt,
+            cadenceKind = job.CadenceKind,
+            cadenceTime = job.CadenceTime,
+            cadenceDays = job.CadenceDays,
+            copilotArgs = job.CopilotArgs,
+            skills = job.Skills.Select(s => new
+            {
+                skill = s.Skill,
+                resolution = s.Resolution.ToString().ToLowerInvariant(),
+            }),
+            status = status is null ? null : ProjectStatus(status),
+            taskFound = status is not null,
+        });
+    }
+
+    var untracked = narniaTasks
+        .Where(t => !matchedKeys.Contains(TaskKey(t.TaskFolder, t.TaskName)))
+        .Select(ProjectStatus)
+        .ToList();
+
+    return Results.Ok(new
+    {
+        schedulerSupported = taskProvider.IsSupported,
+        jobs = projectedJobs,
+        untracked,
+    });
+
+    static string TaskKey(string folder, string name) =>
+        $"{folder.Trim('\\')}|{name}";
+
+    static object ProjectStatus(ScheduledTaskStatus s) => new
+    {
+        taskFolder = s.TaskFolder,
+        taskName = s.TaskName,
+        state = s.State.ToString().ToLowerInvariant(),
+        lastRunTime = s.LastRunTime,
+        lastResult = s.LastResult,
+        nextRunTime = s.NextRunTime,
+        actionSummary = s.ActionSummary,
+    };
+});
+
+app.MapPost("/api/schedules", async (
+    ScheduleCreateRequest request,
+    IScheduledJobRegistry registry,
+    IScheduledTaskRegistrar registrar,
+    IScheduledJobWorkspace workspace,
+    CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+        return Results.BadRequest("A job name is required.");
+    if (string.IsNullOrWhiteSpace(request.Prompt))
+        return Results.BadRequest("A prompt is required (it is what Copilot runs).");
+
+    var jobId = Guid.NewGuid().ToString();
+    var cadence = BuildCadence(request);
+    var (script, registration) = BuildOwnedJob(jobId, request, cadence, workspace);
+
+    // Copy-paste mode: catalog nothing, just hand back the generated wrapper + registration command.
+    if (!request.Register)
+        return Results.Ok(new { registered = false, script, command = ScheduledTaskRegistrationScript.Build(registration) });
+
+    if (!registrar.IsSupported)
+        return Results.BadRequest("Registering tasks is not supported on this platform. Copy the command instead.");
+
+    await workspace.WriteScriptAsync(jobId, script, ct);
+    var draft = BuildOwnedDraft(request, cadence, workspace.ScriptPath(jobId), workspace.LogDirectory(jobId));
+
+    // Create with the pre-chosen id so the workspace folder, marker, and catalog row all agree.
+    var job = await registry.CreateWithIdAsync(jobId, draft, DateTimeOffset.UtcNow, ct);
+    var outcome = await registrar.RegisterAsync(registration, ct);
+    if (!outcome.Ok)
+    {
+        await registry.DeleteAsync(job.Id, ct);
+        workspace.Delete(job.Id);
+        return Results.BadRequest($"Task registration failed: {outcome.Error}");
+    }
+
+    return Results.Ok(new { registered = true, id = job.Id });
+});
+
+app.MapPut("/api/schedules/{id}", async (
+    string id,
+    ScheduleCreateRequest request,
+    IScheduledJobRegistry registry,
+    IScheduledTaskRegistrar registrar,
+    IScheduledJobWorkspace workspace,
+    CancellationToken ct) =>
+{
+    var existing = await registry.GetByIdAsync(id, ct);
+    if (existing is null)
+        return Results.NotFound("Job not found");
+    if (string.IsNullOrWhiteSpace(request.Name))
+        return Results.BadRequest("A job name is required.");
+    if (string.IsNullOrWhiteSpace(request.Prompt))
+        return Results.BadRequest("A prompt is required.");
+
+    var cadence = BuildCadence(request);
+    var (script, registration) = BuildOwnedJob(id, request, cadence, workspace);
+
+    if (!registrar.IsSupported)
+        return Results.BadRequest("Editing tasks is not supported on this platform.");
+
+    await workspace.WriteScriptAsync(id, script, ct);
+    var draft = BuildOwnedDraft(request, cadence, workspace.ScriptPath(id), workspace.LogDirectory(id));
+    await registry.UpdateAsync(id, draft, DateTimeOffset.UtcNow, ct);
+
+    // Register with -Force overwrites the existing task in place (trigger/action refreshed).
+    var outcome = await registrar.RegisterAsync(registration, ct);
+    return outcome.Ok
+        ? Results.Ok(new { id })
+        : Results.BadRequest($"Task update failed: {outcome.Error}");
+});
+
+app.MapPost("/api/schedules/{id}/enable", async (
+    string id, ScheduleEnableRequest request, IScheduledJobRegistry registry,
+    IScheduledTaskRegistrar registrar, CancellationToken ct) =>
+{
+    var job = await registry.GetByIdAsync(id, ct);
+    if (job is null) return Results.NotFound("Job not found");
+    var r = await registrar.SetEnabledAsync(job.TaskFolder, job.TaskName, request.Enabled, ct);
+    return r.Ok ? Results.Ok(new { enabled = request.Enabled }) : Results.BadRequest(r.Error);
+});
+
+app.MapPost("/api/schedules/{id}/run", async (
+    string id, IScheduledJobRegistry registry, IScheduledTaskRegistrar registrar, CancellationToken ct) =>
+{
+    var job = await registry.GetByIdAsync(id, ct);
+    if (job is null) return Results.NotFound("Job not found");
+    var r = await registrar.RunAsync(job.TaskFolder, job.TaskName, ct);
+    return r.Ok ? Results.Ok(new { started = true }) : Results.BadRequest(r.Error);
+});
+
+app.MapDelete("/api/schedules/{id}", async (
+    string id, IScheduledJobRegistry registry,
+    IScheduledTaskRegistrar registrar, IScheduledJobWorkspace workspace, CancellationToken ct) =>
+{
+    var job = await registry.GetByIdAsync(id, ct);
+    if (job is null) return Results.NotFound("Job not found");
+
+    // Every job is a first-class Narnia job that owns its scheduled task and generated script, so
+    // deleting a job always removes both.
+    await registrar.DeleteAsync(job.TaskFolder, job.TaskName, ct);
+    workspace.Delete(id);
+    await registry.DeleteAsync(id, ct);
+    return Results.NoContent();
+});
+
 // ── Logon autostart API ─────────────────────────────────────────────────────
 app.MapGet("/api/autostart", (ILogonAutostartManager autostart) =>
     Results.Ok(new
@@ -698,6 +902,61 @@ return;
 // ids so a malformed value never crashes a launch/reopen title fallback.
 static string ShortSession(string sessionId) =>
     sessionId.Length >= 8 ? sessionId[..8] : sessionId;
+
+// Maps a create request's cadence fields into the normalized cadence; defaults to a daily 05:00.
+static ScheduleCadence BuildCadence(ScheduleCreateRequest request)
+{
+    var time = TimeOnly.TryParse(request.Time, out var t) ? t : new TimeOnly(5, 0);
+    var kind = string.Equals(request.CadenceKind, "weekly", StringComparison.OrdinalIgnoreCase)
+        ? ScheduleCadenceKind.Weekly
+        : ScheduleCadenceKind.Daily;
+    var days = (request.Days ?? [])
+        .Select(d => Enum.TryParse<DayOfWeek>(d, ignoreCase: true, out var dow) ? dow : (DayOfWeek?)null)
+        .Where(d => d is not null).Select(d => d!.Value).ToList();
+    return new ScheduleCadence(kind, time, days);
+}
+
+// Builds the generated wrapper script and the standardized task registration for a Narnia-owned
+// job. The task runs pwsh against the generated script under \Narnia\ named after the job.
+static (string Script, ScheduledTaskRegistration Registration) BuildOwnedJob(
+    string jobId, ScheduleCreateRequest request, ScheduleCadence cadence, IScheduledJobWorkspace workspace)
+{
+    const string folder = @"\Narnia\";
+    var taskName = string.IsNullOrWhiteSpace(request.TaskName) ? request.Name : request.TaskName!;
+    var logDir = workspace.LogDirectory(jobId);
+    var script = ScheduledJobScript.Build(
+        request.Name, request.Prompt ?? "", request.Cwd, request.AllowFlags, request.CopilotArgs, logDir);
+    var scriptPath = workspace.ScriptPath(jobId);
+    var args = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"";
+    var registration = new ScheduledTaskRegistration(
+        jobId, folder, taskName, "powershell.exe", args, request.Cwd, cadence);
+    return (script, registration);
+}
+
+// Builds the catalog draft for a Narnia-owned job, keyed to its generated script + log paths.
+static ScheduledJobDraft BuildOwnedDraft(
+    ScheduleCreateRequest request, ScheduleCadence cadence, string scriptPath, string logDir)
+{
+    const string folder = @"\Narnia\";
+    var taskName = string.IsNullOrWhiteSpace(request.TaskName) ? request.Name : request.TaskName!;
+    var skills = (request.Skills ?? [])
+        .Where(s => !string.IsNullOrWhiteSpace(s.Skill))
+        .Select((s, i) => new ScheduledJobSkill(
+            s.Skill,
+            Enum.TryParse<SkillResolution>(s.Resolution, ignoreCase: true, out var r) ? r : SkillResolution.Unknown,
+            i))
+        .ToList();
+    var days = string.Join(",", cadence.DaysOfWeek.Select(d => d.ToString()));
+
+    return new ScheduledJobDraft(
+        Name: request.Name, Description: request.Description, Cwd: request.Cwd, Cadence: cadence.Describe(),
+        Args: null, ScriptPath: scriptPath, LogDir: logDir, AllowFlags: request.AllowFlags,
+        TaskFolder: folder, TaskName: taskName, Notes: null, Skills: skills,
+        Prompt: request.Prompt, CadenceKind: cadence.Kind.ToString(),
+        CadenceTime: cadence.TimeOfDay.ToString("HH\\:mm"), CadenceDays: days.Length > 0 ? days : null,
+        CopilotArgs: request.CopilotArgs);
+}
+
 
 static string? DetectDefaultShell()
 {
@@ -817,6 +1076,28 @@ internal sealed record GroupRequest(string? Name, string[] SessionIds);
 internal sealed record GroupRenameRequest(string? Name);
 internal sealed record GroupMembersRequest(string[] SessionIds);
 internal sealed record GroupReopenRequest(bool SeparateWindows = false);
+
+internal sealed record ScheduleCreateRequest(
+    string Name,
+    string? Description,
+    string? Cwd,
+    string? Prompt,
+    string? AllowFlags,
+    string? CopilotArgs,
+    string? Execute,
+    string? Args,
+    string? ScriptPath,
+    string? LogDir,
+    string? TaskName,
+    string? CadenceKind,
+    string? Time,
+    string[]? Days,
+    ScheduleSkillDto[]? Skills,
+    bool Register = false);
+
+internal sealed record ScheduleSkillDto(string Skill, string? Resolution);
+
+internal sealed record ScheduleEnableRequest(bool Enabled);
 
 internal sealed record AutostartRequest(bool Enabled);
 
