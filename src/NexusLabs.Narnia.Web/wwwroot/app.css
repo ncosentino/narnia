@@ -610,3 +610,44 @@ a { color: var(--link); }
 .group-head { align-items: center; }
 .group-head h2 { margin: 0; }
 
+/* Scheduled jobs */
+.schedule-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: 1.5rem; }
+.schedule-table th, .schedule-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.schedule-table th { color: var(--text-subtle); font-weight: 600; }
+.schedule-name { font-weight: 600; }
+.schedule-sub { display: flex; align-items: center; gap: .5rem; margin-top: .15rem; }
+.schedule-task { font-size: .75rem; color: var(--text-subtle); font-family: var(--mono, monospace); overflow-wrap: anywhere; }
+.schedule-warn { color: #e0a000; margin-left: .35rem; }
+.badge-health, .badge-standard, .badge-adopted, .badge-skill { display: inline-block; padding: .1rem .45rem; border-radius: 10px; font-size: .72rem; font-weight: 600; }
+.badge-ok { background: #1f7a4d; color: #fff; }
+.badge-fail { background: #b3261e; color: #fff; }
+.badge-neutral { background: #555; color: #fff; }
+.badge-drift { background: #8a5a00; color: #fff; }
+.badge-standard { background: #2c5fb3; color: #fff; }
+.badge-adopted { background: #6b6b6b; color: #fff; }
+.badge-skill { background: var(--surface-alt); color: var(--text); border: 1px solid var(--border); margin: 0 .15rem .15rem 0; }
+.schedule-actions { white-space: nowrap; }
+.schedule-actions button { padding: .2rem .45rem; margin-right: .2rem; }
+.sched-create { margin: 1rem 0 1.5rem; }
+.sched-toggle-btn {
+    display: inline-block;
+    padding: .5rem .9rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+    font-size: .9rem;
+    cursor: pointer;
+}
+.sched-toggle-btn:hover { background: var(--accent-hover); }
+.sched-form { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; max-width: 720px; margin-top: .6rem; padding: .8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-alt); }
+.sched-form label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; color: var(--text-subtle); }
+.sched-form .sched-wide { grid-column: 1 / -1; }
+.sched-form textarea { padding: .35rem; font-family: var(--mono, monospace); }
+.sched-form input, .sched-form select { padding: .35rem; }
+.sched-days { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .6rem; font-size: .78rem; }
+.sched-days label { flex-direction: row; align-items: center; gap: .25rem; }
+.sched-buttons { grid-column: 1 / -1; display: flex; gap: .6rem; }
+.sched-command { grid-column: 1 / -1; width: 100%; min-height: 90px; font-family: var(--mono, monospace); font-size: .75rem; }
+

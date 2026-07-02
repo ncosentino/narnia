@@ -536,6 +536,101 @@ async function narniaDeleteGroup(id) {
     }
 }
 
+// ── Scheduled jobs ───────────────────────────────────────────────────────────
+function narniaScheduleFormBody(register) {
+    var days = [];
+    var checks = document.querySelectorAll('.sched-day:checked');
+    for (var i = 0; i < checks.length; i++) days.push(checks[i].value);
+    var skill = document.getElementById('sched-skill').value.trim();
+    return {
+        name: document.getElementById('sched-name').value.trim(),
+        description: document.getElementById('sched-desc').value.trim() || null,
+        cwd: document.getElementById('sched-cwd').value.trim() || null,
+        prompt: document.getElementById('sched-prompt').value,
+        allowFlags: document.getElementById('sched-flags').value.trim() || null,
+        copilotArgs: document.getElementById('sched-copilotargs').value.trim() || null,
+        cadenceKind: document.getElementById('sched-cadence').value,
+        time: document.getElementById('sched-time').value.trim(),
+        days: days,
+        skills: skill ? [{ skill: skill, resolution: document.getElementById('sched-skill-res').value }] : [],
+        register: register,
+    };
+}
+
+async function narniaScheduleSubmit(register) {
+    var body = narniaScheduleFormBody(register);
+    if (!body.name || !body.prompt || !body.prompt.trim()) { alert('Name and prompt are required.'); return; }
+    var editId = document.getElementById('sched-edit-id').value;
+    var url = editId ? ('/api/schedules/' + editId) : '/api/schedules';
+    var method = editId ? 'PUT' : 'POST';
+    try {
+        var resp = await fetch(url, {
+            method: method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        var data = await resp.json().catch(function () { return null; });
+        if (!resp.ok) { alert('Failed: ' + (data || 'HTTP ' + resp.status)); return; }
+        if (register || editId) { location.reload(); }
+        else {
+            document.getElementById('sched-script-box').value = data.script || '';
+            document.getElementById('sched-command').value = data.command || '';
+            document.getElementById('sched-copyout').style.display = 'block';
+        }
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function narniaScheduleEdit(id) {
+    var resp = await fetch('/api/schedules');
+    var data = await resp.json();
+    var job = (data.jobs || []).find(function (j) { return j.id === id; });
+    if (!job) { alert('Job not found'); return; }
+    document.getElementById('sched-edit-id').value = job.id;
+    document.getElementById('sched-name').value = job.name || '';
+    document.getElementById('sched-desc').value = job.description || '';
+    document.getElementById('sched-cwd').value = job.cwd || '';
+    document.getElementById('sched-prompt').value = job.prompt || '';
+    document.getElementById('sched-flags').value = job.allowFlags || '';
+    document.getElementById('sched-copilotargs').value = job.copilotArgs || '';
+    document.getElementById('sched-cadence').value = (job.cadenceKind || 'daily').toLowerCase();
+    document.getElementById('sched-time').value = job.cadenceTime || '05:00';
+    var setDays = (job.cadenceDays || '').split(',');
+    document.querySelectorAll('.sched-day').forEach(function (c) { c.checked = setDays.indexOf(c.value) >= 0; });
+    document.getElementById('sched-skill').value = (job.skills && job.skills[0]) ? job.skills[0].skill : '';
+    document.getElementById('sched-form-title').textContent = '✏️ Editing: ' + job.name + ' (click to hide)';
+    document.getElementById('sched-form-panel').style.display = 'block';
+    document.getElementById('sched-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function narniaToggleScheduleForm() {
+    var panel = document.getElementById('sched-form-panel');
+    panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none';
+}
+
+function narniaScheduleResetForm() {
+    document.getElementById('sched-edit-id').value = '';
+    ['sched-name','sched-desc','sched-cwd','sched-prompt','sched-copilotargs','sched-skill'].forEach(function (i) { document.getElementById(i).value = ''; });
+    document.querySelectorAll('.sched-day').forEach(function (c) { c.checked = false; });
+    document.getElementById('sched-form-title').textContent = '➕ New scheduled job';
+    document.getElementById('sched-copyout').style.display = 'none';
+}
+
+async function narniaScheduleAction(id, verb, body) {
+    try {
+        var resp = await fetch('/api/schedules/' + id + '/' + verb, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : null,
+        });
+        if (resp.ok) { location.reload(); }
+        else { var d = await resp.json().catch(function () { return null; }); alert('Failed: ' + (d || 'HTTP ' + resp.status)); }
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+function narniaScheduleEnable(id, enabled) { narniaScheduleAction(id, 'enable', { enabled: enabled }); }
+function narniaScheduleRun(id) { if (confirm('Run this job now? It will start a real Copilot session.')) narniaScheduleAction(id, 'run', null); }
+async function narniaScheduleDelete(id) {
+    if (!confirm('Delete this job? Its scheduled task and generated script will be removed.')) return;
+    var resp = await fetch('/api/schedules/' + id, { method: 'DELETE' });
+    if (resp.ok) location.reload(); else alert('Delete failed');
+}
+
 // ── Snapshotter & autostart settings ─────────────────────────────────────────
 async function narniaSaveSetting(key, value, el) {
     try {
