@@ -552,9 +552,17 @@ function narniaScheduleFormBody(register) {
         cadenceKind: document.getElementById('sched-cadence').value,
         time: document.getElementById('sched-time').value.trim(),
         days: days,
+        dayOfMonth: parseInt(document.getElementById('sched-dom').value, 10) || 1,
         skills: skill ? [{ skill: skill, resolution: document.getElementById('sched-skill-res').value }] : [],
         register: register,
     };
+}
+
+// Show day-of-week checkboxes only for weekly, day-of-month only for monthly.
+function narniaCadenceChanged() {
+    var kind = document.getElementById('sched-cadence').value;
+    document.getElementById('sched-days-row').style.display = (kind === 'weekly') ? 'flex' : 'none';
+    document.getElementById('sched-dom-row').style.display = (kind === 'monthly') ? 'flex' : 'none';
 }
 
 async function narniaScheduleSubmit(register) {
@@ -592,8 +600,15 @@ async function narniaScheduleEdit(id) {
     document.getElementById('sched-copilotargs').value = job.copilotArgs || '';
     document.getElementById('sched-cadence').value = (job.cadenceKind || 'daily').toLowerCase();
     document.getElementById('sched-time').value = job.cadenceTime || '05:00';
-    var setDays = (job.cadenceDays || '').split(',');
-    document.querySelectorAll('.sched-day').forEach(function (c) { c.checked = setDays.indexOf(c.value) >= 0; });
+    var kind = (job.cadenceKind || 'daily').toLowerCase();
+    if (kind === 'monthly') {
+        document.getElementById('sched-dom').value = parseInt(job.cadenceDays, 10) || 1;
+        document.querySelectorAll('.sched-day').forEach(function (c) { c.checked = false; });
+    } else {
+        var setDays = (job.cadenceDays || '').split(',');
+        document.querySelectorAll('.sched-day').forEach(function (c) { c.checked = setDays.indexOf(c.value) >= 0; });
+    }
+    narniaCadenceChanged();
     document.getElementById('sched-skill').value = (job.skills && job.skills[0]) ? job.skills[0].skill : '';
     document.getElementById('sched-form-title').textContent = '✏️ Editing: ' + job.name + ' (click to hide)';
     document.getElementById('sched-form-panel').style.display = 'block';
@@ -609,6 +624,9 @@ function narniaScheduleResetForm() {
     document.getElementById('sched-edit-id').value = '';
     ['sched-name','sched-desc','sched-cwd','sched-prompt','sched-copilotargs','sched-skill'].forEach(function (i) { document.getElementById(i).value = ''; });
     document.querySelectorAll('.sched-day').forEach(function (c) { c.checked = false; });
+    document.getElementById('sched-dom').value = 1;
+    document.getElementById('sched-cadence').value = 'daily';
+    narniaCadenceChanged();
     document.getElementById('sched-form-title').textContent = '➕ New scheduled job';
     document.getElementById('sched-copyout').style.display = 'none';
 }

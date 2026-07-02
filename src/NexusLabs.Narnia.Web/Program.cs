@@ -907,13 +907,17 @@ static string ShortSession(string sessionId) =>
 static ScheduleCadence BuildCadence(ScheduleCreateRequest request)
 {
     var time = TimeOnly.TryParse(request.Time, out var t) ? t : new TimeOnly(5, 0);
-    var kind = string.Equals(request.CadenceKind, "weekly", StringComparison.OrdinalIgnoreCase)
-        ? ScheduleCadenceKind.Weekly
-        : ScheduleCadenceKind.Daily;
+    var kind = request.CadenceKind?.ToLowerInvariant() switch
+    {
+        "weekly" => ScheduleCadenceKind.Weekly,
+        "monthly" => ScheduleCadenceKind.Monthly,
+        _ => ScheduleCadenceKind.Daily,
+    };
     var days = (request.Days ?? [])
         .Select(d => Enum.TryParse<DayOfWeek>(d, ignoreCase: true, out var dow) ? dow : (DayOfWeek?)null)
         .Where(d => d is not null).Select(d => d!.Value).ToList();
-    return new ScheduleCadence(kind, time, days);
+    var dayOfMonth = request.DayOfMonth is >= 1 and <= 31 ? request.DayOfMonth.Value : 1;
+    return new ScheduleCadence(kind, time, days, dayOfMonth);
 }
 
 // Builds the generated wrapper script and the standardized task registration for a Narnia-owned
@@ -946,14 +950,21 @@ static ScheduledJobDraft BuildOwnedDraft(
             Enum.TryParse<SkillResolution>(s.Resolution, ignoreCase: true, out var r) ? r : SkillResolution.Unknown,
             i))
         .ToList();
-    var days = string.Join(",", cadence.DaysOfWeek.Select(d => d.ToString()));
+    // Weekly stores its day names in cadence_days; monthly reuses the same column for its day number,
+    // so both round-trip for edit prefill without a schema change.
+    var cadenceDays = cadence.Kind switch
+    {
+        ScheduleCadenceKind.Weekly => string.Join(",", cadence.DaysOfWeek.Select(d => d.ToString())),
+        ScheduleCadenceKind.Monthly => cadence.DayOfMonth.ToString(),
+        _ => "",
+    };
 
     return new ScheduledJobDraft(
         Name: request.Name, Description: request.Description, Cwd: request.Cwd, Cadence: cadence.Describe(),
         Args: null, ScriptPath: scriptPath, LogDir: logDir, AllowFlags: request.AllowFlags,
         TaskFolder: folder, TaskName: taskName, Notes: null, Skills: skills,
         Prompt: request.Prompt, CadenceKind: cadence.Kind.ToString(),
-        CadenceTime: cadence.TimeOfDay.ToString("HH\\:mm"), CadenceDays: days.Length > 0 ? days : null,
+        CadenceTime: cadence.TimeOfDay.ToString("HH\\:mm"), CadenceDays: cadenceDays.Length > 0 ? cadenceDays : null,
         CopilotArgs: request.CopilotArgs);
 }
 
@@ -1092,6 +1103,7 @@ internal sealed record ScheduleCreateRequest(
     string? CadenceKind,
     string? Time,
     string[]? Days,
+    int? DayOfMonth,
     ScheduleSkillDto[]? Skills,
     bool Register = false);
 

@@ -100,15 +100,16 @@
         <label>Copilot args <input id="sched-copilotargs" type="text" placeholder="(optional, e.g. --model ...)" /></label>
         <label>Allow flags <input id="sched-flags" type="text" value="--allow-all-tools --allow-all-paths" /></label>
         <label>Cadence
-            <select id="sched-cadence"><option value="daily">Daily</option><option value="weekly">Weekly</option></select>
+            <select id="sched-cadence" onchange="narniaCadenceChanged()"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select>
         </label>
         <label>Time <input id="sched-time" type="text" value="05:00" /></label>
-        <div class="sched-days">
+        <div class="sched-days" id="sched-days-row">
             @foreach (var d in new[] { "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday" })
             {
                 <label><input type="checkbox" class="sched-day" value="@d" /> @d[..3]</label>
             }
         </div>
+        <label id="sched-dom-row" style="display:none;">Day of month <input id="sched-dom" type="number" min="1" max="31" value="1" /></label>
         <label>Skill (metadata) <input id="sched-skill" type="text" /></label>
         <label>Resolution
             <select id="sched-skill-res"><option value="plugin">plugin</option><option value="repolocal">repo-local</option></select>
