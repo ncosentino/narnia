@@ -112,7 +112,13 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
             INSERT INTO search_index (content, session_id, source_type, source_id) VALUES
                 ('Build the API caching dependency injection', 'sess-1', 'turn', '1'),
                 ('Fix the tests xunit mocking', 'sess-2', 'turn', '1'),
-                ('Committed deadc0de1234567890abcdef1234567890deadc0de work done', 'sess-2', 'checkpoint_work_done', '2');
+                ('Committed deadc0de1234567890abcdef1234567890deadc0de work done', 'sess-2', 'checkpoint_work_done', '2'),
+                ('widget widget widget alpha', 'sess-2', 'turn', '10'),
+                ('widget widget widget beta', 'sess-2', 'turn', '11'),
+                ('widget widget widget gamma', 'sess-2', 'turn', '12'),
+                ('widget widget widget delta', 'sess-2', 'turn', '13'),
+                ('widget widget widget epsilon', 'sess-2', 'turn', '14'),
+                ('the team briefly mentioned a widget among many other agenda items', 'sess-3', 'turn', '1');
             """;
         cmd.ExecuteNonQuery();
     }
@@ -260,6 +266,31 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
 
         Assert.NotEmpty(results);
         Assert.Equal("sess-1", results[0].SessionId);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ChattySessionDoesNotCrowdOutOtherMatchingSessions()
+    {
+        // sess-2 has 5 strongly-matching "widget" rows; sess-3 has only 1, weaker match.
+        // A low limit must still surface both sessions instead of exhausting the limit
+        // on sess-2's many rows alone.
+        var results = await _repository.SearchAsync("widget", 2, TestContext.Current.CancellationToken);
+
+        var sessionIds = results.Select(r => r.SessionId).ToArray();
+        Assert.Equal(2, sessionIds.Length);
+        Assert.Equal(sessionIds.Length, sessionIds.Distinct().Count());
+        Assert.Contains("sess-2", sessionIds);
+        Assert.Contains("sess-3", sessionIds);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ReturnsAtMostOneRowPerSession()
+    {
+        // sess-2 alone has 5 matching "widget" rows. A limit of 1 must return a single
+        // result, not the top raw FTS row (which could still be one of sess-2's five).
+        var results = await _repository.SearchAsync("widget", 1, TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
     }
 
     [Fact]

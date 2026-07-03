@@ -88,11 +88,22 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         WHERE session_id = @sessionId
         """;
 
+    // A session can have many matching rows (e.g. one per turn). Ranking and limiting
+    // the raw FTS rows directly would let a handful of chatty sessions consume the whole
+    // limit and crowd out every other matching session. Rank per session first (each
+    // session contributes only its single best-matching row), then limit the number of
+    // distinct sessions, so @limit means "top N sessions" rather than "top N raw hits".
     private static readonly string SearchSql =
         """
+        WITH ranked AS (
+            SELECT session_id, source_type, source_id, content, rank,
+                   ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY rank) AS rn
+            FROM search_index
+            WHERE search_index MATCH @query
+        )
         SELECT session_id, source_type, source_id, content, rank
-        FROM search_index
-        WHERE search_index MATCH @query
+        FROM ranked
+        WHERE rn = 1
         ORDER BY rank
         LIMIT @limit
         """;

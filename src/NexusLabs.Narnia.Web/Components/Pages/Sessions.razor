@@ -15,7 +15,7 @@
 <form method="get" action="/sessions">
     <input type="search" name="q" value="@Query" placeholder="Search sessions..." />
     <label class="show-archived-label">
-        <input type="checkbox" name="showArchived" value="true" @(ShowArchived ? "checked" : "") />
+        <input type="checkbox" name="showArchived" value="true" checked="@ShowArchived" />
         Show archived
     </label>
     <button type="submit">Search</button>
