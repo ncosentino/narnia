@@ -8,12 +8,17 @@ namespace NexusLabs.Narnia.Core.Services;
 /// Reconstructs open terminal windows of Copilot tabs from a process snapshot by walking
 /// each <c>--resume</c>-carrying process up to its owning <c>WindowsTerminal.exe</c> and
 /// grouping the resulting session ids by window. Tab titles and starting directories are
-/// recovered (best-effort) from the terminal's launch command line.
+/// recovered (best-effort) from the terminal's launch command line. A <c>copilot.exe</c>
+/// agent started without <c>--resume</c> (a brand-new session) carries no session id in any
+/// command line; <see cref="ICopilotSessionLockResolver"/> resolves those via the CLI's own
+/// lock-file marker as a fallback.
 /// </summary>
-public sealed partial class LiveWindowDetector(IProcessSnapshotProvider processSnapshotProvider)
-    : ILiveWindowDetector
+public sealed partial class LiveWindowDetector(
+    IProcessSnapshotProvider processSnapshotProvider,
+    ICopilotSessionLockResolver lockResolver) : ILiveWindowDetector
 {
     private const string WindowsTerminalProcessName = "WindowsTerminal.exe";
+    private const string CopilotAgentProcessName = "copilot.exe";
     private const int MaxAncestorWalk = 64;
 
     /// <inheritdoc />
@@ -45,19 +50,26 @@ public sealed partial class LiveWindowDetector(IProcessSnapshotProvider processS
             if (!match.Success)
                 continue;
 
-            var sessionId = match.Groups[1].Value.ToLowerInvariant();
-            var terminalPid = FindOwningTerminal(process, byId);
-            if (terminalPid == 0)
+            AddTabSession(process, match.Groups[1].Value.ToLowerInvariant(), byId, windowSessions);
+        }
+
+        // Second pass: a copilot.exe agent that was started fresh (no --resume anywhere in its
+        // own process chain) is invisible to the regex pass above. Resolve it via its lock file
+        // instead, but only when the chain genuinely has no --resume — otherwise this would
+        // just redundantly re-add a session the first pass already found.
+        foreach (var process in processes)
+        {
+            if (!string.Equals(process.Name, CopilotAgentProcessName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            if (!windowSessions.TryGetValue(terminalPid, out var sessions))
-            {
-                sessions = [];
-                windowSessions[terminalPid] = sessions;
-            }
+            if (ChainHasResume(process, byId))
+                continue;
 
-            if (!sessions.Contains(sessionId))
-                sessions.Add(sessionId);
+            var sessionId = lockResolver.ResolveSessionId(process.ProcessId);
+            if (sessionId is null)
+                continue;
+
+            AddTabSession(process, sessionId.ToLowerInvariant(), byId, windowSessions);
         }
 
         var windows = new List<DetectedWindow>(windowSessions.Count);
@@ -72,6 +84,59 @@ public sealed partial class LiveWindowDetector(IProcessSnapshotProvider processS
 
         windows.Sort(static (a, b) => a.TerminalProcessId.CompareTo(b.TerminalProcessId));
         return windows;
+    }
+
+    private static void AddTabSession(
+        ProcessRecord process,
+        string sessionId,
+        IReadOnlyDictionary<int, ProcessRecord> byId,
+        Dictionary<int, List<string>> windowSessions)
+    {
+        var terminalPid = FindOwningTerminal(process, byId);
+        if (terminalPid == 0)
+            return;
+
+        if (!windowSessions.TryGetValue(terminalPid, out var sessions))
+        {
+            sessions = [];
+            windowSessions[terminalPid] = sessions;
+        }
+
+        if (!sessions.Contains(sessionId))
+            sessions.Add(sessionId);
+    }
+
+    /// <summary>
+    /// Walks from <paramref name="start"/> up to (but not including) its owning terminal,
+    /// looking for a <c>--resume</c> command line at any level. Used to avoid the lock-file
+    /// fallback for chains the regex pass already covers (e.g. via the shell or node process
+    /// one level up). The terminal process's own command line is never inspected here — it
+    /// permanently lists every tab it was originally launched with (including ones that have
+    /// since closed), so matching against it would wrongly mark an unrelated, later-opened
+    /// orphan tab in the same window as "already resumed".
+    /// </summary>
+    private static bool ChainHasResume(ProcessRecord start, IReadOnlyDictionary<int, ProcessRecord> byId)
+    {
+        var current = start;
+        for (var depth = 0; depth < MaxAncestorWalk; depth++)
+        {
+            if (string.Equals(current.Name, WindowsTerminalProcessName, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (current.CommandLine is not null && ResumeRegex().IsMatch(current.CommandLine))
+                return true;
+
+            if (current.ParentProcessId == 0 ||
+                !byId.TryGetValue(current.ParentProcessId, out var parent) ||
+                parent.ProcessId == current.ProcessId)
+            {
+                return false;
+            }
+
+            current = parent;
+        }
+
+        return false;
     }
 
     private static int FindOwningTerminal(ProcessRecord start, IReadOnlyDictionary<int, ProcessRecord> byId)

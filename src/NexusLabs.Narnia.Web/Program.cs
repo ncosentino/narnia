@@ -41,6 +41,7 @@ builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
 builder.Services.AddSingleton<SettingsDatabaseRelocator>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<IWorkspaceReader, WorkspaceReader>();
+builder.Services.AddSingleton<ICopilotSessionLockResolver, CopilotSessionLockResolver>();
 builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
 builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredService<SqliteNarniaSettingsRepository>());
 builder.Services.AddSingleton<SqliteTerminalWindowsRepository>();
