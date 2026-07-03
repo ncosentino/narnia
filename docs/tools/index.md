@@ -1,16 +1,12 @@
 ---
-description: Overview of all eight Narnia MCP tools for searching and browsing GitHub Copilot CLI session history. Use these from any AI assistant that supports MCP.
----
-
----
-description: Reference for all eight Narnia MCP tools. Search sessions, browse checkpoints, and read conversation history from any MCP-enabled AI assistant.
+description: Reference for all fifteen Narnia MCP tools -- session history search/browse and scheduled Copilot job management. Use these from any AI assistant that supports MCP.
 ---
 
 # MCP Tools
 
-Narnia exposes eight MCP tools for working with your local Copilot CLI session history. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
+Narnia exposes fifteen MCP tools: eight for working with your local Copilot CLI session history, and seven for managing Narnia-owned scheduled Copilot jobs. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
 
-## Tool Reference
+## Session History Tools
 
 | Tool | Purpose | Key Parameters |
 |------|---------|----------------|
@@ -26,7 +22,7 @@ Narnia exposes eight MCP tools for working with your local Copilot CLI session h
 !!! note "Looking for the web UI launcher?"
     The `open_narnia_ui` MCP tool has been replaced by the [`narnia-web-server` skill](../skills/narnia-web-server.md), which provides more reliable lifecycle management with full visibility into build output.
 
-## Common Workflow
+### Common Workflow
 
 After a machine restart, start by listing recent sessions or searching by project name:
 
@@ -35,4 +31,21 @@ After a machine restart, start by listing recent sessions or searching by projec
 3. `get_session_details` — confirm the right session before resuming
 4. `get_session_checkpoints` — read the last checkpoint to restore context
 
-All tools return JSON. Results are read-only — Narnia never modifies your session data.
+All session tools return JSON. Results are read-only — Narnia never modifies your session data.
+
+## Scheduled Job Tools
+
+Manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that Windows Task Scheduler executes unattended on a daily/weekly/monthly cadence. See the [narnia-scheduler skill](../skills/narnia-scheduler.md) for the full create/migrate/verify workflow built on top of these tools.
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| [`list_schedules`](list-schedules.md) | All cataloged jobs joined to live task status | — |
+| [`get_schedule`](get-schedule.md) | A single job's full catalog entry by id | `id` |
+| [`create_schedule`](create-schedule.md) | Create a job and (by default) register its task | `name`, `prompt`, `cadenceKind`, `time` |
+| [`update_schedule`](update-schedule.md) | Replace a job's definition and re-register | `id`, `name`, `prompt` |
+| [`set_schedule_enabled`](set-schedule-enabled.md) | Enable/disable a job's task | `id`, `enabled` |
+| [`run_schedule_now`](run-schedule-now.md) | Start a job's task immediately | `id` |
+| [`delete_schedule`](delete-schedule.md) | Remove a job's task, wrapper, and catalog entry | `id` |
+
+These tools are backed by the same service as the web UI's Schedules page — creating or editing a job through either surface is immediately visible in the other.
+

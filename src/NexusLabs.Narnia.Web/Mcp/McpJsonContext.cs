@@ -14,5 +14,9 @@ namespace NexusLabs.Narnia.Web.Mcp;
 [JsonSerializable(typeof(SessionRef[]))]
 [JsonSerializable(typeof(SearchResult[]))]
 [JsonSerializable(typeof(WorkspaceInfo))]
+[JsonSerializable(typeof(ScheduleJobMcpDto))]
+[JsonSerializable(typeof(ScheduleListMcpDto))]
+[JsonSerializable(typeof(ScheduleCreateMcpDto))]
+[JsonSerializable(typeof(ScheduleMutationMcpDto))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal sealed partial class McpJsonContext : JsonSerializerContext;

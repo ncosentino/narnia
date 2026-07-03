@@ -11,4 +11,10 @@
     <ProjectReference Include="..\NexusLabs.Narnia.Core\NexusLabs.Narnia.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets Web.Tests directly unit-test internal MCP tool classes (e.g. ScheduleTools) with
+         mocked services, instead of only exercising them through a full MCP protocol round-trip. -->
+    <InternalsVisibleTo Include="NexusLabs.Narnia.Web.Tests" />
+  </ItemGroup>
+
 </Project>

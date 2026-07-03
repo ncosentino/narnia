@@ -58,9 +58,17 @@ nav:
     - get_session_workspace: tools/get-session-workspace.md
     - list_sessions_by_repository: tools/list-sessions-by-repository.md
     - list_sessions_by_cwd: tools/list-sessions-by-cwd.md
+    - list_schedules: tools/list-schedules.md
+    - get_schedule: tools/get-schedule.md
+    - create_schedule: tools/create-schedule.md
+    - update_schedule: tools/update-schedule.md
+    - set_schedule_enabled: tools/set-schedule-enabled.md
+    - run_schedule_now: tools/run-schedule-now.md
+    - delete_schedule: tools/delete-schedule.md
   - Skills:
     - Overview: skills/index.md
     - narnia-web-server: skills/narnia-web-server.md
+    - narnia-scheduler: skills/narnia-scheduler.md
   - Troubleshooting: troubleshooting.md
   - Building from Source: building.md
   - Articles: articles.md
