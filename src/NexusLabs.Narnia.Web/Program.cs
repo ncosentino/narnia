@@ -89,7 +89,8 @@ builder.Services.AddRazorComponents();
 builder.Services
     .AddMcpServer()
     .WithHttpTransport(httpOptions => httpOptions.Stateless = true)
-    .WithTools<SessionTools>();
+    .WithTools<SessionTools>()
+    .WithTools<ScheduleTools>();
 
 var app = builder.Build();
 
