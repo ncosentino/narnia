@@ -9,6 +9,7 @@ Unlike MCP tools (which run inside the MCP server process), skills run in the LL
 | Skill | Description |
 |-------|-------------|
 | [narnia-web-server](narnia-web-server.md) | Start, stop, restart, and check status of the Narnia web UI |
+| [narnia-scheduler](narnia-scheduler.md) | Create, migrate, and manage Narnia-owned scheduled Copilot jobs |
 
 ## Installing as a Plugin
 

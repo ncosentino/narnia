@@ -74,6 +74,13 @@ After publishing as a NativeAOT binary (`dotnet publish src/NexusLabs.Narnia.Mcp
 | `get_session_workspace` | Git root and session artifact files from the filesystem |
 | `list_sessions_by_repository` | Filter sessions by git repository |
 | `list_sessions_by_cwd` | Filter sessions by working directory |
+| `list_schedules` | All cataloged scheduled jobs joined to live task status |
+| `get_schedule` | A single scheduled job's full catalog entry by id |
+| `create_schedule` | Create a scheduled job and (by default) register its task |
+| `update_schedule` | Replace a scheduled job's definition and re-register it |
+| `set_schedule_enabled` | Enable/disable a scheduled job's task |
+| `run_schedule_now` | Start a scheduled job's task immediately |
+| `delete_schedule` | Remove a scheduled job's task, wrapper, and catalog entry |
 
 ---
 
@@ -86,6 +93,7 @@ Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Cod
 | Skill | Description |
 |-------|-------------|
 | `narnia-web-server` | Start, stop, restart, and check status of the Narnia web UI |
+| `narnia-scheduler` | Create, migrate, and manage Narnia-owned scheduled Copilot jobs |
 
 ### Installing as a Plugin
 
@@ -185,6 +193,7 @@ dotnet publish src/NexusLabs.Narnia.McpServer -c Release
 narnia/
   skills/
     narnia-web-server/            # Agentic skill for web UI lifecycle management
+    narnia-scheduler/             # Agentic skill for scheduled Copilot job create/migrate/verify
   src/
     NexusLabs.Narnia.Core/        # Shared library — trim-safe, AOT-compatible
     NexusLabs.Narnia.McpServer/   # MCP server — NativeAOT, stdio transport
