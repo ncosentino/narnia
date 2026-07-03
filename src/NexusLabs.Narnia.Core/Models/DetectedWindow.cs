@@ -3,7 +3,7 @@ namespace NexusLabs.Narnia.Core.Models;
 /// <summary>
 /// A live terminal window reconstructed from the process tree: one owning terminal
 /// process hosting one or more Copilot session tabs. Only windows containing at least
-/// one <c>copilot --resume</c> tab are ever produced.
+/// one live Copilot agent tab are ever produced.
 /// </summary>
 /// <param name="TerminalProcessId">The process id of the owning terminal (e.g. <c>WindowsTerminal.exe</c>).</param>
 /// <param name="Tabs">The Copilot tabs detected within this window, in tab order.</param>

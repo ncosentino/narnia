@@ -8,11 +8,14 @@ public sealed class LiveWindowDetectorTests
 {
     private const string TerminalName = "WindowsTerminal.exe";
 
-    private static ILiveWindowDetector Detector(params ProcessRecord[] processes)
+    private static ILiveWindowDetector Detector(params ProcessRecord[] processes) =>
+        Detector(new Mock<ICopilotSessionLockResolver>().Object, processes);
+
+    private static ILiveWindowDetector Detector(ICopilotSessionLockResolver lockResolver, params ProcessRecord[] processes)
     {
         var provider = new Mock<IProcessSnapshotProvider>();
         provider.Setup(p => p.GetProcesses()).Returns(processes);
-        return new LiveWindowDetector(provider.Object);
+        return new LiveWindowDetector(provider.Object, lockResolver);
     }
 
     private static ProcessRecord Pwsh(int pid, int parent, string sessionId) =>
@@ -200,6 +203,116 @@ public sealed class LiveWindowDetectorTests
         var detector = Detector(
             new ProcessRecord(100, 1, TerminalName, null),
             new ProcessRecord(200, 100, "pwsh.exe", null));
+
+        Assert.Empty(detector.DetectWindows());
+    }
+
+    [Fact]
+    public void DetectWindows_FreshSessionWithNoResume_ResolvedViaLockFile()
+    {
+        // A brand-new "copilot" invocation (no --resume anywhere) carries no session id in any
+        // command line. Only the lock-file resolver can identify it.
+        const string sessionId = "33333333-3333-4333-8333-333333333333";
+        var copilot = new ProcessRecord(400, 300, "copilot.exe", "copilot.exe");
+        var lockResolver = new Mock<ICopilotSessionLockResolver>();
+        lockResolver.Setup(r => r.ResolveSessionId(400)).Returns(sessionId);
+
+        var detector = Detector(
+            lockResolver.Object,
+            new ProcessRecord(100, 1, TerminalName, "wt.exe"),
+            new ProcessRecord(200, 100, "pwsh.exe", "\"pwsh.exe\" -NoExit"),
+            new ProcessRecord(300, 200, "node.exe", "node npm-loader.js"),
+            copilot);
+
+        var window = Assert.Single(detector.DetectWindows());
+
+        Assert.Equal(100, window.TerminalProcessId);
+        Assert.Equal(sessionId, Assert.Single(window.Tabs).SessionId);
+    }
+
+    [Fact]
+    public void DetectWindows_FreshTabAddedToWindowWithOtherResumedTabs_BothDetected()
+    {
+        // Regression: the terminal's OWN command line permanently lists every tab it was
+        // originally launched with (including --resume for tabs opened via "wt new-tab"), even
+        // after a brand-new tab is opened later via "+" in the same window. The chain walk for
+        // the new orphan tab must stop at the terminal without inspecting ITS command line —
+        // otherwise the terminal's --resume (for a *different*, unrelated tab) would wrongly
+        // make the orphan look "already resumed" and the lock-file fallback would never run.
+        const string resumedSessionId = "11111111-1111-4111-8111-111111111111";
+        const string freshSessionId = "99999999-9999-4999-8999-999999999999";
+        var launch = $"wt.exe new-tab -- pwsh.exe -NoExit -Command \"copilot --resume={resumedSessionId}\"";
+        var lockResolver = new Mock<ICopilotSessionLockResolver>();
+        lockResolver.Setup(r => r.ResolveSessionId(400)).Returns(freshSessionId);
+
+        var detector = Detector(
+            lockResolver.Object,
+            new ProcessRecord(100, 1, TerminalName, launch),
+            Pwsh(200, 100, resumedSessionId),
+            // The freshly-opened tab: a plain shell with no --resume anywhere in its own chain.
+            new ProcessRecord(210, 100, "pwsh.exe", "\"pwsh.exe\" -NoExit"),
+            new ProcessRecord(300, 210, "node.exe", "node npm-loader.js"),
+            new ProcessRecord(400, 300, "copilot.exe", "copilot.exe"));
+
+        var window = Assert.Single(detector.DetectWindows());
+
+        var sessionIds = window.Tabs.Select(t => t.SessionId).ToArray();
+        Assert.Equal(2, sessionIds.Length);
+        Assert.Contains(resumedSessionId, sessionIds);
+        Assert.Contains(freshSessionId, sessionIds);
+    }
+
+    [Fact]
+    public void DetectWindows_FreshSessionUnresolvedByLockFile_IsIgnored()
+    {
+        // The lock file may not exist yet (race with the CLI writing it) or the resolver may
+        // simply find nothing — either way, an unresolvable orphan must not produce a tab.
+        var lockResolver = new Mock<ICopilotSessionLockResolver>();
+        lockResolver.Setup(r => r.ResolveSessionId(It.IsAny<int>())).Returns((string?)null);
+
+        var detector = Detector(
+            lockResolver.Object,
+            new ProcessRecord(100, 1, TerminalName, "wt.exe"),
+            new ProcessRecord(200, 100, "pwsh.exe", "\"pwsh.exe\" -NoExit"),
+            new ProcessRecord(300, 200, "node.exe", "node npm-loader.js"),
+            new ProcessRecord(400, 300, "copilot.exe", "copilot.exe"));
+
+        Assert.Empty(detector.DetectWindows());
+    }
+
+    [Fact]
+    public void DetectWindows_CopilotAgentChainAlreadyHasResume_LockResolverNotConsulted()
+    {
+        // The chain already carries --resume one level up (node.exe) — the regex pass already
+        // covers this tab, so the (more expensive) lock-file fallback must not even be called.
+        const string sessionId = "44444444-4444-4444-8444-444444444444";
+        var lockResolver = new Mock<ICopilotSessionLockResolver>(MockBehavior.Strict);
+
+        var detector = Detector(
+            lockResolver.Object,
+            new ProcessRecord(100, 1, TerminalName, "wt.exe"),
+            new ProcessRecord(200, 100, "pwsh.exe", "\"pwsh.exe\" -NoExit -Command \"copilot --resume=" + sessionId + "\""),
+            new ProcessRecord(300, 200, "node.exe", $"node npm-loader.js --resume={sessionId}"),
+            new ProcessRecord(400, 300, "copilot.exe", "copilot.exe"));
+
+        var window = Assert.Single(detector.DetectWindows());
+
+        Assert.Equal(sessionId, Assert.Single(window.Tabs).SessionId);
+        lockResolver.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void DetectWindows_FreshSessionNoTerminalAncestor_IsIgnored()
+    {
+        // A resolvable copilot.exe whose chain never reaches a WindowsTerminal.exe (e.g. a
+        // headless/scheduled invocation) must not be treated as a terminal tab.
+        var lockResolver = new Mock<ICopilotSessionLockResolver>();
+        lockResolver.Setup(r => r.ResolveSessionId(400)).Returns("55555555-5555-4555-8555-555555555555");
+
+        var detector = Detector(
+            lockResolver.Object,
+            new ProcessRecord(300, 1, "node.exe", "node npm-loader.js"),
+            new ProcessRecord(400, 300, "copilot.exe", "copilot.exe"));
 
         Assert.Empty(detector.DetectWindows());
     }

@@ -109,7 +109,7 @@
             }
             <a class="window-tab-summary" href="/sessions/@sessionId">@(session?.Summary ?? Short(sessionId))</a>
             <span class="window-tab-repo">@(session?.Repository ?? "—")</span>
-            <span class="window-tab-dir cwd">@(tab?.Directory ?? "—")</span>
+            <span class="window-tab-dir cwd">@(tab?.Directory ?? session?.Cwd ?? "—")</span>
             @if (isClosed)
             {
                 <span class="window-tab-actions">
