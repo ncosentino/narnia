@@ -649,5 +649,11 @@ a { color: var(--link); }
 .sched-days { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .6rem; font-size: .78rem; }
 .sched-days label { flex-direction: row; align-items: center; gap: .25rem; }
 .sched-buttons { grid-column: 1 / -1; display: flex; gap: .6rem; }
+.sched-skills-field { display: flex; flex-direction: column; gap: .3rem; font-size: .8rem; color: var(--text-subtle); }
+.sched-skills-list { display: flex; flex-direction: column; gap: .4rem; }
+.sched-skill-row { display: flex; gap: .4rem; align-items: center; }
+.sched-skill-row .sched-skill-name { flex: 1 1 auto; }
+.sched-skill-row .sched-skill-res { flex: 0 0 auto; }
+.sched-skill-row .btn-bulk-archive { padding: .3rem .6rem; }
 .sched-command { grid-column: 1 / -1; width: 100%; min-height: 90px; font-family: var(--mono, monospace); font-size: .75rem; }
 

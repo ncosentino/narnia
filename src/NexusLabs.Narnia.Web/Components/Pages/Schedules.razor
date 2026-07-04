@@ -110,10 +110,11 @@
             }
         </div>
         <label id="sched-dom-row" style="display:none;">Day of month <input id="sched-dom" type="number" min="1" max="31" value="1" /></label>
-        <label>Skill (metadata) <input id="sched-skill" type="text" /></label>
-        <label>Resolution
-            <select id="sched-skill-res"><option value="plugin">plugin</option><option value="repolocal">repo-local</option></select>
-        </label>
+        <div class="sched-wide sched-skills-field">
+            <label>Skills (metadata)</label>
+            <div id="sched-skills-list" class="sched-skills-list"></div>
+            <button type="button" class="btn-refresh" onclick="narniaAddSkillRow()">+ Add skill</button>
+        </div>
         <div class="sched-buttons">
             <button class="launch-btn" onclick="narniaScheduleSubmit(true)">Save & register</button>
             <button class="btn-refresh" onclick="narniaScheduleSubmit(false)">Show script + command</button>

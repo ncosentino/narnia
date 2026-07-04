@@ -237,6 +237,43 @@ public sealed class SchedulesEndpointsTests
     }
 
     [Fact]
+    public async Task Update_WithMultipleSkills_PersistsAllOfThemInOrder()
+    {
+        // Regression test: the web UI's edit form used to round-trip only the first skill,
+        // so saving an update silently truncated a job with several skills down to one. The
+        // fix now resubmits every skill on save; this locks in that the backend persists an
+        // arbitrary-length skill list rather than just the first entry.
+        using var factory = new NarniaWebAppFactory();
+        var job = await factory.ScheduledJobRegistry.CreateAsync(Draft("Linker", "Narnia - Linker"), Now, Ct);
+        var client = factory.CreateClient();
+
+        var response = await client.PutAsJsonAsync($"/api/schedules/{job.Id}", new
+        {
+            name = "Linker",
+            prompt = "run the pipeline",
+            cadenceKind = "weekly",
+            time = "02:00",
+            days = new[] { "Saturday" },
+            register = true,
+            skills = new[]
+            {
+                new { skill = "example-link-pipeline", resolution = "plugin" },
+                new { skill = "example-link-scheduled", resolution = "repolocal" },
+                new { skill = "example-link-discovery", resolution = "repolocal" },
+            },
+        }, Ct);
+
+        response.EnsureSuccessStatusCode();
+        var updated = await factory.ScheduledJobRegistry.GetByIdAsync(job.Id, Ct);
+        Assert.Equal(
+            ["example-link-pipeline", "example-link-scheduled", "example-link-discovery"],
+            updated!.Skills.OrderBy(s => s.Order).Select(s => s.Skill));
+        Assert.Equal(
+            SkillResolution.RepoLocal,
+            updated.Skills.Single(s => s.Skill == "example-link-discovery").Resolution);
+    }
+
+    [Fact]
     public async Task Delete_OwnedJob_RemovesTaskAndWorkspace()
     {
         using var factory = new NarniaWebAppFactory();
