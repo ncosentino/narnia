@@ -625,6 +625,8 @@ a { color: var(--link); }
 .badge-ok { background: #1f7a4d; color: #fff; }
 .badge-fail { background: #b3261e; color: #fff; }
 .badge-neutral { background: #555; color: #fff; }
+.badge-running { background: #2c5fb3; color: #fff; animation: badge-running-pulse 1.6s ease-in-out infinite; }
+@keyframes badge-running-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .6; } }
 .badge-drift { background: #8a5a00; color: #fff; }
 .badge-standard { background: #2c5fb3; color: #fff; }
 .badge-adopted { background: #6b6b6b; color: #fff; }

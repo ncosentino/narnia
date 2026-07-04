@@ -109,6 +109,43 @@ public sealed class ScheduledJobWorkspaceTests
     }
 
     [Fact]
+    public async Task ReadLogAsync_FileHasConcurrentWriterNotSharingWriteAccess_DoesNotThrow()
+    {
+        // Regression test for a real bug found live: the scheduled task's own wrapper keeps its log
+        // handle open across the whole run (PowerShell's Tee-Object -Append), so reading with the
+        // .NET default share mode threw IOException while a job was still executing -- the exact
+        // moment the live-polling log viewer needs to read it. Verified empirically (both against
+        // the real running job and a faithful Tee-Object repro) that the failure requires the
+        // reader's own FileShare to include Write, not just Read -- a plain FileShare.Read reader
+        // still throws against a writer-open handle. Uses the real file system (not MockFileSystem,
+        // which has no OS-level locking model) against a real temp file with a second handle
+        // deliberately left open, matching Tee-Object's behavior.
+        var tempPath = Path.Combine(Path.GetTempPath(), $"narnia-log-test-{Guid.NewGuid():N}.log");
+        var realFs = new System.IO.Abstractions.FileSystem();
+        try
+        {
+            await using var writer = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+            await using var textWriter = new StreamWriter(writer) { AutoFlush = false };
+            await textWriter.WriteAsync("partial output so far");
+            await textWriter.FlushAsync(Ct);
+
+            // Proves this test would have caught the original bug: a reader that does not request
+            // FileShare.Write (the .NET default for File.ReadAllTextAsync) is rejected by the OS
+            // while the writer handle above is still open.
+            await Assert.ThrowsAsync<IOException>(() => realFs.File.ReadAllTextAsync(tempPath, Ct));
+
+            var workspace = new ScheduledJobWorkspace(Options(), realFs);
+            var content = await workspace.ReadLogAsync(tempPath, Ct);
+
+            Assert.Equal("partial output so far", content);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    [Fact]
     public void Delete_RemovesEntireJobFolder()
     {
         var fs = new MockFileSystem(new Dictionary<string, MockFileData>

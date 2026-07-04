@@ -108,16 +108,22 @@ public sealed record ScheduledJobListView(
 /// <param name="Path">The log file's full path, when <see cref="Found"/> is true.</param>
 /// <param name="Content">The log content (possibly truncated to the most recent portion).</param>
 /// <param name="Truncated">Whether <see cref="Content"/> was truncated because the file was large.</param>
-public sealed record ScheduledJobLogView(bool JobNotFound, bool Found, string? Path, string? Content, bool Truncated)
+/// <param name="IsRunning">
+/// Whether the task is currently executing, per the OS scheduler's live state — the log for a
+/// running job is necessarily incomplete, so callers can poll and keep the reader informed
+/// instead of presenting a partial log as if it were a finished (and possibly failed) run.
+/// </param>
+public sealed record ScheduledJobLogView(bool JobNotFound, bool Found, string? Path, string? Content, bool Truncated, bool IsRunning)
 {
     /// <summary>The job id does not exist in the catalog.</summary>
-    public static ScheduledJobLogView Missing { get; } = new(true, false, null, null, false);
+    public static ScheduledJobLogView Missing { get; } = new(true, false, null, null, false, false);
 
     /// <summary>The job exists but has never run, so no log file exists yet.</summary>
-    public static ScheduledJobLogView NoLogYet { get; } = new(false, false, null, null, false);
+    public static ScheduledJobLogView NoLogYet(bool isRunning) => new(false, false, null, null, false, isRunning);
 
     /// <summary>The job's most recent log content.</summary>
-    public static ScheduledJobLogView Of(string path, string content, bool truncated) => new(false, true, path, content, truncated);
+    public static ScheduledJobLogView Of(string path, string content, bool truncated, bool isRunning) =>
+        new(false, true, path, content, truncated, isRunning);
 }
 
 /// <summary>

@@ -198,7 +198,7 @@ internal sealed class ScheduleTools(IScheduledJobService jobService)
     }
 
     [McpServerTool(Name = "get_schedule_log")]
-    [Description("Reads the most recent per-run log for a scheduled job, so a failed run (see list_schedules' status.lastResult) can be diagnosed. Content may be truncated to the most recent portion for very large logs.")]
+    [Description("Reads the most recent per-run log for a scheduled job, so a failed run (see list_schedules' status.lastResult) can be diagnosed. isRunning reflects the OS scheduler's live state -- when true, the task is still executing and the log is necessarily incomplete (poll again rather than treating it as a finished run). Content may be truncated to the most recent portion for very large logs.")]
     public async Task<string> GetScheduleLogAsync(
         [Description("The job's Narnia id.")] string id,
         CancellationToken cancellationToken = default)
@@ -210,7 +210,7 @@ internal sealed class ScheduleTools(IScheduledJobService jobService)
                 return $"Error: no scheduled job with id '{id}'.";
 
             return JsonSerializer.Serialize(
-                new ScheduleLogMcpDto(log.Found, log.Path, log.Content, log.Truncated),
+                new ScheduleLogMcpDto(log.Found, log.Path, log.Content, log.Truncated, log.IsRunning),
                 McpJsonContext.Default.ScheduleLogMcpDto);
         }
         catch (Exception ex)
@@ -293,4 +293,4 @@ internal sealed record ScheduleCreateMcpDto(bool Registered, string? Id, string?
 internal sealed record ScheduleMutationMcpDto(bool Ok, string Id);
 
 /// <summary>The result of get_schedule_log.</summary>
-internal sealed record ScheduleLogMcpDto(bool Found, string? Path, string? Content, bool Truncated);
+internal sealed record ScheduleLogMcpDto(bool Found, string? Path, string? Content, bool Truncated, bool IsRunning);

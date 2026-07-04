@@ -683,6 +683,18 @@ async function narniaScheduleDelete(id) {
 
 // btn is the clicked element carrying data-job-name (from a row action), or null (from a health
 // badge, which has no name handy) -- either way the id alone is enough to fetch the log.
+//
+// Polls while the task is confirmed running (per the OS scheduler's live state, not a guess) so a
+// user who opens the log for an in-progress run sees it grow in near-real-time instead of a single
+// static snapshot with no way to tell running from stuck from failed.
+var _narniaScheduleLogPollId = null;
+var _narniaScheduleLogViewingJobId = null;
+
+function narniaScheduleStopLogPolling() {
+    if (_narniaScheduleLogPollId !== null) { clearTimeout(_narniaScheduleLogPollId); _narniaScheduleLogPollId = null; }
+    _narniaScheduleLogViewingJobId = null;
+}
+
 async function narniaScheduleViewLog(id, btn) {
     var name = (btn && btn.dataset && btn.dataset.jobName) ? btn.dataset.jobName : null;
     var panel = document.getElementById('sched-log-panel');
@@ -694,14 +706,35 @@ async function narniaScheduleViewLog(id, btn) {
     content.value = '';
     panel.style.display = 'block';
     panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    narniaScheduleStopLogPolling();
+    _narniaScheduleLogViewingJobId = id;
+    await narniaScheduleFetchLogOnce(id, meta, content);
+}
+
+async function narniaScheduleFetchLogOnce(id, meta, content) {
     try {
         var resp = await fetch('/api/schedules/' + id + '/log');
+        // The user may have switched to viewing a different job's log while this was in flight,
+        // or closed the panel (which clears the tracked id) -- either way, drop a stale response.
+        if (_narniaScheduleLogViewingJobId !== id) return;
         if (!resp.ok) { meta.textContent = 'Failed to load log: HTTP ' + resp.status; return; }
         var data = await resp.json();
+        if (_narniaScheduleLogViewingJobId !== id) return;
+
+        if (data.isRunning) {
+            meta.textContent = '● Running — updating every 3s' + (data.found ? '' : ' (starting up…)');
+            content.value = data.content || '';
+            content.scrollTop = content.scrollHeight;
+            _narniaScheduleLogPollId = setTimeout(function () { narniaScheduleFetchLogOnce(id, meta, content); }, 3000);
+            return;
+        }
+
         if (!data.found) { meta.textContent = 'This job has never run, so no log exists yet.'; return; }
         meta.textContent = (data.truncated ? 'Showing the most recent portion of ' : '') + data.path;
         content.value = data.content || '';
     } catch (e) {
+        if (_narniaScheduleLogViewingJobId !== id) return;
         meta.textContent = 'Error loading log: ' + e.message;
     }
 }
