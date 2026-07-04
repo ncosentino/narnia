@@ -6,27 +6,34 @@
 <PageTitle>Commits — Narnia</PageTitle>
 
 <h1>Commit Traceability</h1>
-<p>Find which sessions produced a specific commit SHA.</p>
+<p>Find which sessions produced or mentioned a specific commit SHA.</p>
 
 <form method="get" action="/commits" class="commit-search-form">
     <input type="text" name="sha" value="@Sha" placeholder="Enter commit SHA, e.g. abc123f" maxlength="40" />
     <button type="submit">Look up</button>
 </form>
 
-@if (!string.IsNullOrWhiteSpace(Sha) && _sessions is null)
+@if (!string.IsNullOrWhiteSpace(Sha) && _query is null)
+{
+    <p class="commit-search-invalid">
+        "@Sha" isn't a valid commit SHA — enter @CommitShaQuery.MinLength–@CommitShaQuery.MaxLength hexadecimal characters (0-9, a-f).
+    </p>
+}
+else if (_query is not null && _matches is null)
 {
     <p>Searching…</p>
 }
-else if (_sessions is { Length: 0 })
+else if (_matches is { Length: 0 })
 {
     <p>No sessions found for commit <code>@Sha</code>.</p>
 }
-else if (_sessions is not null)
+else if (_matches is not null)
 {
-    <p><strong>@_sessions.Length session(s)</strong> linked to commit <code>@Sha</code></p>
+    <p><strong>@_matches.Length session(s)</strong> linked to commit <code>@Sha</code></p>
     <table class="sessions-table">
         <thead>
             <tr>
+                <th>Match</th>
                 <th>Summary</th>
                 <th>Repository</th>
                 <th>Branch</th>
@@ -35,9 +42,20 @@ else if (_sessions is not null)
             </tr>
         </thead>
         <tbody>
-            @foreach (var s in _sessions)
+            @foreach (var m in _matches)
             {
+                var s = m.Session;
                 <tr>
+                    <td>
+                        @if (m.Confidence == CommitMatchConfidence.Confirmed)
+                        {
+                            <span class="badge-health badge-ok" title="The CLI explicitly recorded this value as a ref for this session.">confirmed</span>
+                        }
+                        else
+                        {
+                            <span class="badge-health badge-neutral" title="This value appears in the session's text but wasn't explicitly recorded as a ref.">mentioned</span>
+                        }
+                    </td>
                     <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
                     <td>@(s.Repository ?? "—")</td>
                     <td>@(s.Branch ?? "—")</td>
@@ -53,11 +71,16 @@ else if (_sessions is not null)
     [SupplyParameterFromQuery(Name = "sha")]
     public string? Sha { get; set; }
 
-    private SessionSummary[]? _sessions;
+    private CommitShaQuery? _query;
+    private CommitMatch[]? _matches;
 
     protected override async Task OnInitializedAsync()
     {
-        if (!string.IsNullOrWhiteSpace(Sha))
-            _sessions = await Repository.GetSessionsByRefAsync(Sha.Trim());
+        if (string.IsNullOrWhiteSpace(Sha))
+            return;
+
+        _query = CommitShaQuery.TryParse(Sha);
+        if (_query is not null)
+            _matches = await Repository.GetSessionsByRefAsync(_query.Value);
     }
 }

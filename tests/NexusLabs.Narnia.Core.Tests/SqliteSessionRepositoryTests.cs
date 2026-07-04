@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using NexusLabs.Narnia.Core.Configuration;
+using NexusLabs.Narnia.Core.Models;
 using NexusLabs.Narnia.Core.Repositories;
 
 namespace NexusLabs.Narnia.Core.Tests;
@@ -300,17 +301,27 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         var results = await _repository.GetSessionsByRefAsync("abc123", TestContext.Current.CancellationToken);
 
         Assert.Single(results);
-        Assert.Equal("sess-1", results[0].Id);
+        Assert.Equal("sess-1", results[0].Session.Id);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_ExactMatch_IsConfirmed()
+    {
+        // "abc123" is an explicit session_refs row for sess-1, not merely a text mention.
+        var results = await _repository.GetSessionsByRefAsync("abc123", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal(CommitMatchConfidence.Confirmed, results[0].Confidence);
     }
 
     [Fact]
     public async Task GetSessionsByRefAsync_PrefixOfStoredRef_ReturnsSession()
     {
-        // User types short prefix of a longer stored SHA.
-        var results = await _repository.GetSessionsByRefAsync("abc", TestContext.Current.CancellationToken);
+        // User types a short prefix (at the 4-char validation floor) of a longer stored SHA.
+        var results = await _repository.GetSessionsByRefAsync("abc1", TestContext.Current.CancellationToken);
 
         Assert.Single(results);
-        Assert.Equal("sess-1", results[0].Id);
+        Assert.Equal("sess-1", results[0].Session.Id);
     }
 
     [Fact]
@@ -320,7 +331,7 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         var results = await _repository.GetSessionsByRefAsync("abc123def456", TestContext.Current.CancellationToken);
 
         Assert.Single(results);
-        Assert.Equal("sess-1", results[0].Id);
+        Assert.Equal("sess-1", results[0].Session.Id);
     }
 
     [Fact]
@@ -339,17 +350,18 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         var results = await _repository.GetSessionsByRefAsync("deadc0de1234567890abcdef1234567890000000", TestContext.Current.CancellationToken);
 
         Assert.Single(results);
-        Assert.Equal("sess-2", results[0].Id);
+        Assert.Equal("sess-2", results[0].Session.Id);
     }
 
     [Fact]
     public async Task GetSessionsByRefAsync_ShaInSessionContent_ReturnsSession()
     {
-        // SHA mentioned in checkpoint text (FTS fallback path), not in session_refs.
-        var results = await _repository.GetSessionsByRefAsync("deadc0de1234567890abcdef1234567890deadc0de", TestContext.Current.CancellationToken);
+        // SHA mentioned in checkpoint text (FTS fallback path), not in session_refs. Uses the
+        // first 40 (max valid SHA-1 length) characters of the seeded checkpoint content's token.
+        var results = await _repository.GetSessionsByRefAsync("deadc0de1234567890abcdef1234567890deadc0", TestContext.Current.CancellationToken);
 
         Assert.Single(results);
-        Assert.Equal("sess-2", results[0].Id);
+        Assert.Equal("sess-2", results[0].Session.Id);
     }
 
     [Fact]
@@ -359,7 +371,61 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         var results = await _repository.GetSessionsByRefAsync("deadc0de", TestContext.Current.CancellationToken);
 
         Assert.Single(results);
-        Assert.Equal("sess-2", results[0].Id);
+        Assert.Equal("sess-2", results[0].Session.Id);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_TextOnlyMatch_IsMentioned()
+    {
+        // "deadc0de..." only appears in search_index content for sess-2, never in session_refs.
+        var results = await _repository.GetSessionsByRefAsync("deadc0de", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal(CommitMatchConfidence.Mentioned, results[0].Confidence);
+    }
+
+    [Fact]
+    public async Task GetSessionsByRefAsync_UppercaseInput_NormalizedAndStillMatches()
+    {
+        // A SHA pasted with uppercase letters (e.g. from a tool that displays them that way)
+        // must still match the lowercase-stored ref.
+        var results = await _repository.GetSessionsByRefAsync("ABC123", TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+        Assert.Equal("sess-1", results[0].Session.Id);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("a")]
+    [InlineData("ab")]
+    [InlineData("abc")]
+    public async Task GetSessionsByRefAsync_TooShortInput_ReturnsEmptyWithoutFlooding(string value)
+    {
+        // Below the 4-char validation floor, a query must be rejected rather than returning
+        // a flood of unrelated sessions (a 1-2 char hex prefix can match most of the table).
+        var results = await _repository.GetSessionsByRefAsync(value, TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+    }
+
+    [Theory]
+    [InlineData("abc\"def")]
+    [InlineData("abc:def")]
+    [InlineData("abc)(def")]
+    [InlineData("NOT abcd")]
+    [InlineData("abcd OR wxyz")]
+    [InlineData("*")]
+    [InlineData("zzzznothex")]
+    public async Task GetSessionsByRefAsync_MalformedOrNonHexInput_DoesNotThrowAndReturnsEmpty(string value)
+    {
+        // These would previously reach the FTS5 MATCH parameter unescaped and either throw
+        // a syntax error (quotes, colons, parens, "NOT"/"OR") or -- for the non-hex case --
+        // simply never legitimately match a SHA. Validation must reject all of them cleanly.
+        var results = await _repository.GetSessionsByRefAsync(value, TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
     }
 
     // ── GetGlobalStatsAsync ───────────────────────────────────────────────────

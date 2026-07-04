@@ -187,30 +187,37 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         ORDER BY sf.first_seen_at
         """;
 
+    // Tags each matching session with whether it came from an explicit session_refs row
+    // (is_confirmed = 1) or only from a text mention picked up by the FTS fallback
+    // (is_confirmed = 0), so the caller can show a confidence signal instead of presenting
+    // every match as equally authoritative. A session can appear in more than one arm of the
+    // UNION (e.g. both an explicit ref and a text mention); MAX(...) after GROUP BY picks the
+    // higher-confidence tag when that happens.
     private static readonly string SessionsByRefSql =
         """
         SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
-               COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c.id) as checkpoint_count
+               COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c.id) as checkpoint_count,
+               MAX(m.is_confirmed) as is_confirmed
         FROM sessions s
-        LEFT JOIN turns t ON t.session_id = s.id
-        LEFT JOIN checkpoints c ON c.session_id = s.id
-        WHERE s.id IN (
-            SELECT sr.session_id
+        JOIN (
+            SELECT sr.session_id, 1 as is_confirmed
             FROM session_refs sr
             WHERE sr.ref_value = @refValue
                OR sr.ref_value LIKE @refPrefix
                OR @refValue LIKE sr.ref_value || '%'
             UNION
-            SELECT si.session_id
+            SELECT si.session_id, 0 as is_confirmed
             FROM search_index si
             WHERE si.search_index MATCH @ftsQuery
             UNION
-            SELECT si.session_id
+            SELECT si.session_id, 0 as is_confirmed
             FROM search_index si
             WHERE si.search_index MATCH @ftsShortQuery
-        )
+        ) m ON m.session_id = s.id
+        LEFT JOIN turns t ON t.session_id = s.id
+        LEFT JOIN checkpoints c ON c.session_id = s.id
         GROUP BY s.id
-        ORDER BY s.updated_at DESC
+        ORDER BY is_confirmed DESC, s.updated_at DESC
         """;
 
     private static readonly string ResumeSuggestionsSql =
@@ -584,22 +591,34 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         return [.. results];
     }
 
-    public async ValueTask<SessionSummary[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default)
+    public async ValueTask<CommitMatch[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default)
     {
+        // Reject anything that isn't a plausible SHA before it ever reaches the FTS5 MATCH
+        // parameter below, which parses its argument as a small query language: an unvalidated
+        // value (a stray quote, colon, "OR"/"NOT", or an empty/1-character string) can throw a
+        // syntax error or match a meaninglessly broad slice of every session's content.
+        var query = CommitShaQuery.TryParse(refValue);
+        if (query is null)
+            return [];
+
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = SessionsByRefSql;
-        cmd.Parameters.AddWithValue("@refValue", refValue);
-        cmd.Parameters.AddWithValue("@refPrefix", refValue + "%");
-        cmd.Parameters.AddWithValue("@ftsQuery", refValue + "*");
-        cmd.Parameters.AddWithValue("@ftsShortQuery", refValue[..Math.Min(8, refValue.Length)] + "*");
+        cmd.Parameters.AddWithValue("@refValue", query.Value);
+        cmd.Parameters.AddWithValue("@refPrefix", query.Value + "%");
+        cmd.Parameters.AddWithValue("@ftsQuery", ToFtsPrefixQuery(query.Value));
+        cmd.Parameters.AddWithValue("@ftsShortQuery", ToFtsPrefixQuery(query.Value[..Math.Min(8, query.Value.Length)]));
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
-        var results = new List<SessionSummary>();
+        var results = new List<CommitMatch>();
         while (await reader.ReadAsync(ct))
-            results.Add(ReadSessionSummary(reader));
+        {
+            var session = ReadSessionSummary(reader);
+            var confidence = reader.GetInt32(9) == 1 ? CommitMatchConfidence.Confirmed : CommitMatchConfidence.Mentioned;
+            results.Add(new CommitMatch(session, confidence));
+        }
         return [.. results];
     }
 
@@ -715,6 +734,13 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         }
         return sb.ToString().Trim();
     }
+
+    // FTS5 MATCH parses its argument as a small query language (quoted phrases, boolean
+    // operators, column filters). Quoting the value turns it into a literal phrase-prefix
+    // query, so a validated CommitShaQuery can never be misread as query syntax even if the
+    // validation rules change later.
+    private static string ToFtsPrefixQuery(string value) =>
+        $"\"{value.Replace("\"", "\"\"")}\"*";
 
     private static IEnumerable<string> TokenizeKeywords(string text)
     {

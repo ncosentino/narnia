@@ -74,7 +74,7 @@ public sealed class OverridingSessionRepository(
     public ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default) =>
         inner.GetFileHistoryAsync(filePath, ct);
 
-    public ValueTask<SessionSummary[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default) =>
+    public ValueTask<CommitMatch[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default) =>
         inner.GetSessionsByRefAsync(refValue, ct);
 
     public async ValueTask<ResumeSuggestion[]> GetResumeSuggestionsAsync(int limit = 10, CancellationToken ct = default)
