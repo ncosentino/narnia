@@ -681,6 +681,31 @@ async function narniaScheduleDelete(id) {
     if (resp.ok) location.reload(); else alert('Delete failed');
 }
 
+// btn is the clicked element carrying data-job-name (from a row action), or null (from a health
+// badge, which has no name handy) -- either way the id alone is enough to fetch the log.
+async function narniaScheduleViewLog(id, btn) {
+    var name = (btn && btn.dataset && btn.dataset.jobName) ? btn.dataset.jobName : null;
+    var panel = document.getElementById('sched-log-panel');
+    var title = document.getElementById('sched-log-title');
+    var meta = document.getElementById('sched-log-meta');
+    var content = document.getElementById('sched-log-content');
+    title.textContent = name ? ('📄 Log: ' + name) : '📄 Log';
+    meta.textContent = 'Loading…';
+    content.value = '';
+    panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    try {
+        var resp = await fetch('/api/schedules/' + id + '/log');
+        if (!resp.ok) { meta.textContent = 'Failed to load log: HTTP ' + resp.status; return; }
+        var data = await resp.json();
+        if (!data.found) { meta.textContent = 'This job has never run, so no log exists yet.'; return; }
+        meta.textContent = (data.truncated ? 'Showing the most recent portion of ' : '') + data.path;
+        content.value = data.content || '';
+    } catch (e) {
+        meta.textContent = 'Error loading log: ' + e.message;
+    }
+}
+
 // ── Snapshotter & autostart settings ─────────────────────────────────────────
 async function narniaSaveSetting(key, value, el) {
     try {

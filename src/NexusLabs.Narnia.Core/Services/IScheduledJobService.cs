@@ -102,6 +102,24 @@ public sealed record ScheduledJobListView(
     IReadOnlyList<ScheduledJobStatusView> Jobs,
     IReadOnlyList<ScheduledTaskStatus> Untracked);
 
+/// <summary>The content of a job's most recent per-run log, or why none is available.</summary>
+/// <param name="JobNotFound">Whether the job id itself does not exist in the catalog.</param>
+/// <param name="Found">Whether a log file exists for the job (always false when <see cref="JobNotFound"/> is true).</param>
+/// <param name="Path">The log file's full path, when <see cref="Found"/> is true.</param>
+/// <param name="Content">The log content (possibly truncated to the most recent portion).</param>
+/// <param name="Truncated">Whether <see cref="Content"/> was truncated because the file was large.</param>
+public sealed record ScheduledJobLogView(bool JobNotFound, bool Found, string? Path, string? Content, bool Truncated)
+{
+    /// <summary>The job id does not exist in the catalog.</summary>
+    public static ScheduledJobLogView Missing { get; } = new(true, false, null, null, false);
+
+    /// <summary>The job exists but has never run, so no log file exists yet.</summary>
+    public static ScheduledJobLogView NoLogYet { get; } = new(false, false, null, null, false);
+
+    /// <summary>The job's most recent log content.</summary>
+    public static ScheduledJobLogView Of(string path, string content, bool truncated) => new(false, true, path, content, truncated);
+}
+
 /// <summary>
 /// The single orchestration point for Narnia-owned scheduled jobs. It owns cadence parsing, wrapper
 /// generation, catalog persistence, and OS task registration so that every caller — the HTTP API,
@@ -136,4 +154,10 @@ public interface IScheduledJobService
 
     /// <summary>Deletes a job: its OS task, its generated workspace, and its catalog entry.</summary>
     ValueTask<ScheduledJobMutationResult> DeleteAsync(string id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reads the most recent per-run log for a job (tail-truncated if large), so a failed run can be
+    /// diagnosed without leaving the UI.
+    /// </summary>
+    ValueTask<ScheduledJobLogView> GetLatestLogAsync(string id, CancellationToken ct = default);
 }

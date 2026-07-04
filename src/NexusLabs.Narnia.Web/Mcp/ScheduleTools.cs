@@ -197,6 +197,28 @@ internal sealed class ScheduleTools(IScheduledJobService jobService)
         }
     }
 
+    [McpServerTool(Name = "get_schedule_log")]
+    [Description("Reads the most recent per-run log for a scheduled job, so a failed run (see list_schedules' status.lastResult) can be diagnosed. Content may be truncated to the most recent portion for very large logs.")]
+    public async Task<string> GetScheduleLogAsync(
+        [Description("The job's Narnia id.")] string id,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var log = await jobService.GetLatestLogAsync(id, cancellationToken);
+            if (log.JobNotFound)
+                return $"Error: no scheduled job with id '{id}'.";
+
+            return JsonSerializer.Serialize(
+                new ScheduleLogMcpDto(log.Found, log.Path, log.Content, log.Truncated),
+                McpJsonContext.Default.ScheduleLogMcpDto);
+        }
+        catch (Exception ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+    }
+
     private static ScheduledJobInput ToInput(
         string name, string prompt, string? cwd, string? description, string cadenceKind, string time,
         string[]? days, int? dayOfMonth, string? allowFlags, string? copilotArgs, ScheduleSkillMcpInput[]? skills) =>
@@ -269,3 +291,6 @@ internal sealed record ScheduleCreateMcpDto(bool Registered, string? Id, string?
 
 /// <summary>The result of update_schedule, set_schedule_enabled, run_schedule_now, or delete_schedule.</summary>
 internal sealed record ScheduleMutationMcpDto(bool Ok, string Id);
+
+/// <summary>The result of get_schedule_log.</summary>
+internal sealed record ScheduleLogMcpDto(bool Found, string? Path, string? Content, bool Truncated);
