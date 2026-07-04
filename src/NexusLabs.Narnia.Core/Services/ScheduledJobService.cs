@@ -13,9 +13,11 @@ public sealed class ScheduledJobService(
     IScheduledJobRegistry registry,
     IScheduledTaskRegistrar registrar,
     IScheduledJobWorkspace workspace,
-    IScheduledTaskProvider taskProvider) : IScheduledJobService
+    IScheduledTaskProvider taskProvider,
+    IPowerShellHostResolver hostResolver) : IScheduledJobService
 {
     private const string NarniaFolder = @"\Narnia\";
+    private const int MaxLogChars = 100_000;
 
     /// <inheritdoc />
     public bool RegistrarSupported => registrar.IsSupported;
@@ -66,17 +68,18 @@ public sealed class ScheduledJobService(
 
         var jobId = Guid.NewGuid().ToString();
         var cadence = BuildCadence(input);
-        var (script, registration) = BuildOwnedJob(jobId, input, cadence);
+        var (script, launcher, registration) = BuildOwnedJob(jobId, input, cadence);
 
         // Copy-paste mode: catalog nothing, just hand back the generated wrapper + registration command.
         if (!register)
-            return ScheduledJobCreateResult.CopyPaste(script, ScheduledTaskRegistrationScript.Build(registration));
+            return ScheduledJobCreateResult.CopyPaste(CombineForCopyPaste(script, launcher), ScheduledTaskRegistrationScript.Build(registration));
 
         if (!registrar.IsSupported)
             return ScheduledJobCreateResult.Failure(
                 "Registering tasks is not supported on this platform. Copy the command instead.");
 
         await workspace.WriteScriptAsync(jobId, script, ct);
+        await workspace.WriteLauncherAsync(jobId, launcher, ct);
         var draft = BuildOwnedDraft(input, cadence, workspace.ScriptPath(jobId), workspace.LogDirectory(jobId));
 
         // Create with the pre-chosen id so the workspace folder, marker, and catalog row all agree.
@@ -107,9 +110,10 @@ public sealed class ScheduledJobService(
             return ScheduledJobMutationResult.Failure("Editing tasks is not supported on this platform.");
 
         var cadence = BuildCadence(input);
-        var (script, registration) = BuildOwnedJob(id, input, cadence);
+        var (script, launcher, registration) = BuildOwnedJob(id, input, cadence);
 
         await workspace.WriteScriptAsync(id, script, ct);
+        await workspace.WriteLauncherAsync(id, launcher, ct);
         var draft = BuildOwnedDraft(input, cadence, workspace.ScriptPath(id), workspace.LogDirectory(id));
         await registry.UpdateAsync(id, draft, DateTimeOffset.UtcNow, ct);
 
@@ -162,6 +166,22 @@ public sealed class ScheduledJobService(
         return ScheduledJobMutationResult.Succeeded(job);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<ScheduledJobLogView> GetLatestLogAsync(string id, CancellationToken ct = default)
+    {
+        var job = await registry.GetByIdAsync(id, ct);
+        if (job is null)
+            return ScheduledJobLogView.Missing;
+
+        var path = workspace.LatestLogFile(id);
+        if (path is null)
+            return ScheduledJobLogView.NoLogYet;
+
+        var content = await workspace.ReadLogAsync(path, ct);
+        var truncated = content.Length > MaxLogChars;
+        return ScheduledJobLogView.Of(path, truncated ? content[^MaxLogChars..] : content, truncated);
+    }
+
     private static ScheduleCadence BuildCadence(ScheduledJobInput input)
     {
         var time = TimeOnly.TryParse(input.Time, out var t) ? t : new TimeOnly(5, 0);
@@ -178,9 +198,11 @@ public sealed class ScheduledJobService(
         return new ScheduleCadence(kind, time, days, dayOfMonth);
     }
 
-    // Builds the generated wrapper script and the standardized task registration for a Narnia-owned
-    // job. The task runs pwsh against the generated script under \Narnia\ named after the job.
-    private (string Script, ScheduledTaskRegistration Registration) BuildOwnedJob(
+    // Builds the generated wrapper script, the hidden-launcher shim, and the standardized task
+    // registration for a Narnia-owned job. The task's action is wscript.exe running the launcher
+    // (never a bare visible console), which in turn runs the wrapper script under the best
+    // available PowerShell host.
+    private (string Script, string Launcher, ScheduledTaskRegistration Registration) BuildOwnedJob(
         string jobId, ScheduledJobInput input, ScheduleCadence cadence)
     {
         var taskName = string.IsNullOrWhiteSpace(input.TaskName) ? input.Name : input.TaskName!;
@@ -188,11 +210,18 @@ public sealed class ScheduledJobService(
         var script = ScheduledJobScript.Build(
             input.Name, input.Prompt ?? "", input.Cwd, input.AllowFlags, input.CopilotArgs, logDir);
         var scriptPath = workspace.ScriptPath(jobId);
-        var args = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"";
+        var launcher = ScheduledJobLauncherScript.Build(hostResolver.ResolveExecutable(), scriptPath);
+        var launcherPath = workspace.LauncherPath(jobId);
         var registration = new ScheduledTaskRegistration(
-            jobId, NarniaFolder, taskName, "powershell.exe", args, input.Cwd, cadence);
-        return (script, registration);
+            jobId, NarniaFolder, taskName, "wscript.exe", $"\"{launcherPath}\"", input.Cwd, cadence);
+        return (script, launcher, registration);
     }
+
+    // Copy-paste mode has no workspace to write the launcher to, so both generated files are
+    // handed back together with a clear separator telling the user where each one belongs.
+    private static string CombineForCopyPaste(string script, string launcher) =>
+        $"{script}\n\n' ---- Save the above as run.ps1 and the below as run.vbs (the registration " +
+        "command below launches run.vbs, which runs run.ps1 completely hidden) ----\n\n" + launcher;
 
     // Builds the catalog draft for a Narnia-owned job, keyed to its generated script + log paths.
     private static ScheduledJobDraft BuildOwnedDraft(

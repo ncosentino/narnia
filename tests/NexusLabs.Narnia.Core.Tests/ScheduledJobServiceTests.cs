@@ -14,6 +14,7 @@ public sealed class ScheduledJobServiceTests
     private readonly Mock<IScheduledTaskRegistrar> _registrar = new();
     private readonly Mock<IScheduledJobWorkspace> _workspace = new();
     private readonly Mock<IScheduledTaskProvider> _taskProvider = new();
+    private readonly Mock<IPowerShellHostResolver> _hostResolver = new();
 
     public ScheduledJobServiceTests()
     {
@@ -32,19 +33,25 @@ public sealed class ScheduledJobServiceTests
             .ReturnsAsync(ScheduledTaskCommandResult.Success);
 
         _workspace.Setup(w => w.ScriptPath(It.IsAny<string>())).Returns((string id) => $@"C:\narnia\{id}\run.ps1");
+        _workspace.Setup(w => w.LauncherPath(It.IsAny<string>())).Returns((string id) => $@"C:\narnia\{id}\run.vbs");
         _workspace.Setup(w => w.LogDirectory(It.IsAny<string>())).Returns((string id) => $@"C:\narnia\{id}\logs");
         _workspace
             .Setup(w => w.WriteScriptAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string id, string _, CancellationToken _) => $@"C:\narnia\{id}\run.ps1");
+        _workspace
+            .Setup(w => w.WriteLauncherAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string id, string _, CancellationToken _) => $@"C:\narnia\{id}\run.vbs");
 
         _taskProvider.SetupGet(p => p.IsSupported).Returns(true);
         _taskProvider
             .Setup(p => p.ListInFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<ScheduledTaskStatus>)[]);
+
+        _hostResolver.Setup(h => h.ResolveExecutable()).Returns("pwsh.exe");
     }
 
     private ScheduledJobService CreateService() =>
-        new(_registry.Object, _registrar.Object, _workspace.Object, _taskProvider.Object);
+        new(_registry.Object, _registrar.Object, _workspace.Object, _taskProvider.Object, _hostResolver.Object);
 
     private static ScheduledJobInput Input(
         string name = "Sample",
@@ -131,7 +138,50 @@ public sealed class ScheduledJobServiceTests
         Assert.Equal("Sample Daily", result.Job!.Name);
         Assert.Equal("run the thing", result.Job.Prompt);
         _workspace.Verify(w => w.WriteScriptAsync(result.Job.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _workspace.Verify(w => w.WriteLauncherAsync(result.Job.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         _registrar.Verify(r => r.RegisterAsync(It.IsAny<ScheduledTaskRegistration>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RegisterMode_RegistersViaHiddenWscriptLauncher_NeverABareVisibleConsole()
+    {
+        ScheduledTaskRegistration? captured = null;
+        _registrar
+            .Setup(r => r.RegisterAsync(It.IsAny<ScheduledTaskRegistration>(), It.IsAny<CancellationToken>()))
+            .Callback<ScheduledTaskRegistration, CancellationToken>((reg, _) => captured = reg)
+            .ReturnsAsync(ScheduledTaskCommandResult.Success);
+        var service = CreateService();
+
+        await service.CreateAsync(Input(name: "Sample"), register: true, Ct);
+
+        Assert.NotNull(captured);
+        Assert.Equal("wscript.exe", captured!.Execute);
+        Assert.Contains(@"C:\narnia\", captured.Arguments);
+        Assert.Contains("run.vbs", captured.Arguments);
+    }
+
+    [Fact]
+    public async Task CreateAsync_CopyPasteMode_IncludesBothWrapperAndHiddenLauncherContent()
+    {
+        var service = CreateService();
+
+        var result = await service.CreateAsync(Input(), register: false, Ct);
+
+        Assert.True(result.Ok);
+        Assert.Contains("copilot -p", result.Script);
+        Assert.Contains("shell.Run(", result.Script);
+        Assert.Contains("Register-ScheduledTask", result.Command);
+    }
+
+    [Fact]
+    public async Task CreateAsync_UsesResolvedPowerShellHostInLauncher()
+    {
+        _hostResolver.Setup(h => h.ResolveExecutable()).Returns("powershell.exe");
+        var service = CreateService();
+
+        var result = await service.CreateAsync(Input(), register: false, Ct);
+
+        Assert.Contains("powershell.exe -NoProfile", result.Script);
     }
 
     [Fact]
@@ -191,6 +241,7 @@ public sealed class ScheduledJobServiceTests
         Assert.True(result.Ok);
         Assert.Equal("new prompt", result.Job!.Prompt);
         _workspace.Verify(w => w.WriteScriptAsync("job-1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _workspace.Verify(w => w.WriteLauncherAsync("job-1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         _registry.Verify(r => r.UpdateAsync("job-1", It.IsAny<ScheduledJobDraft>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
         _registrar.Verify(r => r.RegisterAsync(It.IsAny<ScheduledTaskRegistration>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -374,5 +425,67 @@ public sealed class ScheduledJobServiceTests
         var service = CreateService();
 
         Assert.False(service.RegistrarSupported);
+    }
+
+    // ── Get latest log ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetLatestLogAsync_UnknownJob_ReturnsJobNotFound()
+    {
+        var service = CreateService();
+
+        var log = await service.GetLatestLogAsync("missing", Ct);
+
+        Assert.True(log.JobNotFound);
+        Assert.False(log.Found);
+    }
+
+    [Fact]
+    public async Task GetLatestLogAsync_JobNeverRun_ReturnsNoLogYet()
+    {
+        _registry.Setup(r => r.GetByIdAsync("job-1", It.IsAny<CancellationToken>())).ReturnsAsync(Job("job-1"));
+        _workspace.Setup(w => w.LatestLogFile("job-1")).Returns((string?)null);
+        var service = CreateService();
+
+        var log = await service.GetLatestLogAsync("job-1", Ct);
+
+        Assert.False(log.JobNotFound);
+        Assert.False(log.Found);
+    }
+
+    [Fact]
+    public async Task GetLatestLogAsync_LogExists_ReturnsPathAndContent()
+    {
+        _registry.Setup(r => r.GetByIdAsync("job-1", It.IsAny<CancellationToken>())).ReturnsAsync(Job("job-1"));
+        _workspace.Setup(w => w.LatestLogFile("job-1")).Returns(@"C:\narnia\job-1\logs\run-2026-07-04_020000.log");
+        _workspace
+            .Setup(w => w.ReadLogAsync(@"C:\narnia\job-1\logs\run-2026-07-04_020000.log", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("=== Sample ===\nExitCode: 1");
+        var service = CreateService();
+
+        var log = await service.GetLatestLogAsync("job-1", Ct);
+
+        Assert.True(log.Found);
+        Assert.Equal(@"C:\narnia\job-1\logs\run-2026-07-04_020000.log", log.Path);
+        Assert.Contains("ExitCode: 1", log.Content);
+        Assert.False(log.Truncated);
+    }
+
+    [Fact]
+    public async Task GetLatestLogAsync_LargeLog_TruncatesToTailAndFlagsTruncated()
+    {
+        _registry.Setup(r => r.GetByIdAsync("job-1", It.IsAny<CancellationToken>())).ReturnsAsync(Job("job-1"));
+        _workspace.Setup(w => w.LatestLogFile("job-1")).Returns(@"C:\narnia\job-1\logs\run-x.log");
+        var hugeContent = new string('a', 150_000) + "TAIL-MARKER";
+        _workspace
+            .Setup(w => w.ReadLogAsync(@"C:\narnia\job-1\logs\run-x.log", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(hugeContent);
+        var service = CreateService();
+
+        var log = await service.GetLatestLogAsync("job-1", Ct);
+
+        Assert.True(log.Truncated);
+        Assert.EndsWith("TAIL-MARKER", log.Content);
+        Assert.True(log.Content!.Length < hugeContent.Length);
     }
 }

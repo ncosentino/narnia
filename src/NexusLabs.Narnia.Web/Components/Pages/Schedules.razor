@@ -12,6 +12,15 @@
     <a href="/schedules" class="btn-refresh">↻ Refresh</a>
 </div>
 
+<div id="sched-log-panel" class="sched-log-panel" style="display:none;">
+    <div class="page-actions">
+        <h3 id="sched-log-title">Log</h3>
+        <button class="btn-refresh" onclick="document.getElementById('sched-log-panel').style.display='none'">✕ Close</button>
+    </div>
+    <p id="sched-log-meta" class="settings-hint"></p>
+    <textarea id="sched-log-content" readonly></textarea>
+</div>
+
 <p class="settings-hint">
     A catalog of your scheduled Copilot jobs. Narnia is a registry only — <strong>Windows Task
     Scheduler still runs everything</strong>; this page joins each cataloged job to what the
@@ -57,7 +66,7 @@
                         </div>
                     </td>
                     <td>@(view.Job.Cadence ?? "—")</td>
-                    <td>@RenderHealth(view.Status)</td>
+                    <td>@RenderHealth(view.Job.Id, view.Status)</td>
                     <td>@FormatTime(view.Status?.LastRunTime)</td>
                     <td>@FormatTime(view.Status?.NextRunTime)</td>
                     <td class="cwd">@(view.Job.Cwd ?? "—")</td>
@@ -79,6 +88,7 @@
                         <button class="launch-btn" onclick="narniaScheduleRun('@view.Job.Id')" title="Run now">▶</button>
                         <button class="btn-refresh" onclick="narniaScheduleEnable('@view.Job.Id', false)" title="Disable">⏸</button>
                         <button class="btn-refresh" onclick="narniaScheduleEnable('@view.Job.Id', true)" title="Enable">⏵</button>
+                        <button class="btn-refresh" data-job-name="@view.Job.Name" onclick="narniaScheduleViewLog('@view.Job.Id', this)" title="View latest run log">📄 Log</button>
                         <button class="btn-bulk-archive" onclick="narniaScheduleDelete('@view.Job.Id')" title="Delete">🗑</button>
                     </td>
                 </tr>
@@ -151,7 +161,7 @@
                 <tr>
                     <td class="schedule-task">@task.TaskFolder@task.TaskName</td>
                     <td>@task.State.ToString().ToLowerInvariant()</td>
-                    <td>@RenderHealth(task)</td>
+                    <td>@RenderHealth(null, task)</td>
                     <td>@FormatTime(task.LastRunTime)</td>
                     <td>@FormatTime(task.NextRunTime)</td>
                     <td class="cwd">@(task.ActionSummary ?? "—")</td>
@@ -201,7 +211,7 @@
     private static string FormatTime(DateTimeOffset? time) =>
         time?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—";
 
-    private RenderFragment RenderHealth(ScheduledTaskStatus? status) => __builder =>
+    private RenderFragment RenderHealth(string? jobId, ScheduledTaskStatus? status) => __builder =>
     {
         if (status is null)
         {
@@ -210,7 +220,14 @@
         }
 
         var (cssClass, label) = Health(status.LastResult);
-        <span class="badge-health @cssClass">@label</span>
+        if (jobId is not null && cssClass == "badge-fail")
+        {
+            <button type="button" class="badge-health @cssClass badge-fail-link" onclick="narniaScheduleViewLog('@jobId', null)" title="Click to see why it failed">@label</button>
+        }
+        else
+        {
+            <span class="badge-health @cssClass">@label</span>
+        }
     };
 
     // Interprets a Windows Task Scheduler last-result code. 0 = success; 0x41303 (267011) =

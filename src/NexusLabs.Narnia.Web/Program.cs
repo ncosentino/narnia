@@ -78,6 +78,11 @@ else
     builder.Services.AddSingleton<IScheduledTaskRegistrar, UnsupportedScheduledTaskRegistrar>();
 
 if (OperatingSystem.IsWindows())
+    builder.Services.AddSingleton<IPowerShellHostResolver, WindowsPowerShellHostResolver>();
+else
+    builder.Services.AddSingleton<IPowerShellHostResolver, DefaultPowerShellHostResolver>();
+
+if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<IProcessSnapshotProvider, WmiProcessSnapshotProvider>();
     builder.Services.AddSingleton<ILiveWindowDetector, LiveWindowDetector>();
@@ -775,6 +780,16 @@ app.MapDelete("/api/schedules/{id}", async (
 {
     var result = await jobService.DeleteAsync(id, ct);
     return result.NotFound ? Results.NotFound(result.Error) : Results.NoContent();
+});
+
+app.MapGet("/api/schedules/{id}/log", async (
+    string id, IScheduledJobService jobService, CancellationToken ct) =>
+{
+    var log = await jobService.GetLatestLogAsync(id, ct);
+    if (log.JobNotFound)
+        return Results.NotFound("Job not found");
+
+    return Results.Ok(new { found = log.Found, path = log.Path, content = log.Content, truncated = log.Truncated });
 });
 
 // ── Logon autostart API ─────────────────────────────────────────────────────

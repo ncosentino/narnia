@@ -659,4 +659,7 @@ a { color: var(--link); }
 .sched-skill-row .sched-skill-res { flex: 0 0 auto; }
 .sched-skill-row .btn-bulk-archive { padding: .3rem .6rem; }
 .sched-command { grid-column: 1 / -1; width: 100%; min-height: 90px; font-family: var(--mono, monospace); font-size: .75rem; }
+.sched-log-panel { margin: 0 0 1.5rem; padding: .8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-alt); }
+.sched-log-panel textarea { width: 100%; min-height: 300px; font-family: var(--mono, monospace); font-size: .75rem; white-space: pre; }
+.badge-fail-link { cursor: pointer; text-decoration: underline dotted; border: none; }
 
