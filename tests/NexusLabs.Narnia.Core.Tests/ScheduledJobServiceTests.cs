@@ -488,4 +488,60 @@ public sealed class ScheduledJobServiceTests
         Assert.EndsWith("TAIL-MARKER", log.Content);
         Assert.True(log.Content!.Length < hugeContent.Length);
     }
+
+    [Fact]
+    public async Task GetLatestLogAsync_TaskLiveStateIsRunning_ReportsIsRunningTrue()
+    {
+        var job = Job("job-1", taskFolder: @"\Narnia\", taskName: "Narnia - Sample");
+        _registry.Setup(r => r.GetByIdAsync("job-1", It.IsAny<CancellationToken>())).ReturnsAsync(job);
+        _workspace.Setup(w => w.LatestLogFile("job-1")).Returns(@"C:\narnia\job-1\logs\run-x.log");
+        _workspace
+            .Setup(w => w.ReadLogAsync(@"C:\narnia\job-1\logs\run-x.log", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("=== Sample ===\nStart: ...");
+        _taskProvider
+            .Setup(p => p.GetAsync(@"\Narnia\", "Narnia - Sample", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ScheduledTaskStatus(@"\Narnia\", "Narnia - Sample", ScheduledTaskState.Running, Now, 267009, null, "wscript.exe"));
+        var service = CreateService();
+
+        var log = await service.GetLatestLogAsync("job-1", Ct);
+
+        Assert.True(log.IsRunning);
+        Assert.True(log.Found);
+    }
+
+    [Fact]
+    public async Task GetLatestLogAsync_TaskLiveStateIsNotRunning_ReportsIsRunningFalse()
+    {
+        var job = Job("job-1", taskFolder: @"\Narnia\", taskName: "Narnia - Sample");
+        _registry.Setup(r => r.GetByIdAsync("job-1", It.IsAny<CancellationToken>())).ReturnsAsync(job);
+        _workspace.Setup(w => w.LatestLogFile("job-1")).Returns(@"C:\narnia\job-1\logs\run-x.log");
+        _workspace
+            .Setup(w => w.ReadLogAsync(@"C:\narnia\job-1\logs\run-x.log", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("=== Sample ===\nExitCode: 0");
+        _taskProvider
+            .Setup(p => p.GetAsync(@"\Narnia\", "Narnia - Sample", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ScheduledTaskStatus(@"\Narnia\", "Narnia - Sample", ScheduledTaskState.Ready, Now, 0, Now.AddDays(1), "wscript.exe"));
+        var service = CreateService();
+
+        var log = await service.GetLatestLogAsync("job-1", Ct);
+
+        Assert.False(log.IsRunning);
+    }
+
+    [Fact]
+    public async Task GetLatestLogAsync_NoMatchingLiveTask_ReportsIsRunningFalse()
+    {
+        var job = Job("job-1", taskFolder: @"\Narnia\", taskName: "Narnia - Sample");
+        _registry.Setup(r => r.GetByIdAsync("job-1", It.IsAny<CancellationToken>())).ReturnsAsync(job);
+        _workspace.Setup(w => w.LatestLogFile("job-1")).Returns((string?)null);
+        _taskProvider
+            .Setup(p => p.GetAsync(@"\Narnia\", "Narnia - Sample", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ScheduledTaskStatus?)null);
+        var service = CreateService();
+
+        var log = await service.GetLatestLogAsync("job-1", Ct);
+
+        Assert.False(log.IsRunning);
+        Assert.False(log.Found);
+    }
 }

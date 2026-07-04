@@ -15,7 +15,7 @@
 <div id="sched-log-panel" class="sched-log-panel" style="display:none;">
     <div class="page-actions">
         <h3 id="sched-log-title">Log</h3>
-        <button class="btn-refresh" onclick="document.getElementById('sched-log-panel').style.display='none'">✕ Close</button>
+        <button class="btn-refresh" onclick="narniaScheduleStopLogPolling(); document.getElementById('sched-log-panel').style.display='none'">✕ Close</button>
     </div>
     <p id="sched-log-meta" class="settings-hint"></p>
     <textarea id="sched-log-content" readonly></textarea>
@@ -219,6 +219,15 @@
             return;
         }
 
+        // The live State is authoritative for "is this executing right now" — it comes straight
+        // from Get-ScheduledTask, independent of LastResult (which, while a run is in progress,
+        // still holds SCHED_S_TASK_RUNNING, a status code, not a failure — see Health() below).
+        if (status.State == ScheduledTaskState.Running)
+        {
+            <button type="button" class="badge-health badge-running badge-fail-link" onclick="narniaScheduleViewLog('@jobId', null)" title="Click to watch its log">● running</button>
+            return;
+        }
+
         var (cssClass, label) = Health(status.LastResult);
         if (jobId is not null && cssClass == "badge-fail")
         {
@@ -230,12 +239,24 @@
         }
     };
 
-    // Interprets a Windows Task Scheduler last-result code. 0 = success; 0x41303 (267011) =
-    // SCHED_S_TASK_HAS_NOT_RUN_YET; anything else is a failure surfaced with its hex code.
+    // Interprets a Windows Task Scheduler last-result code. 0 = success. Codes in the documented
+    // 0x41300-0x41308 range (SCHED_S_*) are scheduler status/informational codes, not a failed run
+    // of the task's own action, and must never be shown as "failed": 0x41303 (has not run) and
+    // 0x41301 (running) are the two Narnia jobs hit in practice, but the whole range is handled so
+    // no other benign code is misreported either. Anything else is a genuine failure (the wrapper
+    // script's real exit code, e.g. 1), surfaced with its hex value.
+    // https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-error-and-success-constants
     private static (string CssClass, string Label) Health(int? lastResult) => lastResult switch
     {
-        null or 267011 => ("badge-neutral", "never run"),
+        null or 267011 => ("badge-neutral", "never run"),          // 0x41303 SCHED_S_TASK_HAS_NOT_RUN
         0 => ("badge-ok", "ok"),
+        267009 => ("badge-running", "● running"),                  // 0x41301 SCHED_S_TASK_RUNNING
+        267010 => ("badge-neutral", "disabled"),                   // 0x41302 SCHED_S_TASK_DISABLED
+        267012 => ("badge-neutral", "no more runs scheduled"),      // 0x41304 SCHED_S_TASK_NO_MORE_RUNS
+        267013 => ("badge-neutral", "not fully scheduled"),         // 0x41305 SCHED_S_TASK_NOT_SCHEDULED
+        267014 => ("badge-neutral", "terminated"),                  // 0x41306 SCHED_S_TASK_TERMINATED
+        267015 => ("badge-neutral", "no valid triggers"),           // 0x41307 SCHED_S_TASK_NO_VALID_TRIGGERS
+        267016 => ("badge-neutral", "event trigger"),               // 0x41308 SCHED_S_EVENT_TRIGGER
         _ => ("badge-fail", $"failed (0x{lastResult.Value:X})"),
     };
 

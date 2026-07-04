@@ -173,13 +173,19 @@ public sealed class ScheduledJobService(
         if (job is null)
             return ScheduledJobLogView.Missing;
 
+        // The live State (not LastResult — see RenderHealth/Health in Schedules.razor) is the
+        // authoritative "is it executing right now" signal, so a caller can keep polling a log
+        // that is still being written instead of mistaking a partial log for a finished run.
+        var status = await taskProvider.GetAsync(job.TaskFolder, job.TaskName, ct);
+        var isRunning = status?.State == ScheduledTaskState.Running;
+
         var path = workspace.LatestLogFile(id);
         if (path is null)
-            return ScheduledJobLogView.NoLogYet;
+            return ScheduledJobLogView.NoLogYet(isRunning);
 
         var content = await workspace.ReadLogAsync(path, ct);
         var truncated = content.Length > MaxLogChars;
-        return ScheduledJobLogView.Of(path, truncated ? content[^MaxLogChars..] : content, truncated);
+        return ScheduledJobLogView.Of(path, truncated ? content[^MaxLogChars..] : content, truncated, isRunning);
     }
 
     private static ScheduleCadence BuildCadence(ScheduledJobInput input)

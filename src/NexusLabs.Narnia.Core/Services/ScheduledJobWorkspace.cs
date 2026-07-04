@@ -94,8 +94,17 @@ public sealed class ScheduledJobWorkspace(NarniaOptions options, IFileSystem fil
     }
 
     /// <inheritdoc />
-    public async ValueTask<string> ReadLogAsync(string logFilePath, CancellationToken ct = default) =>
-        await fileSystem.File.ReadAllTextAsync(logFilePath, ct);
+    public async ValueTask<string> ReadLogAsync(string logFilePath, CancellationToken ct = default)
+    {
+        // The scheduled task's own wrapper keeps its log handle open for Tee-Object -Append across
+        // the whole run, so reading with the default (exclusive-ish) share mode throws IOException
+        // while a job is still executing -- exactly when a caller most wants to read it (e.g. the
+        // live-polling log viewer). FileShare.ReadWrite lets a concurrent writer keep appending
+        // while this reads whatever has been flushed so far.
+        await using var stream = fileSystem.FileStream.New(logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync(ct);
+    }
 
     /// <inheritdoc />
     public void Delete(string jobId)

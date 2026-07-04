@@ -789,7 +789,7 @@ app.MapGet("/api/schedules/{id}/log", async (
     if (log.JobNotFound)
         return Results.NotFound("Job not found");
 
-    return Results.Ok(new { found = log.Found, path = log.Path, content = log.Content, truncated = log.Truncated });
+    return Results.Ok(new { found = log.Found, path = log.Path, content = log.Content, truncated = log.Truncated, isRunning = log.IsRunning });
 });
 
 // ── Logon autostart API ─────────────────────────────────────────────────────
