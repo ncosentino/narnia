@@ -541,7 +541,6 @@ function narniaScheduleFormBody(register) {
     var days = [];
     var checks = document.querySelectorAll('.sched-day:checked');
     for (var i = 0; i < checks.length; i++) days.push(checks[i].value);
-    var skill = document.getElementById('sched-skill').value.trim();
     return {
         name: document.getElementById('sched-name').value.trim(),
         description: document.getElementById('sched-desc').value.trim() || null,
@@ -553,9 +552,40 @@ function narniaScheduleFormBody(register) {
         time: document.getElementById('sched-time').value.trim(),
         days: days,
         dayOfMonth: parseInt(document.getElementById('sched-dom').value, 10) || 1,
-        skills: skill ? [{ skill: skill, resolution: document.getElementById('sched-skill-res').value }] : [],
+        skills: narniaCollectSkillRows(),
         register: register,
     };
+}
+
+// Appends one skill-row (name + resolution + remove button) to the editor. Called with no
+// arguments by "+ Add skill"; called with values when prefilling from an existing job so every
+// skill in job.skills round-trips instead of only the first.
+function narniaAddSkillRow(skill, resolution) {
+    var row = document.createElement('div');
+    row.className = 'sched-skill-row';
+    row.innerHTML =
+        '<input type="text" class="sched-skill-name" placeholder="skill-name" />' +
+        '<select class="sched-skill-res"><option value="plugin">plugin</option><option value="repolocal">repo-local</option></select>' +
+        '<button type="button" class="btn-bulk-archive" title="Remove skill" onclick="narniaRemoveSkillRow(this)">🗑</button>';
+    document.getElementById('sched-skills-list').appendChild(row);
+    row.querySelector('.sched-skill-name').value = skill || '';
+    row.querySelector('.sched-skill-res').value = resolution || 'plugin';
+}
+
+function narniaRemoveSkillRow(btn) {
+    btn.closest('.sched-skill-row').remove();
+}
+
+// Reads every skill-row in the editor (not just the first) so saving a job never drops skills
+// that were present but not the one being edited.
+function narniaCollectSkillRows() {
+    var skills = [];
+    document.querySelectorAll('#sched-skills-list .sched-skill-row').forEach(function (row) {
+        var name = row.querySelector('.sched-skill-name').value.trim();
+        if (!name) return;
+        skills.push({ skill: name, resolution: row.querySelector('.sched-skill-res').value });
+    });
+    return skills;
 }
 
 // Show day-of-week checkboxes only for weekly, day-of-month only for monthly.
@@ -609,7 +639,8 @@ async function narniaScheduleEdit(id) {
         document.querySelectorAll('.sched-day').forEach(function (c) { c.checked = setDays.indexOf(c.value) >= 0; });
     }
     narniaCadenceChanged();
-    document.getElementById('sched-skill').value = (job.skills && job.skills[0]) ? job.skills[0].skill : '';
+    document.getElementById('sched-skills-list').innerHTML = '';
+    (job.skills || []).forEach(function (s) { narniaAddSkillRow(s.skill, s.resolution); });
     document.getElementById('sched-form-title').textContent = '✏️ Editing: ' + job.name + ' (click to hide)';
     document.getElementById('sched-form-panel').style.display = 'block';
     document.getElementById('sched-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -622,7 +653,8 @@ function narniaToggleScheduleForm() {
 
 function narniaScheduleResetForm() {
     document.getElementById('sched-edit-id').value = '';
-    ['sched-name','sched-desc','sched-cwd','sched-prompt','sched-copilotargs','sched-skill'].forEach(function (i) { document.getElementById(i).value = ''; });
+    ['sched-name','sched-desc','sched-cwd','sched-prompt','sched-copilotargs'].forEach(function (i) { document.getElementById(i).value = ''; });
+    document.getElementById('sched-skills-list').innerHTML = '';
     document.querySelectorAll('.sched-day').forEach(function (c) { c.checked = false; });
     document.getElementById('sched-dom').value = 1;
     document.getElementById('sched-cadence').value = 'daily';
