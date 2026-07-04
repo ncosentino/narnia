@@ -74,8 +74,11 @@ public sealed class OverridingSessionRepository(
     public ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default) =>
         inner.GetFileHistoryAsync(filePath, ct);
 
-    public ValueTask<CommitMatch[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default) =>
-        inner.GetSessionsByRefAsync(refValue, ct);
+    public async ValueTask<CommitMatch[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default)
+    {
+        var matches = await inner.GetSessionsByRefAsync(refValue, ct);
+        return await MergeAllAsync(matches, ct);
+    }
 
     public async ValueTask<ResumeSuggestion[]> GetResumeSuggestionsAsync(int limit = 10, CancellationToken ct = default)
     {
@@ -122,6 +125,20 @@ public sealed class OverridingSessionRepository(
         return result;
     }
 
+    // No includeArchived filtering here, matching GetResumeSuggestionsAsync/MergeAllAsync above:
+    // a targeted ref lookup should still surface an archived session's match rather than hide it.
+    private async ValueTask<CommitMatch[]> MergeAllAsync(CommitMatch[] matches, CancellationToken ct)
+    {
+        var result = new CommitMatch[matches.Length];
+        for (var i = 0; i < matches.Length; i++)
+        {
+            var ov = await overrides.GetOverrideAsync(matches[i].Session.Id, ct);
+            result[i] = ov is null ? matches[i] : Merge(matches[i], ov);
+        }
+
+        return result;
+    }
+
     private static Session Merge(Session s, SessionOverride ov) =>
         s with
         {
@@ -140,4 +157,7 @@ public sealed class OverridingSessionRepository(
 
     private static ResumeSuggestion Merge(ResumeSuggestion s, SessionOverride ov) =>
         s with { Session = Merge(s.Session, ov) };
+
+    private static CommitMatch Merge(CommitMatch m, SessionOverride ov) =>
+        m with { Session = Merge(m.Session, ov) };
 }
