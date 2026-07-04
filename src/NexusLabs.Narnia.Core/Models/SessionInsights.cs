@@ -6,8 +6,5 @@ public sealed record SessionInsights(
     int TotalCheckpoints,
     int FilesCreated,
     int FilesEdited,
-    int CommitsReferenced,
-    int PullRequestsReferenced,
-    int IssuesReferenced,
     int GithubHostedSessions,
     int LocalTerminalSessions);

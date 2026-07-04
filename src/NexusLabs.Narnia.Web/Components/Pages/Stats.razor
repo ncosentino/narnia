@@ -76,25 +76,6 @@ else
         }
     </div>
 
-    @if (_insights is not null)
-    {
-        <h2>Outcomes</h2>
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-value">@_insights.CommitsReferenced</div>
-                <div class="stat-label">Commits Referenced</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">@_insights.PullRequestsReferenced</div>
-                <div class="stat-label">Pull Requests Opened</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">@_insights.IssuesReferenced</div>
-                <div class="stat-label">Issues Referenced</div>
-            </div>
-        </div>
-    }
-
     @if (_growth is { Length: > 0 })
     {
         <h2>Growth Over Time</h2>

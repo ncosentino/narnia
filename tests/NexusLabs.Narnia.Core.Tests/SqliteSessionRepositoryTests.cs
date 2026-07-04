@@ -510,27 +510,6 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task GetSessionInsightsAsync_ReturnsRefTypeCounts()
-    {
-        await using (var cmd = _keepAlive.CreateCommand())
-        {
-            cmd.CommandText = """
-                INSERT INTO session_refs (session_id, ref_type, ref_value, turn_index, created_at) VALUES
-                    ('sess-1', 'pr', '42', 2, '2025-01-01T10:08:00Z'),
-                    ('sess-2', 'issue', '7', 1, '2025-01-03T09:06:00Z');
-                """;
-            await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
-        }
-
-        var insights = await _repository.GetSessionInsightsAsync(TestContext.Current.CancellationToken);
-
-        // Seed data has 1 pre-existing 'commit' row; this test adds 1 'pr' + 1 'issue'
-        Assert.Equal(1, insights.CommitsReferenced);
-        Assert.Equal(1, insights.PullRequestsReferenced);
-        Assert.Equal(1, insights.IssuesReferenced);
-    }
-
-    [Fact]
     public async Task GetSessionInsightsAsync_ReturnsHostTypeCounts()
     {
         await using (var cmd = _keepAlive.CreateCommand())

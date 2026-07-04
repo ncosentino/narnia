@@ -144,6 +144,11 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         ORDER BY session_count DESC
         """;
 
+    // session_refs is intentionally not aggregated here (e.g. commit/PR/issue counts).
+    // It is populated for only a small fraction of sessions and its values are not always
+    // even well-formed (a 'commit' ref value has been observed to be a branch name), so it
+    // is not a reliable outcomes signal — surfacing counts from it would understate real
+    // activity by roughly an order of magnitude while looking authoritative.
     private static readonly string SessionInsightsSql =
         """
         SELECT
@@ -152,9 +157,6 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             (SELECT COUNT(*) FROM checkpoints) as total_checkpoints,
             (SELECT COUNT(*) FROM session_files WHERE tool_name = 'create') as files_created,
             (SELECT COUNT(*) FROM session_files WHERE tool_name = 'edit') as files_edited,
-            (SELECT COUNT(*) FROM session_refs WHERE ref_type = 'commit') as commits_referenced,
-            (SELECT COUNT(*) FROM session_refs WHERE ref_type = 'pr') as prs_referenced,
-            (SELECT COUNT(*) FROM session_refs WHERE ref_type = 'issue') as issues_referenced,
             (SELECT COUNT(*) FROM sessions WHERE host_type = 'github') as github_sessions,
             (SELECT COUNT(*) FROM sessions WHERE host_type IS NULL OR host_type != 'github') as local_sessions
         """;
@@ -456,7 +458,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
-            return new SessionInsights(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new SessionInsights(0, 0, 0, 0, 0, 0, 0);
 
         return new SessionInsights(
             DistinctRepositories: reader.GetInt32(0),
@@ -464,11 +466,8 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             TotalCheckpoints: reader.GetInt32(2),
             FilesCreated: reader.GetInt32(3),
             FilesEdited: reader.GetInt32(4),
-            CommitsReferenced: reader.GetInt32(5),
-            PullRequestsReferenced: reader.GetInt32(6),
-            IssuesReferenced: reader.GetInt32(7),
-            GithubHostedSessions: reader.GetInt32(8),
-            LocalTerminalSessions: reader.GetInt32(9));
+            GithubHostedSessions: reader.GetInt32(5),
+            LocalTerminalSessions: reader.GetInt32(6));
     }
 
     public async ValueTask<ActivityPatterns> GetActivityPatternsAsync(CancellationToken ct = default)
