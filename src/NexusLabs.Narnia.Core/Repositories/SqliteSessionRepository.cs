@@ -144,6 +144,28 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         ORDER BY session_count DESC
         """;
 
+    // session_refs is intentionally not aggregated here (e.g. commit/PR/issue counts).
+    // It is populated for only a small fraction of sessions and its values are not always
+    // even well-formed (a 'commit' ref value has been observed to be a branch name), so it
+    // is not a reliable outcomes signal — surfacing counts from it would understate real
+    // activity by roughly an order of magnitude while looking authoritative.
+    private static readonly string SessionInsightsSql =
+        """
+        SELECT
+            (SELECT COUNT(DISTINCT repository) FROM sessions WHERE repository IS NOT NULL) as distinct_repos,
+            (SELECT COUNT(DISTINCT branch) FROM sessions WHERE branch IS NOT NULL) as distinct_branches,
+            (SELECT COUNT(*) FROM checkpoints) as total_checkpoints,
+            (SELECT COUNT(*) FROM session_files WHERE tool_name = 'create') as files_created,
+            (SELECT COUNT(*) FROM session_files WHERE tool_name = 'edit') as files_edited,
+            (SELECT COUNT(*) FROM sessions WHERE host_type = 'github') as github_sessions,
+            (SELECT COUNT(*) FROM sessions WHERE host_type IS NULL OR host_type != 'github') as local_sessions
+        """;
+
+    private static readonly string SessionCreatedAtSql =
+        """
+        SELECT created_at FROM sessions WHERE created_at IS NOT NULL
+        """;
+
     private static readonly string HotFilesSql =
         """
         SELECT file_path, COUNT(DISTINCT session_id) as session_count, tool_name
@@ -424,6 +446,98 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             results.Add(new RepositoryStats(repo, sessions, turns, files, lastActivity));
         }
         return [.. results];
+    }
+
+    public async ValueTask<SessionInsights> GetSessionInsightsAsync(CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = SessionInsightsSql;
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+            return new SessionInsights(0, 0, 0, 0, 0, 0, 0);
+
+        return new SessionInsights(
+            DistinctRepositories: reader.GetInt32(0),
+            DistinctBranches: reader.GetInt32(1),
+            TotalCheckpoints: reader.GetInt32(2),
+            FilesCreated: reader.GetInt32(3),
+            FilesEdited: reader.GetInt32(4),
+            GithubHostedSessions: reader.GetInt32(5),
+            LocalTerminalSessions: reader.GetInt32(6));
+    }
+
+    public async ValueTask<ActivityPatterns> GetActivityPatternsAsync(CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = SessionCreatedAtSql;
+
+        var byHour = new int[24];
+        var byDayOfWeek = new int[7];
+        var localDates = new List<DateOnly>();
+
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                if (reader.IsDBNull(0) || !DateTimeOffset.TryParse(reader.GetString(0), out var utc))
+                    continue;
+
+                // created_at is stored in UTC; convert so "peak hours" and streaks line
+                // up with the machine's own clock instead of the database's UTC values.
+                var local = utc.ToLocalTime();
+                byHour[local.Hour]++;
+                byDayOfWeek[(int)local.DayOfWeek]++;
+                localDates.Add(DateOnly.FromDateTime(local.Date));
+            }
+        }
+
+        var hourResults = Enumerable.Range(0, 24)
+            .Select(h => new HourActivity(h, byHour[h]))
+            .ToArray();
+        var dayResults = Enum.GetValues<DayOfWeek>()
+            .Select(d => new DayOfWeekActivity(d, byDayOfWeek[(int)d]))
+            .ToArray();
+        var (current, longest) = ComputeStreaks(localDates);
+
+        return new ActivityPatterns(hourResults, dayResults, current, longest);
+    }
+
+    private static (int Current, int Longest) ComputeStreaks(List<DateOnly> activeDates)
+    {
+        if (activeDates.Count == 0)
+            return (0, 0);
+
+        var distinctDays = activeDates.Distinct().OrderBy(d => d).ToArray();
+
+        var longest = 1;
+        var run = 1;
+        for (var i = 1; i < distinctDays.Length; i++)
+        {
+            run = distinctDays[i].DayNumber == distinctDays[i - 1].DayNumber + 1 ? run + 1 : 1;
+            longest = Math.Max(longest, run);
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Now.Date);
+        var mostRecent = distinctDays[^1];
+        if (mostRecent != today && mostRecent != today.AddDays(-1))
+            return (0, longest);
+
+        var current = 1;
+        for (var i = distinctDays.Length - 1; i > 0; i--)
+        {
+            if (distinctDays[i].DayNumber != distinctDays[i - 1].DayNumber + 1)
+                break;
+            current++;
+        }
+
+        return (current, longest);
     }
 
     public async ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default)
