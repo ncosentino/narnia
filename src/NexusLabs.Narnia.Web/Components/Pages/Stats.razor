@@ -31,6 +31,24 @@ else
             <div class="stat-value">@_stats.TotalFilesTouched</div>
             <div class="stat-label">Files Touched</div>
         </div>
+        @if (_insights is not null)
+        {
+            <div class="stat-card">
+                <div class="stat-value">@_insights.TotalCheckpoints</div>
+                <div class="stat-label">Checkpoints</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@_insights.DistinctRepositories</div>
+                <div class="stat-label">Repositories</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@_insights.DistinctBranches</div>
+                <div class="stat-label">Branches</div>
+            </div>
+        }
+    </div>
+
+    <div class="stats-grid">
         @if (_stats.MostActiveRepository is not null)
         {
             <div class="stat-card stat-card--wide">
@@ -45,7 +63,88 @@ else
                 <div class="stat-label">Busiest Day</div>
             </div>
         }
+        @if (_patterns is not null)
+        {
+            <div class="stat-card">
+                <div class="stat-value">@_patterns.CurrentStreakDays</div>
+                <div class="stat-label">Current Streak (days)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@_patterns.LongestStreakDays</div>
+                <div class="stat-label">Longest Streak (days)</div>
+            </div>
+        }
     </div>
+
+    @if (_insights is not null)
+    {
+        <h2>Outcomes</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">@_insights.CommitsReferenced</div>
+                <div class="stat-label">Commits Referenced</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@_insights.PullRequestsReferenced</div>
+                <div class="stat-label">Pull Requests Opened</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">@_insights.IssuesReferenced</div>
+                <div class="stat-label">Issues Referenced</div>
+            </div>
+        </div>
+    }
+
+    @if (_growth is { Length: > 0 })
+    {
+        <h2>Growth Over Time</h2>
+        <p>Cumulative total sessions since your first recorded session.</p>
+        <div class="chart-container">
+            <canvas id="stats-growth-chart"></canvas>
+        </div>
+        <script type="application/json" data-chart-id="stats-growth-chart">
+            @((MarkupString)BuildGrowthChartJson(_growth))
+        </script>
+    }
+
+    @if (_insights is not null)
+    {
+        <h2>Session Composition</h2>
+        <div class="chart-row">
+            <div class="chart-container">
+                <canvas id="stats-fileops-chart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="stats-origin-chart"></canvas>
+            </div>
+        </div>
+        <script type="application/json" data-chart-id="stats-fileops-chart">
+            @((MarkupString)BuildFileOpsChartJson(_insights))
+        </script>
+        <script type="application/json" data-chart-id="stats-origin-chart">
+            @((MarkupString)BuildOriginChartJson(_insights))
+        </script>
+    }
+
+    @if (_patterns is not null)
+    {
+        <h2>When You Work</h2>
+        <p>Session start times, in your local time zone.</p>
+        <div class="chart-row">
+            <div class="chart-container">
+                <canvas id="stats-dow-chart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="stats-hour-chart"></canvas>
+            </div>
+        </div>
+        <script type="application/json" data-chart-id="stats-dow-chart">
+            @((MarkupString)BuildDayOfWeekChartJson(_patterns.ByDayOfWeek))
+        </script>
+        <script type="application/json" data-chart-id="stats-hour-chart">
+            @((MarkupString)BuildHourChartJson(_patterns.ByHour))
+        </script>
+    }
 
     @if (_repoStats is { Length: > 0 })
     {
@@ -62,11 +161,17 @@ else
 @code {
     private GlobalStats? _stats;
     private RepositoryStats[]? _repoStats;
+    private SessionInsights? _insights;
+    private ActivityPatterns? _patterns;
+    private ActivityDay[]? _growth;
 
     protected override async Task OnInitializedAsync()
     {
         _stats = await Repository.GetGlobalStatsAsync();
         _repoStats = await Repository.GetRepositoryStatsAsync();
+        _insights = await Repository.GetSessionInsightsAsync();
+        _patterns = await Repository.GetActivityPatternsAsync();
+        _growth = await Repository.GetActivityByDateAsync(3650);
     }
 
     private static string BuildRepoChartJson(RepositoryStats[] data) =>
@@ -86,6 +191,117 @@ else
             {
                 responsive = true,
                 plugins = new { legend = new { display = false } },
+                scales = new { y = new { beginAtZero = true, ticks = new { stepSize = 1 } } }
+            }
+        });
+
+    private static string BuildGrowthChartJson(ActivityDay[] data)
+    {
+        var cumulative = 0;
+        var running = data.Select(d => cumulative += d.SessionCount).ToArray();
+
+        return JsonSerializer.Serialize(new
+        {
+            type = "line",
+            data = new
+            {
+                labels = data.Select(d => d.Date.ToString("yyyy-MM-dd")).ToArray(),
+                datasets = new[]
+                {
+                    new { label = "Total Sessions", data = running,
+                          borderColor = "rgba(99,102,241,1)", backgroundColor = "rgba(99,102,241,0.1)",
+                          pointRadius = 0, tension = 0.25, fill = true }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { display = false } },
+                scales = new { y = new { beginAtZero = true } }
+            }
+        });
+    }
+
+    private static string BuildFileOpsChartJson(SessionInsights insights) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "doughnut",
+            data = new
+            {
+                labels = new[] { "Created", "Edited" },
+                datasets = new[]
+                {
+                    new { data = new[] { insights.FilesCreated, insights.FilesEdited },
+                          backgroundColor = new[] { "rgba(16,185,129,0.8)", "rgba(99,102,241,0.8)" },
+                          borderColor = new[] { "rgba(16,185,129,1)", "rgba(99,102,241,1)" }, borderWidth = 1 }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { position = "bottom" }, title = new { display = true, text = "File Operations" } }
+            }
+        });
+
+    private static string BuildOriginChartJson(SessionInsights insights) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "doughnut",
+            data = new
+            {
+                labels = new[] { "GitHub CLI (gh)", "Local Terminal" },
+                datasets = new[]
+                {
+                    new { data = new[] { insights.GithubHostedSessions, insights.LocalTerminalSessions },
+                          backgroundColor = new[] { "rgba(249,115,22,0.8)", "rgba(139,92,246,0.8)" },
+                          borderColor = new[] { "rgba(249,115,22,1)", "rgba(139,92,246,1)" }, borderWidth = 1 }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { position = "bottom" }, title = new { display = true, text = "Session Origin" } }
+            }
+        });
+
+    private static string BuildDayOfWeekChartJson(IReadOnlyList<DayOfWeekActivity> data) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "bar",
+            data = new
+            {
+                labels = data.Select(d => d.Day.ToString()[..3]).ToArray(),
+                datasets = new[]
+                {
+                    new { label = "Sessions", data = data.Select(d => d.SessionCount).ToArray(),
+                          backgroundColor = "rgba(99,102,241,0.7)", borderColor = "rgba(99,102,241,1)", borderWidth = 1 }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { display = false }, title = new { display = true, text = "By Day of Week" } },
+                scales = new { y = new { beginAtZero = true, ticks = new { stepSize = 1 } } }
+            }
+        });
+
+    private static string BuildHourChartJson(IReadOnlyList<HourActivity> data) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "bar",
+            data = new
+            {
+                labels = data.Select(h => $"{h.Hour:00}:00").ToArray(),
+                datasets = new[]
+                {
+                    new { label = "Sessions", data = data.Select(h => h.SessionCount).ToArray(),
+                          backgroundColor = "rgba(139,92,246,0.7)", borderColor = "rgba(139,92,246,1)", borderWidth = 1 }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { display = false }, title = new { display = true, text = "By Hour of Day" } },
                 scales = new { y = new { beginAtZero = true, ticks = new { stepSize = 1 } } }
             }
         });

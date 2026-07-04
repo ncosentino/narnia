@@ -256,6 +256,8 @@ a { color: var(--link); }
 /* ── Charts ──────────────────────────────────────────────────── */
 .chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 2rem; max-height: 420px; }
 .chart-container canvas { max-height: 380px; }
+.chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+.chart-row .chart-container { margin-bottom: 0; }
 
 /* ── Activity Calendar ───────────────────────────────────────── */
 .activity-summary { display: flex; gap: 2rem; margin-bottom: 1.5rem; font-size: .95rem; }

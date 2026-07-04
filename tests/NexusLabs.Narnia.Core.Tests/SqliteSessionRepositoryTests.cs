@@ -40,7 +40,8 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
                 branch TEXT,
                 summary TEXT,
                 created_at TEXT,
-                updated_at TEXT
+                updated_at TEXT,
+                host_type TEXT
             );
             CREATE TABLE turns (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +91,7 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     {
         using var cmd = _keepAlive.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO sessions VALUES
+            INSERT INTO sessions (id, cwd, repository, branch, summary, created_at, updated_at) VALUES
                 ('sess-1', 'C:\dev\proj-a', 'owner/repo-a', 'main', 'Build the API', '2025-01-01T10:00:00Z', '2025-01-02T12:00:00Z'),
                 ('sess-2', 'C:\dev\proj-b', 'owner/repo-b', 'feature/x', 'Fix the tests', '2025-01-03T09:00:00Z', '2025-01-03T11:00:00Z'),
                 ('sess-3', 'C:\dev\proj-a', 'owner/repo-a', 'main', 'Add caching', '2025-01-04T08:00:00Z', '2025-01-04T09:00:00Z');
@@ -466,6 +467,161 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
 
         for (var i = 1; i < results.Length; i++)
             Assert.True(results[i].SessionCount <= results[i - 1].SessionCount);
+    }
+
+    // ── GetSessionInsightsAsync ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSessionInsightsAsync_ReturnsDistinctRepositoryAndBranchCounts()
+    {
+        var insights = await _repository.GetSessionInsightsAsync(TestContext.Current.CancellationToken);
+
+        // Seed data has 2 repos (owner/repo-a, owner/repo-b) and 2 branches (main, feature/x)
+        Assert.Equal(2, insights.DistinctRepositories);
+        Assert.Equal(2, insights.DistinctBranches);
+    }
+
+    [Fact]
+    public async Task GetSessionInsightsAsync_ReturnsTotalCheckpoints()
+    {
+        var insights = await _repository.GetSessionInsightsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, insights.TotalCheckpoints);
+    }
+
+    [Fact]
+    public async Task GetSessionInsightsAsync_ReturnsFileOperationCounts()
+    {
+        await using (var cmd = _keepAlive.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at) VALUES
+                    ('sess-1', 'src/New.cs', 'create', 2, '2025-01-01T10:07:00Z'),
+                    ('sess-2', 'src/Other.cs', 'create', 1, '2025-01-03T09:05:00Z');
+                """;
+            await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var insights = await _repository.GetSessionInsightsAsync(TestContext.Current.CancellationToken);
+
+        // Seed data has 1 pre-existing 'edit' row; this test adds 2 more 'create' rows
+        Assert.Equal(2, insights.FilesCreated);
+        Assert.Equal(1, insights.FilesEdited);
+    }
+
+    [Fact]
+    public async Task GetSessionInsightsAsync_ReturnsRefTypeCounts()
+    {
+        await using (var cmd = _keepAlive.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO session_refs (session_id, ref_type, ref_value, turn_index, created_at) VALUES
+                    ('sess-1', 'pr', '42', 2, '2025-01-01T10:08:00Z'),
+                    ('sess-2', 'issue', '7', 1, '2025-01-03T09:06:00Z');
+                """;
+            await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var insights = await _repository.GetSessionInsightsAsync(TestContext.Current.CancellationToken);
+
+        // Seed data has 1 pre-existing 'commit' row; this test adds 1 'pr' + 1 'issue'
+        Assert.Equal(1, insights.CommitsReferenced);
+        Assert.Equal(1, insights.PullRequestsReferenced);
+        Assert.Equal(1, insights.IssuesReferenced);
+    }
+
+    [Fact]
+    public async Task GetSessionInsightsAsync_ReturnsHostTypeCounts()
+    {
+        await using (var cmd = _keepAlive.CreateCommand())
+        {
+            cmd.CommandText = "UPDATE sessions SET host_type = 'github' WHERE id = 'sess-1'";
+            await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var insights = await _repository.GetSessionInsightsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, insights.GithubHostedSessions);
+        Assert.Equal(2, insights.LocalTerminalSessions);
+    }
+
+    // ── GetActivityPatternsAsync ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetActivityPatternsAsync_ByHour_ReturnsAllTwentyFourHoursZeroFilled()
+    {
+        var patterns = await _repository.GetActivityPatternsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(24, patterns.ByHour.Count);
+        Assert.Equal(Enumerable.Range(0, 24), patterns.ByHour.Select(h => h.Hour));
+    }
+
+    [Fact]
+    public async Task GetActivityPatternsAsync_ByDayOfWeek_ReturnsAllSevenDaysZeroFilled()
+    {
+        var patterns = await _repository.GetActivityPatternsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(7, patterns.ByDayOfWeek.Count);
+    }
+
+    [Fact]
+    public async Task GetActivityPatternsAsync_ByHour_SumsToTotalSessions()
+    {
+        var patterns = await _repository.GetActivityPatternsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, patterns.ByHour.Sum(h => h.SessionCount));
+    }
+
+    [Fact]
+    public async Task GetActivityPatternsAsync_ConvertsUtcTimestampsToLocalTime()
+    {
+        // sess-1 was seeded at 2025-01-01T10:00:00Z. Compute the expected bucket via the
+        // same UTC -> local conversion rather than hardcoding an hour, since the raw UTC
+        // hour would land in a different local bucket depending on the machine running
+        // the test.
+        var expectedHour = new DateTimeOffset(2025, 1, 1, 10, 0, 0, TimeSpan.Zero).ToLocalTime().Hour;
+
+        var patterns = await _repository.GetActivityPatternsAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(patterns.ByHour.Single(h => h.Hour == expectedHour).SessionCount >= 1);
+    }
+
+    [Fact]
+    public async Task GetActivityPatternsAsync_NoRecentActivity_CurrentStreakIsZero()
+    {
+        // Seed data is all from January 2025 — far in the past relative to whenever this
+        // test runs — so there should be no ongoing streak.
+        var patterns = await _repository.GetActivityPatternsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, patterns.CurrentStreakDays);
+    }
+
+    [Fact]
+    public async Task GetActivityPatternsAsync_ComputesLongestAndCurrentStreak()
+    {
+        // Anchored to "now" and spaced exactly 24h apart so the 3 rows land on 3
+        // consecutive local calendar days regardless of the runner's time zone.
+        var now = DateTimeOffset.UtcNow;
+        await using (var cmd = _keepAlive.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO sessions (id, cwd, repository, branch, summary, created_at, updated_at) VALUES
+                    ('streak-1', 'C:\dev\streak', 'owner/streak', 'main', 'day 0', @d0, @d0),
+                    ('streak-2', 'C:\dev\streak', 'owner/streak', 'main', 'day 1', @d1, @d1),
+                    ('streak-3', 'C:\dev\streak', 'owner/streak', 'main', 'day 2', @d2, @d2);
+                """;
+            cmd.Parameters.AddWithValue("@d0", now.ToString("o"));
+            cmd.Parameters.AddWithValue("@d1", now.AddDays(-1).ToString("o"));
+            cmd.Parameters.AddWithValue("@d2", now.AddDays(-2).ToString("o"));
+            await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var patterns = await _repository.GetActivityPatternsAsync(TestContext.Current.CancellationToken);
+
+        // The Jan-2025 seed data's longest possible run is 2 days (Jan 3 + Jan 4), so this
+        // freshly-injected 3-day run becomes the new longest as well as the current streak.
+        Assert.Equal(3, patterns.CurrentStreakDays);
+        Assert.Equal(3, patterns.LongestStreakDays);
     }
 
     // ── GetHotFilesAsync ──────────────────────────────────────────────────────

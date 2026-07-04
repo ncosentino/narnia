@@ -15,6 +15,8 @@ public interface ISessionRepository
     ValueTask<GlobalStats> GetGlobalStatsAsync(CancellationToken ct = default);
     ValueTask<ActivityDay[]> GetActivityByDateAsync(int days = 90, CancellationToken ct = default);
     ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default);
+    ValueTask<SessionInsights> GetSessionInsightsAsync(CancellationToken ct = default);
+    ValueTask<ActivityPatterns> GetActivityPatternsAsync(CancellationToken ct = default);
     ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default);
     ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default);
     ValueTask<SessionSummary[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default);

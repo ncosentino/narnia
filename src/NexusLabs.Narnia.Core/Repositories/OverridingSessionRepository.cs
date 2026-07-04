@@ -62,6 +62,12 @@ public sealed class OverridingSessionRepository(
     public ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default) =>
         inner.GetRepositoryStatsAsync(ct);
 
+    public ValueTask<SessionInsights> GetSessionInsightsAsync(CancellationToken ct = default) =>
+        inner.GetSessionInsightsAsync(ct);
+
+    public ValueTask<ActivityPatterns> GetActivityPatternsAsync(CancellationToken ct = default) =>
+        inner.GetActivityPatternsAsync(ct);
+
     public ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default) =>
         inner.GetHotFilesAsync(limit, ct);
 
