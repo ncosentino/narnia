@@ -1,3 +1,19 @@
+---
+name: narnia-scheduler
+description: >
+  Create, migrate, and manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs
+  that Windows Task Scheduler executes unattended on a daily/weekly/monthly cadence. Use to
+  schedule a new recurring job, migrate an existing hand-built Windows Scheduled Task into Narnia,
+  run a supervised dry-run before trusting a schedule, or inspect/enable/disable/run/delete a
+  cataloged job.
+license: MIT
+compatibility: Windows only — depends on the ScheduledTasks PowerShell module and Narnia's MCP schedule tools being available.
+metadata:
+  author: nexus-labs
+  version: "1.0"
+allowed-tools: PowerShell(*) Read Write
+---
+
 # Narnia Scheduler
 
 Create, migrate, and manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that
