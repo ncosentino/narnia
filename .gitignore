@@ -27,4 +27,5 @@ appsettings.Development.json
 
 ## MkDocs
 site/
+.wrangler/
 __pycache__/

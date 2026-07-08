@@ -1,5 +1,5 @@
 site_name: Narnia
-site_url: https://github.devleader.ca/narnia/
+site_url: https://www.devleader.ca/projects/narnia/
 site_description: MCP server and local Blazor web UI for browsing GitHub Copilot CLI session history. Find and resume sessions after a restart without losing context.
 repo_url: https://github.com/ncosentino/narnia
 repo_name: ncosentino/narnia
