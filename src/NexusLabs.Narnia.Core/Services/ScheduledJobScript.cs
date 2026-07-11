@@ -18,13 +18,21 @@ public static class ScheduledJobScript
     /// <param name="allowFlags">Copilot allow-flags (e.g. <c>--allow-all-tools --allow-all-paths</c>).</param>
     /// <param name="copilotArgs">Extra arguments appended to the copilot invocation, or <c>null</c>.</param>
     /// <param name="logDirectory">Directory the wrapper writes per-run logs to.</param>
+    /// <param name="copilotCommand">
+    /// The command that invokes Copilot, e.g. <c>copilot</c>, or <c>agency copilot</c> on a machine
+    /// that requires a wrapper. Embedded verbatim as source text (e.g. <c>&amp; agency copilot -p
+    /// $prompt</c>), which PowerShell parses correctly with "agency" as the executable and "copilot"
+    /// as its first argument -- no splitting needed here since this is generated script text, not a
+    /// runtime variable passed to the call operator.
+    /// </param>
     public static string Build(
         string name,
         string prompt,
         string? workingDirectory,
         string? allowFlags,
         string? copilotArgs,
-        string logDirectory)
+        string logDirectory,
+        string copilotCommand)
     {
         var extra = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(allowFlags))
@@ -51,7 +59,7 @@ public static class ScheduledJobScript
             sb.AppendLine(line);
         sb.AppendLine("'@");
 
-        sb.AppendLine($"& copilot -p $prompt{extra} 2>&1 | ForEach-Object {{ \"$($_.ToString())\" }} | Tee-Object -FilePath $log -Append");
+        sb.AppendLine($"& {copilotCommand} -p $prompt{extra} 2>&1 | ForEach-Object {{ \"$($_.ToString())\" }} | Tee-Object -FilePath $log -Append");
         sb.AppendLine("$code = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }");
         sb.AppendLine("\"End: $(Get-Date -Format o) ExitCode: $code\" | Tee-Object -FilePath $log -Append | Out-Null");
         sb.AppendLine("exit $code");

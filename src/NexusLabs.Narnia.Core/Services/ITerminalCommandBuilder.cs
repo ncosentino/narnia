@@ -26,23 +26,32 @@ public interface ITerminalCommandBuilder
     /// Builds the shell arguments that resume the given session (e.g. the
     /// <c>-NoExit -Command "copilot --resume=&lt;id&gt;"</c> portion for PowerShell).
     /// </summary>
-    string BuildShellArguments(string shellName, string sessionId);
+    /// <param name="copilotCommand">
+    /// The command that invokes Copilot (e.g. <c>copilot</c>, or <c>agency copilot</c> when a
+    /// wrapper is required). Embedded verbatim as source text for a freshly-launched shell, so a
+    /// multi-word value is parsed correctly with no special handling needed here.
+    /// </param>
+    string BuildShellArguments(string shellName, string sessionId, string copilotCommand);
 
     /// <summary>
     /// Builds a single <c>new-tab</c> segment for the given tab, including its title and
     /// (when present) starting directory.
     /// </summary>
-    string BuildNewTabSegment(string shellPath, string shellName, TerminalLaunchTab tab);
+    /// <param name="copilotCommand">See <see cref="BuildShellArguments"/>.</param>
+    string BuildNewTabSegment(string shellPath, string shellName, TerminalLaunchTab tab, string copilotCommand);
 
     /// <summary>
     /// Builds the full <c>wt.exe</c> argument string that opens one window containing all the
     /// given tabs in order.
     /// </summary>
-    string BuildWindowCommand(string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs);
+    /// <param name="copilotCommand">See <see cref="BuildShellArguments"/>.</param>
+    string BuildWindowCommand(
+        string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs, string copilotCommand);
 
     /// <summary>
     /// Builds the shell arguments for launching a tab directly (without Windows Terminal), including
     /// a best-effort window-title set. Used as the fallback when <c>wt.exe</c> is unavailable.
     /// </summary>
-    string BuildDirectLaunchArguments(string shellName, TerminalLaunchTab tab);
+    /// <param name="copilotCommand">See <see cref="BuildShellArguments"/>.</param>
+    string BuildDirectLaunchArguments(string shellName, TerminalLaunchTab tab, string copilotCommand);
 }

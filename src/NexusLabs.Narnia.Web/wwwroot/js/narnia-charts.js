@@ -124,6 +124,7 @@ async function narniaLaunch(target, sessionId, btn) {
 
 async function narniaSaveSettings() {
     var shellInput = document.getElementById('setting-shell-path');
+    var copilotInput = document.getElementById('setting-copilot-command');
     if (!shellInput) return;
     var btn = document.querySelector('.btn-save-settings');
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
@@ -133,6 +134,13 @@ async function narniaSaveSettings() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key: 'shell_path', value: shellInput.value }),
         });
+        if (resp.ok && copilotInput) {
+            resp = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: 'copilot_command', value: copilotInput.value || 'copilot' }),
+            });
+        }
         if (resp.ok) {
             if (btn) { btn.textContent = '✅ Saved!'; }
             setTimeout(function () {

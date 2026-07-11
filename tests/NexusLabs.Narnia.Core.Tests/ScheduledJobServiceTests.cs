@@ -15,6 +15,7 @@ public sealed class ScheduledJobServiceTests
     private readonly Mock<IScheduledJobWorkspace> _workspace = new();
     private readonly Mock<IScheduledTaskProvider> _taskProvider = new();
     private readonly Mock<IPowerShellHostResolver> _hostResolver = new();
+    private readonly Mock<INarniaSettingsRepository> _settingsRepository = new();
 
     public ScheduledJobServiceTests()
     {
@@ -51,7 +52,7 @@ public sealed class ScheduledJobServiceTests
     }
 
     private ScheduledJobService CreateService() =>
-        new(_registry.Object, _registrar.Object, _workspace.Object, _taskProvider.Object, _hostResolver.Object);
+        new(_registry.Object, _registrar.Object, _workspace.Object, _taskProvider.Object, _hostResolver.Object, _settingsRepository.Object);
 
     private static ScheduledJobInput Input(
         string name = "Sample",
@@ -106,6 +107,22 @@ public sealed class ScheduledJobServiceTests
         _registry.Verify(r => r.CreateWithIdAsync(It.IsAny<string>(), It.IsAny<ScheduledJobDraft>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never);
         _workspace.Verify(w => w.WriteScriptAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _registrar.Verify(r => r.RegisterAsync(It.IsAny<ScheduledTaskRegistration>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAsync_CopilotCommandSettingConfigured_UsesItInGeneratedScript()
+    {
+        // A machine that requires a wrapper (e.g. Microsoft's "Agency" tooling) sets the
+        // "copilot_command" setting once; every newly generated job wrapper must pick it up
+        // instead of always hardcoding a bare "copilot".
+        _settingsRepository.Setup(s => s.GetAsync("copilot_command", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("agency copilot");
+        var service = CreateService();
+
+        var result = await service.CreateAsync(Input(), register: false, Ct);
+
+        Assert.True(result.Ok);
+        Assert.Contains("agency copilot -p", result.Script);
     }
 
     [Fact]

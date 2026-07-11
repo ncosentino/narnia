@@ -6,6 +6,7 @@
 @inject SqliteSessionRepository RawRepository
 @inject ISessionOverridesRepository OverridesRepository
 @inject IWorkspaceReader WorkspaceReader
+@inject INarniaSettingsRepository SettingsRepo
 
 <PageTitle>@(_session?.Summary ?? SessionId) — Narnia</PageTitle>
 
@@ -222,9 +223,11 @@ else if (_session is not null)
     private Checkpoint[]? _checkpoints;
     private Turn[]? _turns;
     private bool _loaded;
+    private string _copilotCommand = "copilot";
 
     protected override async Task OnInitializedAsync()
     {
+        _copilotCommand = await SettingsRepo.GetAsync("copilot_command") ?? "copilot";
         _session = await Repository.GetByIdAsync(SessionId);
         if (_session is not null)
         {
@@ -261,7 +264,7 @@ else if (_session is not null)
 
     private List<(string Label, string Command, string Target, string Index)> BuildResumeEntries()
     {
-        var baseCmd = $"copilot --resume={_session!.Id}";
+        var baseCmd = $"{_copilotCommand} --resume={_session!.Id}";
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var entries = new List<(string Label, string Command, string Target, string Index)>();
 

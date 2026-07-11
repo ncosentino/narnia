@@ -258,6 +258,11 @@ app.MapGet("/api/settings/detect-shell", () =>
         : Results.NotFound(new { message = "No shell detected" });
 });
 
+// The command that invokes Copilot. Overridable via the "copilot_command" setting for machines
+// where a wrapper is required (e.g. Microsoft's "Agency" tooling requires "agency copilot" instead
+// of a bare "copilot").
+const string DefaultCopilotCommand = "copilot";
+
 // ── Launch API ──────────────────────────────────────────────────────────────
 app.MapPost("/api/launch", async (
     LaunchRequest request,
@@ -297,6 +302,7 @@ app.MapPost("/api/launch", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
 
     var title = ov?.TerminalTitle ?? session.Summary ?? $"Narnia: {ShortSession(request.SessionId)}";
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
@@ -304,7 +310,7 @@ app.MapPost("/api/launch", async (
 
     // A single session opens in its own window; with one tab the mode is moot, but SeparateWindows
     // keeps the semantics explicit and consistent with the unified launcher.
-    var outcome = launcher.Launch(shellPath, shellName, [tab], TerminalWindowMode.SeparateWindows);
+    var outcome = launcher.Launch(shellPath, shellName, [tab], TerminalWindowMode.SeparateWindows, copilotCommand);
     return outcome.Failures.Count == 0
         ? Results.Ok(new { launched = true })
         : Results.BadRequest($"Failed to launch shell: {outcome.Failures[0].Reason}");
@@ -327,6 +333,7 @@ app.MapPost("/api/launch-bulk", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
 
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
@@ -371,7 +378,7 @@ app.MapPost("/api/launch-bulk", async (
     var mode = request.SeparateWindows
         ? TerminalWindowMode.SeparateWindows
         : TerminalWindowMode.SingleWindow;
-    var outcome = launcher.Launch(shellPath, shellName, tabs, mode);
+    var outcome = launcher.Launch(shellPath, shellName, tabs, mode, copilotCommand);
 
     var launched = outcome.LaunchedSessionIds.Select(id => new { sessionId = id }).ToList();
     failed.AddRange(outcome.Failures.Select(f => new { sessionId = f.SessionId, reason = f.Reason }));
@@ -449,11 +456,12 @@ app.MapPost("/api/windows/{id}/reopen", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
     var launchTabs = await BuildReopenTabsAsync(window, sessionRepo, overridesRepo, workspaceReader, ct);
 
-    var outcome = launcher.Launch(shellPath, shellName, launchTabs, TerminalWindowMode.SingleWindow);
+    var outcome = launcher.Launch(shellPath, shellName, launchTabs, TerminalWindowMode.SingleWindow, copilotCommand);
     return outcome.Failures.Count == 0
         ? Results.Ok(new { reopened = true, tabs = outcome.LaunchedSessionIds.Count })
         : Results.BadRequest($"Failed to reopen window: {outcome.Failures[0].Reason}");
@@ -475,6 +483,7 @@ app.MapPost("/api/windows/reopen", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
     var launchTabs = new List<TerminalLaunchTab>();
@@ -499,7 +508,7 @@ app.MapPost("/api/windows/reopen", async (
     var mode = request.SeparateWindows
         ? TerminalWindowMode.SeparateWindows
         : TerminalWindowMode.SingleWindow;
-    var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode);
+    var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode, copilotCommand);
 
     return Results.Ok(new
     {
@@ -648,6 +657,7 @@ app.MapPost("/api/groups/{id}/reopen", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
     var launchTabs = new List<TerminalLaunchTab>(group.Members.Count);
@@ -663,7 +673,7 @@ app.MapPost("/api/groups/{id}/reopen", async (
     var mode = request.SeparateWindows
         ? TerminalWindowMode.SeparateWindows
         : TerminalWindowMode.SingleWindow;
-    var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode);
+    var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode, copilotCommand);
 
     return Results.Ok(new
     {

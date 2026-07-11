@@ -17,12 +17,17 @@ public interface ITerminalLauncher
     /// <param name="shellName">Lowercased shell name (e.g. <c>pwsh</c>, <c>cmd</c>).</param>
     /// <param name="tabs">The tabs to launch, in order.</param>
     /// <param name="mode">Whether to open one shared window or one window per session.</param>
+    /// <param name="copilotCommand">
+    /// The command that invokes Copilot (e.g. <c>copilot</c>, or <c>agency copilot</c> when a
+    /// wrapper is required on this machine).
+    /// </param>
     /// <returns>Which sessions launched and which failed.</returns>
     TerminalLaunchOutcome Launch(
         string shellPath,
         string shellName,
         IReadOnlyList<TerminalLaunchTab> tabs,
-        TerminalWindowMode mode);
+        TerminalWindowMode mode,
+        string copilotCommand);
 }
 
 /// <summary>The result of a launch: the sessions that started and those that failed.</summary>

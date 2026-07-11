@@ -16,7 +16,8 @@ public sealed class TerminalLauncher(
         string shellPath,
         string shellName,
         IReadOnlyList<TerminalLaunchTab> tabs,
-        TerminalWindowMode mode)
+        TerminalWindowMode mode,
+        string copilotCommand)
     {
         if (tabs.Count == 0)
             return new TerminalLaunchOutcome([], []);
@@ -24,15 +25,15 @@ public sealed class TerminalLauncher(
         var wtPath = commandBuilder.FindWindowsTerminalPath();
 
         if (wtPath is not null && mode == TerminalWindowMode.SingleWindow)
-            return LaunchSingleWindow(wtPath, shellPath, shellName, tabs);
+            return LaunchSingleWindow(wtPath, shellPath, shellName, tabs, copilotCommand);
 
-        return LaunchPerTab(wtPath, shellPath, shellName, tabs);
+        return LaunchPerTab(wtPath, shellPath, shellName, tabs, copilotCommand);
     }
 
     private TerminalLaunchOutcome LaunchSingleWindow(
-        string wtPath, string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs)
+        string wtPath, string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs, string copilotCommand)
     {
-        var arguments = commandBuilder.BuildWindowCommand(shellPath, shellName, tabs);
+        var arguments = commandBuilder.BuildWindowCommand(shellPath, shellName, tabs, copilotCommand);
         try
         {
             processLauncher.Start(wtPath, arguments);
@@ -48,7 +49,7 @@ public sealed class TerminalLauncher(
     }
 
     private TerminalLaunchOutcome LaunchPerTab(
-        string? wtPath, string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs)
+        string? wtPath, string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs, string copilotCommand)
     {
         var launched = new List<string>(tabs.Count);
         var failures = new List<TerminalLaunchFailure>();
@@ -58,9 +59,9 @@ public sealed class TerminalLauncher(
             try
             {
                 if (wtPath is not null)
-                    processLauncher.Start(wtPath, commandBuilder.BuildNewTabSegment(shellPath, shellName, tab));
+                    processLauncher.Start(wtPath, commandBuilder.BuildNewTabSegment(shellPath, shellName, tab, copilotCommand));
                 else
-                    processLauncher.Start(shellPath, commandBuilder.BuildDirectLaunchArguments(shellName, tab), tab.Directory);
+                    processLauncher.Start(shellPath, commandBuilder.BuildDirectLaunchArguments(shellName, tab, copilotCommand), tab.Directory);
 
                 launched.Add(tab.SessionId);
             }
