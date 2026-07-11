@@ -1,5 +1,5 @@
 ---
-description: How to build Narnia from source. Covers dotnet build, dotnet publish for NativeAOT, and runtime identifier options for each platform.
+description: How to build Narnia from source. Covers dotnet build, dotnet publish, and runtime identifier options for each platform.
 ---
 
 # Building from Source
@@ -14,25 +14,25 @@ description: How to build Narnia from source. Covers dotnet build, dotnet publis
 ```bash
 git clone https://github.com/ncosentino/narnia.git
 cd narnia
-dotnet build
+dotnet build narnia.slnx
 ```
 
-All three projects (`NexusLabs.Narnia.Core`, `NexusLabs.Narnia.McpServer`, `NexusLabs.Narnia.Web`) build together via the solution file `narnia.slnx`.
+Both projects (`NexusLabs.Narnia.Core`, `NexusLabs.Narnia.Web`) build together via the solution file `narnia.slnx`.
 
 ## Run Tests
 
 ```bash
-dotnet test
+dotnet test narnia.slnx
 ```
 
-Tests live in `tests/NexusLabs.Narnia.Core.Tests/` and use xUnit v3.
+Tests live in `tests/NexusLabs.Narnia.Core.Tests/` (xUnit v3 unit tests) and `tests/NexusLabs.Narnia.Web.Tests/` (`WebApplicationFactory` integration tests); both run together in this one command.
 
-## Publish — MCP Server (NativeAOT)
+## Publish — Web UI (serves the MCP endpoint too)
 
-The MCP server supports NativeAOT publishing for a self-contained, dependency-free executable:
+The web app is the only executable to publish — it serves the Blazor UI and the `/mcp` endpoint from the same process, so there is no separate MCP server to build:
 
 ```bash
-dotnet publish src/NexusLabs.Narnia.McpServer -r <RID> -c Release
+dotnet publish src/NexusLabs.Narnia.Web -r <RID> -c Release
 ```
 
 | Platform | Runtime Identifier (RID) |
@@ -43,24 +43,15 @@ dotnet publish src/NexusLabs.Narnia.McpServer -r <RID> -c Release
 | macOS x64 (Intel) | `osx-x64` |
 | macOS ARM64 (Apple Silicon) | `osx-arm64` |
 
-The published binary ends up in `src/NexusLabs.Narnia.McpServer/bin/Release/net10.0/<RID>/publish/`.
+The published binary ends up in `src/NexusLabs.Narnia.Web/bin/Release/net10.0/<RID>/publish/`. Run the output executable directly — it starts serving both the Blazor UI and the MCP endpoint on port 5244.
 
-## Publish — Web UI
-
-```bash
-dotnet publish src/NexusLabs.Narnia.Web -r <RID> -c Release
-```
-
-The web app is a standard ASP.NET Core Blazor Static SSR app. After publishing, run the output executable directly — it starts the Kestrel web server on port 5244.
+!!! note "Not NativeAOT"
+    Blazor Static SSR doesn't yet support NativeAOT or full trimming as of .NET 10, so this is a standard framework-dependent/self-contained JIT publish, not a single trimmed native binary. An earlier NativeAOT stdio MCP server project (`NexusLabs.Narnia.McpServer`) was removed in favor of this in-process HTTP server, so every MCP client can share one always-on instance instead of each spawning its own process.
 
 ## Development Mode
 
-Run both components simultaneously during development:
-
 ```bash
-# Terminal 1 — web UI with hot reload
 dotnet watch --project src/NexusLabs.Narnia.Web
-
-# Terminal 2 — MCP server (started by your MCP client automatically)
-dotnet run --project src/NexusLabs.Narnia.McpServer
 ```
+
+Hot-reloads the Blazor UI and the MCP endpoint together — there is no second process to run alongside it.

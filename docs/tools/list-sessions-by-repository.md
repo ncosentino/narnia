@@ -36,7 +36,7 @@ Returns a JSON array of session summary objects (same structure as [`list_recent
 
 - "List all sessions for the ncosentino/needlr repository"
 - "What sessions have I worked on in the macerus repo? Use ncosentino/macerus."
-- "Find all sessions for nexus-labs/narnia"
+- "Find all sessions for ncosentino/narnia"
 - "Which sessions were working on my devleader-blog? Try ncosentino/devleader-blog."
 
 ## Notes

@@ -45,9 +45,24 @@ description: Troubleshooting common Narnia issues including web server startup f
 
 ## .NET 10 SDK Not Found
 
-**Symptom:** Running `dotnet run --project src/NexusLabs.Narnia.McpServer` fails with "The required .NET version was not found."
+**Symptom:** Running `dotnet run --project src/NexusLabs.Narnia.Web` (or `dotnet build narnia.slnx`) fails with "The required .NET version was not found."
 
 **Fix:** Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). The Narnia projects target `net10.0` and require the .NET 10 runtime.
+
+---
+
+## MCP Client Shows No Tools / Can't Connect
+
+**Symptom:** Your MCP client (VS Code, Cursor, Visual Studio, Claude Desktop) shows Narnia as errored, disconnected, or with zero tools available.
+
+**Why it happens:** Narnia's MCP server is not a process your client launches itself — it's the `/mcp` endpoint of the already-running Narnia web server. If that server isn't up, there is nothing listening at `http://127.0.0.1:5244/mcp` to connect to.
+
+**Fix:**
+
+1. Check `http://127.0.0.1:5244/health` in a browser (or `curl`) — a connection failure means the server isn't running.
+2. Start it: see [Getting Started](getting-started.md), or ask the [`narnia-web-server` skill](skills/narnia-web-server.md) to start it.
+3. GitHub Copilot CLI keeps the server running automatically via a `sessionStart` hook once Narnia is installed as a plugin. Other clients (VS Code, Cursor, Visual Studio, Claude Desktop) don't manage this for you — start the server yourself first.
+4. Reconnect or reload tools in your MCP client once `/health` returns 200.
 
 ---
 
@@ -60,7 +75,7 @@ description: Troubleshooting common Narnia issues including web server startup f
 **Fix:**
 
 1. Confirm the file exists: on Windows, check `C:\Users\{your-username}\.copilot\session-store.db`.
-2. If it's in a different location, set `NARNIA__DatabasePath` to the correct absolute path in your MCP config.
+2. If it's in a different location, set `NARNIA__DatabasePath` to the correct absolute path for the server process (see [Configuration](configuration.md)) — not in a per-client MCP config, since the server is a single always-on process shared by every client.
 3. If you've never used Copilot CLI, the database won't exist yet — you need to start at least one Copilot CLI session first.
 
 ---
