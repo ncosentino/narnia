@@ -72,7 +72,7 @@ public sealed class WindowsEndpointsTests
             p => p.Start(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
             Times.Once);
         factory.CommandBuilder.Verify(
-            b => b.BuildWindowCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<TerminalLaunchTab>>()),
+            b => b.BuildWindowCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<TerminalLaunchTab>>(), It.IsAny<string>()),
             Times.Never);
     }
 

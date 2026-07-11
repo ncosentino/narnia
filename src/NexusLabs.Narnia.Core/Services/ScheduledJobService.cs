@@ -14,10 +14,12 @@ public sealed class ScheduledJobService(
     IScheduledTaskRegistrar registrar,
     IScheduledJobWorkspace workspace,
     IScheduledTaskProvider taskProvider,
-    IPowerShellHostResolver hostResolver) : IScheduledJobService
+    IPowerShellHostResolver hostResolver,
+    INarniaSettingsRepository settingsRepository) : IScheduledJobService
 {
     private const string NarniaFolder = @"\Narnia\";
     private const int MaxLogChars = 100_000;
+    private const string DefaultCopilotCommand = "copilot";
 
     /// <inheritdoc />
     public bool RegistrarSupported => registrar.IsSupported;
@@ -68,7 +70,8 @@ public sealed class ScheduledJobService(
 
         var jobId = Guid.NewGuid().ToString();
         var cadence = BuildCadence(input);
-        var (script, launcher, registration) = BuildOwnedJob(jobId, input, cadence);
+        var copilotCommand = await settingsRepository.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+        var (script, launcher, registration) = BuildOwnedJob(jobId, input, cadence, copilotCommand);
 
         // Copy-paste mode: catalog nothing, just hand back the generated wrapper + registration command.
         if (!register)
@@ -110,7 +113,8 @@ public sealed class ScheduledJobService(
             return ScheduledJobMutationResult.Failure("Editing tasks is not supported on this platform.");
 
         var cadence = BuildCadence(input);
-        var (script, launcher, registration) = BuildOwnedJob(id, input, cadence);
+        var copilotCommand = await settingsRepository.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+        var (script, launcher, registration) = BuildOwnedJob(id, input, cadence, copilotCommand);
 
         await workspace.WriteScriptAsync(id, script, ct);
         await workspace.WriteLauncherAsync(id, launcher, ct);
@@ -209,12 +213,12 @@ public sealed class ScheduledJobService(
     // (never a bare visible console), which in turn runs the wrapper script under the best
     // available PowerShell host.
     private (string Script, string Launcher, ScheduledTaskRegistration Registration) BuildOwnedJob(
-        string jobId, ScheduledJobInput input, ScheduleCadence cadence)
+        string jobId, ScheduledJobInput input, ScheduleCadence cadence, string copilotCommand)
     {
         var taskName = string.IsNullOrWhiteSpace(input.TaskName) ? input.Name : input.TaskName!;
         var logDir = workspace.LogDirectory(jobId);
         var script = ScheduledJobScript.Build(
-            input.Name, input.Prompt ?? "", input.Cwd, input.AllowFlags, input.CopilotArgs, logDir);
+            input.Name, input.Prompt ?? "", input.Cwd, input.AllowFlags, input.CopilotArgs, logDir, copilotCommand);
         var scriptPath = workspace.ScriptPath(jobId);
         var launcher = ScheduledJobLauncherScript.Build(hostResolver.ResolveExecutable(), scriptPath);
         var launcherPath = workspace.LauncherPath(jobId);

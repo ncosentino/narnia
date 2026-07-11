@@ -37,10 +37,11 @@
 </div>
 
 <div class="settings-section">
-    <h2>Shell Configuration</h2>
+    <h2>Shell &amp; Copilot Command</h2>
     <p class="settings-hint">
-        Configure the shell used when launching resume commands from session pages.
-        The launch button opens a new terminal window in the selected directory and runs <code>copilot --resume</code>.
+        Configure the shell and Copilot invocation used when launching or reopening sessions.
+        The launch button opens a new terminal window in the selected directory and runs
+        <code>&lt;copilot command&gt; --resume</code>.
     </p>
 
     <div class="setting-field">
@@ -53,6 +54,20 @@
         <span class="setting-hint">
             Full path to your preferred shell executable
             (e.g., <code>C:\Program Files\PowerShell\7\pwsh.exe</code>)
+        </span>
+    </div>
+
+    <div class="setting-field">
+        <label for="setting-copilot-command">Copilot Command</label>
+        <div class="setting-input-group">
+            <input id="setting-copilot-command" type="text" value="@_copilotCommand"
+                   placeholder="copilot" />
+        </div>
+        <span class="setting-hint">
+            The command used to invoke Copilot. Leave as <code>copilot</code> unless your machine
+            requires a wrapper (e.g. Microsoft's "Agency" tooling requires
+            <code>agency copilot</code> instead of a bare <code>copilot</code>). Applies to reopening
+            windows, launch/resume buttons, and newly created or edited scheduled jobs.
         </span>
     </div>
 
@@ -135,6 +150,7 @@
 
 @code {
     private string _shellPath = "";
+    private string _copilotCommand = "";
     private string _theme = "dark";
     private bool _snapEnabled = true;
     private int _snapInterval = 60;
@@ -145,6 +161,7 @@
     protected override async Task OnInitializedAsync()
     {
         _shellPath = await SettingsRepo.GetAsync("shell_path") ?? "";
+        _copilotCommand = await SettingsRepo.GetAsync("copilot_command") ?? "copilot";
         _theme = await SettingsRepo.GetAsync("theme") == "light" ? "light" : "dark";
 
         _snapEnabled = await SettingsRepo.GetAsync(SnapshotterSettingKeys.Enabled) != "false";

@@ -18,9 +18,9 @@ public sealed class TerminalCommandBuilder : ITerminalCommandBuilder
     }
 
     /// <inheritdoc />
-    public string BuildShellArguments(string shellName, string sessionId)
+    public string BuildShellArguments(string shellName, string sessionId, string copilotCommand)
     {
-        var resumeCommand = $"copilot --resume={sessionId}";
+        var resumeCommand = $"{copilotCommand} --resume={sessionId}";
         return shellName switch
         {
             "pwsh" or "powershell" => $"-NoExit -Command \"{resumeCommand}\"",
@@ -30,7 +30,7 @@ public sealed class TerminalCommandBuilder : ITerminalCommandBuilder
     }
 
     /// <inheritdoc />
-    public string BuildNewTabSegment(string shellPath, string shellName, TerminalLaunchTab tab)
+    public string BuildNewTabSegment(string shellPath, string shellName, TerminalLaunchTab tab, string copilotCommand)
     {
         var safeTitle = tab.Title.Replace("\"", "\\\"");
         var directoryArgument = tab.Directory is not null
@@ -38,17 +38,18 @@ public sealed class TerminalCommandBuilder : ITerminalCommandBuilder
             : string.Empty;
 
         return $"new-tab --title \"{safeTitle}\" --suppressApplicationTitle {directoryArgument}-- " +
-               $"\"{shellPath}\" {BuildShellArguments(shellName, tab.SessionId)}";
+               $"\"{shellPath}\" {BuildShellArguments(shellName, tab.SessionId, copilotCommand)}";
     }
 
     /// <inheritdoc />
-    public string BuildWindowCommand(string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs) =>
-        string.Join(" ; ", tabs.Select(tab => BuildNewTabSegment(shellPath, shellName, tab)));
+    public string BuildWindowCommand(
+        string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs, string copilotCommand) =>
+        string.Join(" ; ", tabs.Select(tab => BuildNewTabSegment(shellPath, shellName, tab, copilotCommand)));
 
     /// <inheritdoc />
-    public string BuildDirectLaunchArguments(string shellName, TerminalLaunchTab tab)
+    public string BuildDirectLaunchArguments(string shellName, TerminalLaunchTab tab, string copilotCommand)
     {
-        var resumeCommand = $"copilot --resume={tab.SessionId}";
+        var resumeCommand = $"{copilotCommand} --resume={tab.SessionId}";
         var safeTitle = tab.Title.Replace("\"", "\\\"");
         return shellName switch
         {

@@ -29,6 +29,12 @@
     Copilot allow-flags. Defaults to '--allow-all-tools --allow-all-paths' (matching what Narnia
     generates for a registered job).
 
+.PARAMETER CopilotCommand
+    The command that invokes Copilot. Defaults to 'copilot'. Set this to match Narnia's
+    "Copilot Command" setting (Settings page) when your machine requires a wrapper -- e.g.
+    'agency copilot' for Microsoft's "Agency" tooling -- so the dry run matches what the real
+    scheduled job will actually run.
+
 .PARAMETER ScrubEnvPrefix
     Zero or more environment variable name prefixes (e.g. 'MYAPP_') to remove from the child
     process's environment before launching, so the run proves self-resolution rather than reuse of
@@ -59,6 +65,8 @@ param(
     [string]$Cwd,
 
     [string]$AllowFlags = '--allow-all-tools --allow-all-paths',
+
+    [string]$CopilotCommand = 'copilot',
 
     [string[]]$ScrubEnvPrefix = @(),
 
@@ -92,7 +100,16 @@ Set-Content -Path $logPath -Value "=== Narnia dry run started $(Get-Date -Format
 
 Push-Location -LiteralPath $Cwd
 try {
-    & copilot -p $Prompt $AllowFlags.Split(' ') 2>&1 | Tee-Object -FilePath $logPath -Append
+    # $CopilotCommand is a runtime string, so a multi-word value (e.g. 'agency copilot') cannot be
+    # passed to '&' as a single token -- that would look for one program literally named "agency
+    # copilot". Split it into the real executable plus any leading arguments to prepend, mirroring
+    # what Narnia's generated wrapper scripts do (there the command is embedded as source text
+    # instead, so no split is needed -- this script is the one place a split genuinely matters).
+    $copilotParts = $CopilotCommand.Trim() -split '\s+'
+    $copilotExe = $copilotParts[0]
+    $copilotPrefixArgs = if ($copilotParts.Length -gt 1) { $copilotParts[1..($copilotParts.Length - 1)] } else { @() }
+
+    & $copilotExe @copilotPrefixArgs -p $Prompt $AllowFlags.Split(' ') 2>&1 | Tee-Object -FilePath $logPath -Append
     $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
 } finally {
     Pop-Location
