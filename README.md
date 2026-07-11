@@ -1,6 +1,6 @@
 # Narnia
 
-**Narnia** is a hybrid MCP server + Blazor web UI for browsing and searching [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) session history.
+**Narnia** is a single ASP.NET Core app — both an MCP server and a Blazor web UI — for browsing and searching [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) session history, recovering lost terminal windows, and managing scheduled Copilot jobs.
 
 If you use Copilot CLI heavily, you know the pain: a Windows update reboots your machine and every active session terminal is gone. Narnia makes it easy to find and resume sessions — either by asking a new Copilot session to search for you (via MCP), or by browsing a local web interface.
 
@@ -8,8 +8,9 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 
 ## Features
 
-- **MCP Server** — exposes tools that any MCP-compatible client (including Copilot CLI) can call to search and browse your session history
-- **Web UI** — Blazor-based local web interface for browsing, searching, and reading session details, checkpoints, and conversation turns
+- **MCP Server** — one shared HTTP endpoint (`/mcp`) exposing 15 tools that any MCP-compatible client (including Copilot CLI) can call to search session history and manage scheduled jobs — no per-client process to launch, every client talks to the same running instance
+- **Web UI** — Blazor Static SSR local web interface for browsing, searching, and reading session details, checkpoints, and conversation turns
+- **Scheduled Jobs** — create, edit, and monitor Windows Task Scheduler-backed `copilot -p` jobs (daily/weekly/monthly) with hidden/headless execution and live log streaming, from the web UI or MCP
 - **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
 - **Session workspace** — reads supplemental metadata from `~/.copilot/session-state/` including git root and session artifact files
 
@@ -22,45 +23,38 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 
 ---
 
-## Running the MCP Server
+## Running Narnia
 
-The MCP server uses **stdio transport** and is designed to be launched by an MCP host.
+Narnia is a single process: starting the web app also starts the MCP server. There is no
+separate MCP server to build or launch.
 
-### Build
+### Start the server
 
 ```bash
-dotnet build src/NexusLabs.Narnia.McpServer
+dotnet run --project src/NexusLabs.Narnia.Web
 ```
 
-### Configure in Copilot CLI
+Then open [http://localhost:5244](http://localhost:5244) in your browser.
 
-Add the following to your `~/.copilot/mcp-config.json`:
+You can also ask an LLM to do this for you via the [`narnia-web-server` skill](skills/narnia-web-server/SKILL.md) — it resolves the source, publishes a stamped build, launches it detached, and health-checks it. Once Narnia is installed as a plugin, a `sessionStart` hook (`hooks.json`) relaunches this same server automatically at the start of every Copilot CLI session, so in practice you rarely need to start it by hand.
+
+### Configure your MCP client
+
+The MCP server uses **Streamable HTTP transport** (not stdio), served at `/mcp` on the running instance. Point any MCP-compatible client at it:
 
 ```json
 {
   "mcpServers": {
     "narnia": {
-      "command": "dotnet",
-      "args": ["run", "--project", "C:/path/to/narnia/src/NexusLabs.Narnia.McpServer"],
-      "env": {}
+      "type": "http",
+      "url": "http://127.0.0.1:5244/mcp",
+      "tools": ["*"]
     }
   }
 }
 ```
 
-After publishing as a NativeAOT binary (`dotnet publish src/NexusLabs.Narnia.McpServer -c Release`):
-
-```json
-{
-  "mcpServers": {
-    "narnia": {
-      "command": "C:/path/to/NexusLabs.Narnia.McpServer.exe",
-      "args": [],
-      "env": {}
-    }
-  }
-}
-```
+This is exactly what this repo's own [`.mcp.json`](.mcp.json) contains, so a Copilot CLI plugin install picks it up with no manual configuration. Because one server instance backs every client, they all see the same session data and scheduled jobs — there's no per-client `env` block or launch command to configure, just the URL.
 
 ### Available MCP Tools
 
@@ -86,7 +80,7 @@ After publishing as a NativeAOT binary (`dotnet publish src/NexusLabs.Narnia.Mcp
 
 ## Skills (Plugin System)
 
-Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Code via their plugin systems. Skills let the LLM manage the web UI lifecycle directly — with full visibility into build output and adaptive error handling.
+Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Code via their plugin systems. Skills let the LLM manage the web UI (and its shared MCP endpoint) lifecycle directly — with full visibility into build output and adaptive error handling.
 
 ### Available Skills
 
@@ -149,41 +143,39 @@ Once installed, skills are automatically available. Just ask the LLM to perform 
 
 ---
 
-## Running the Web UI
-
-```bash
-dotnet run --project src/NexusLabs.Narnia.Web
-```
-
-Then open [http://localhost:5000](http://localhost:5000) in your browser.
-
----
-
 ## Configuration
 
-Both the MCP server and web UI read configuration from environment variables:
+Narnia reads configuration from environment variables (or `appsettings.Development.json` for local development — see `appsettings.Development.json.example`), set once on the machine running the server. Since the web UI and MCP server are the same process, there is a single place to configure them — not a per-MCP-client `env` block.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `NARNIA__DatabasePath` | Path to `session-store.db` | `~/.copilot/session-store.db` |
 | `NARNIA__SessionStatePath` | Path to session state directory | `~/.copilot/session-state` |
+| `NARNIA__SettingsDatabasePath` | Path to Narnia's own settings database (overrides, schedules, recorded terminal windows) | `<LocalAppData>/narnia/settings.db` |
+| `NARNIA__SnapshotterEnabled` | Whether the terminal-window snapshotter runs by default | `true` |
+| `NARNIA__SnapshotterIntervalSeconds` | Snapshot interval in seconds (minimum 5) | `60` |
+| `NARNIA__SnapshotterRetentionCount` | Number of recently-closed windows to retain | `50` |
 
 ---
 
 ## Building from Source
 
 ```bash
-git clone https://github.com/nexus-labs/narnia
+git clone https://github.com/ncosentino/narnia.git
 cd narnia
-dotnet build
-dotnet test
+dotnet build narnia.slnx
+dotnet test narnia.slnx
 ```
 
-### Publish MCP server as NativeAOT
+### Publishing the Web UI
+
+The web app is a standard ASP.NET Core Blazor Static SSR app — not NativeAOT (Blazor SSR doesn't yet support NativeAOT or full trimming as of .NET 10):
 
 ```bash
-dotnet publish src/NexusLabs.Narnia.McpServer -c Release
+dotnet publish src/NexusLabs.Narnia.Web -c Release -o <output-dir>
 ```
+
+The [`narnia-web-server` skill](skills/narnia-web-server/SKILL.md) does this automatically, stamping a content-derived build identity so `/health` always reflects whether the running server matches the latest source.
 
 ---
 
@@ -192,17 +184,17 @@ dotnet publish src/NexusLabs.Narnia.McpServer -c Release
 ```
 narnia/
   skills/
-    narnia-web-server/            # Agentic skill for web UI lifecycle management
+    narnia-web-server/            # Agentic skill for web UI + MCP server lifecycle management
     narnia-scheduler/             # Agentic skill for scheduled Copilot job create/migrate/verify
   src/
     NexusLabs.Narnia.Core/        # Shared library — trim-safe, AOT-compatible
-    NexusLabs.Narnia.McpServer/   # MCP server — NativeAOT, stdio transport
-    NexusLabs.Narnia.Web/         # Blazor Static SSR web interface
+    NexusLabs.Narnia.Web/         # Blazor Static SSR web app + HTTP MCP server (/mcp), one process
   tests/
     NexusLabs.Narnia.Core.Tests/  # xUnit v3 test suite
+    NexusLabs.Narnia.Web.Tests/   # WebApplicationFactory integration tests
 ```
 
-The **Core** library is the only place where data access logic lives. Both the MCP server and Web app are thin entry points that register Core services and expose them to their respective transports.
+The **Core** library is the only place where data access logic lives. **Web** is the single entry point: it registers Core services, serves the Blazor UI, and hosts the MCP server (`ModelContextProtocol.AspNetCore`) over Streamable HTTP at `/mcp` — all in the same process. There is no separate MCP server project anymore: an earlier NativeAOT stdio `NexusLabs.Narnia.McpServer` project was replaced by this in-process HTTP server so every MCP client shares one always-on instance instead of each spawning its own.
 
 ### Data sources
 
@@ -226,7 +218,7 @@ The **Core** library is the only place where data access logic lives. Both the M
 
 This tool was built by **[Nick Cosentino](https://www.devleader.ca)**, a software engineer and content creator known as **Dev Leader**. Nick creates practical .NET, C#, ASP.NET Core, Blazor, and software engineering content for intermediate to advanced developers -- covering everything from performance optimization and clean architecture to real-world career advice.
 
-Narnia was born out of a real frustration: Windows forcing a restart and wiping every active Copilot CLI session with no easy way to recover. It serves as a practical example of building NativeAOT C# MCP servers and Blazor Static SSR apps following modern .NET standards.
+Narnia was born out of a real frustration: Windows forcing a restart and wiping every active Copilot CLI session with no easy way to recover. It serves as a practical example of hosting an MCP server directly inside an ASP.NET Core Blazor Static SSR app, following modern .NET standards.
 
 **Find Nick online:**
 
