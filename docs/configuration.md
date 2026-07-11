@@ -17,25 +17,29 @@ Narnia reads configuration from environment variables. No API key is required �
 | `NARNIA__SnapshotterIntervalSeconds` | `60` | Default snapshot interval (minimum 5) |
 | `NARNIA__SnapshotterRetentionCount` | `50` | Default number of recently-closed windows to retain |
 
-## Setting Variables in mcp-config.json
+## Setting Environment Variables
 
-Pass environment variables via the `env` block in your MCP client config:
+The web UI and MCP server are the same always-on process — not a per-client stdio process — so these are set once wherever that process runs, not in a per-MCP-client `env` block.
+
+**Development** (`dotnet run` from a clone):
+
+```powershell
+$env:NARNIA__DatabasePath = "D:\custom-path\session-store.db"
+dotnet run --project src/NexusLabs.Narnia.Web
+```
+
+Or set them in `src/NexusLabs.Narnia.Web/appsettings.Development.json` (copy `appsettings.Development.json.example`):
 
 ```json
 {
-  "mcpServers": {
-    "narnia": {
-      "type": "stdio",
-      "command": "dotnet",
-      "args": ["run", "--project", "/path/to/narnia/src/NexusLabs.Narnia.McpServer"],
-      "env": {
-        "NARNIA__DatabasePath": "D:\\custom-path\\session-store.db",
-        "NARNIA__SessionStatePath": "D:\\custom-path\\session-state\\"
-      }
-    }
+  "Narnia": {
+    "DatabasePath": "D:/custom-path/session-store.db",
+    "SessionStatePath": "D:/custom-path/session-state"
   }
 }
 ```
+
+**Published/detached server:** set the variables in the environment before the process launches — e.g. in the user's persistent environment variables, or ahead of invoking the [`narnia-web-server` skill](skills/narnia-web-server.md) / running the published executable directly.
 
 ## Default Paths
 
@@ -46,6 +50,6 @@ The defaults resolve to the standard Copilot CLI locations on all platforms:
 
 If your Copilot CLI data is in the default location, no configuration is required.
 
-## Web UI Port
+## Web UI + MCP Port
 
-The web UI listens on `http://localhost:5244` by default (configured in `src/NexusLabs.Narnia.Web/Properties/launchSettings.json`). To change the port, modify the `applicationUrl` in that file before building.
+The web UI and the MCP endpoint (`/mcp`) are served from the same port — `http://localhost:5244` by default (configured in `src/NexusLabs.Narnia.Web/Properties/launchSettings.json` for `dotnet run`, or via a `--urls` argument when launching a published build). If you change it, update your MCP client's `url` to match.

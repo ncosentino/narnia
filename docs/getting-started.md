@@ -11,45 +11,49 @@ description: Step-by-step guide to running Narnia's MCP server and web UI. Get s
 
 ## Step 1: Get Narnia
 
-**Option A — Clone and build from source:**
+Clone and build from source — there is no published binary release, so this is currently the only option:
 
 ```bash
 git clone https://github.com/ncosentino/narnia.git
 cd narnia
-dotnet build
+dotnet build narnia.slnx
 ```
 
-**Option B — Download the published binary:**
+## Step 2: Start the Server
 
-Download the latest release from [GitHub Releases](https://github.com/ncosentino/narnia/releases/latest) for your platform.
+Narnia is a single process: the web UI and the MCP server are the same thing. Start it from the repo root:
 
-## Step 2: Configure Your MCP Client
+```bash
+dotnet run --project src/NexusLabs.Narnia.Web
+```
 
-Add Narnia to your MCP client configuration. See [Setup by Tool](setup-by-tool.md) for per-client snippets.
+This serves the Blazor web UI at `http://localhost:5244` **and** the MCP endpoint at `http://localhost:5244/mcp`. Leave it running — every step below depends on it.
 
-For **GitHub Copilot CLI**, add to `~/.copilot/mcp-config.json`:
+You can also ask your LLM to do this for you using the [`narnia-web-server` skill](skills/narnia-web-server.md), which publishes a stamped build, launches it detached (so it survives your terminal closing), and health-checks it.
+
+## Step 3: Configure Your MCP Client
+
+Point your MCP client at the running server's `/mcp` endpoint. See [Setup by Tool](setup-by-tool.md) for exact snippets per client.
+
+For **GitHub Copilot CLI**, installing Narnia as a plugin ships a working `.mcp.json` automatically:
 
 ```json
 {
   "mcpServers": {
     "narnia": {
-      "type": "stdio",
-      "command": "dotnet",
-      "args": [
-        "run",
-        "--project",
-        "C:\\path\\to\\narnia\\src\\NexusLabs.Narnia.McpServer"
-      ]
+      "type": "http",
+      "url": "http://127.0.0.1:5244/mcp",
+      "tools": ["*"]
     }
   }
 }
 ```
 
-Replace the path with the actual location of the cloned repo on your machine.
+There's nothing to hand-edit for that path — see [Setup by Tool](setup-by-tool.md#github-copilot-cli).
 
-## Step 3: Verify the Tools Are Available
+## Step 4: Verify the Tools Are Available
 
-Start a new Copilot CLI session. Ask it:
+Start a new Copilot CLI session (or reconnect your MCP client so it picks up the server). Ask it:
 
 > "List my most recent Narnia sessions"
 
@@ -58,18 +62,6 @@ or
 > "Find sessions where I was working on the macerus project"
 
 You should see results from your local session history.
-
-## Step 4 (Optional): Run the Web UI
-
-The Narnia web UI provides a visual browser for session history. Start it from the repo root:
-
-```bash
-dotnet run --project src/NexusLabs.Narnia.Web
-```
-
-Then navigate to `http://localhost:5244` in your browser.
-
-You can also ask your LLM to start it for you using the [`narnia-web-server` skill](skills/narnia-web-server.md).
 
 ## Next Steps
 

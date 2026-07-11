@@ -4,9 +4,13 @@ description: Narnia is an MCP server and Blazor web UI for browsing GitHub Copil
 
 # Narnia
 
-Narnia is an MCP server and local web UI for browsing your [GitHub Copilot CLI](https://githubnext.com/projects/copilot-in-the-cli) session history. It solves a real pain point: when Windows forces a restart (or any machine restarts), all active Copilot sessions disappear. Narnia lets you search, inspect, and resume sessions without losing context.
+Narnia is a single ASP.NET Core app — both an MCP server and a local web UI — for browsing your [GitHub Copilot CLI](https://githubnext.com/projects/copilot-in-the-cli) session history. It solves a real pain point: when Windows forces a restart (or any machine restarts), all active Copilot sessions disappear. Narnia lets you search, inspect, and resume sessions without losing context.
 
 ## MCP Tools
+
+Narnia exposes 15 tools over one shared HTTP endpoint (`/mcp`): eight for session history, seven for managing scheduled Copilot jobs.
+
+### Session History
 
 | Tool | Description |
 |------|-------------|
@@ -18,6 +22,18 @@ Narnia is an MCP server and local web UI for browsing your [GitHub Copilot CLI](
 | [`get_session_workspace`](tools/get-session-workspace.md) | Workspace metadata and session artifact files |
 | [`list_sessions_by_repository`](tools/list-sessions-by-repository.md) | Filter sessions by git repository |
 | [`list_sessions_by_cwd`](tools/list-sessions-by-cwd.md) | Filter sessions by working directory |
+
+### Scheduled Jobs
+
+| Tool | Description |
+|------|-------------|
+| [`list_schedules`](tools/list-schedules.md) | All cataloged scheduled jobs joined to live task status |
+| [`get_schedule`](tools/get-schedule.md) | A single scheduled job's full catalog entry by id |
+| [`create_schedule`](tools/create-schedule.md) | Create a scheduled job and (by default) register its task |
+| [`update_schedule`](tools/update-schedule.md) | Replace a scheduled job's definition and re-register it |
+| [`set_schedule_enabled`](tools/set-schedule-enabled.md) | Enable/disable a scheduled job's task |
+| [`run_schedule_now`](tools/run-schedule-now.md) | Start a scheduled job's task immediately |
+| [`delete_schedule`](tools/delete-schedule.md) | Remove a scheduled job's task, wrapper, and catalog entry |
 
 ## Why It Exists
 
