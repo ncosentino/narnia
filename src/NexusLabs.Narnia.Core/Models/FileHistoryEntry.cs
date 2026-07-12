@@ -5,4 +5,10 @@ public sealed record FileHistoryEntry(
     string? Summary,
     string? ToolName,
     DateTimeOffset FirstSeenAt,
-    string? CheckpointOverview);
+    string? CheckpointOverview)
+{
+    /// <summary>
+    /// Gets whether the associated session is marked as a favorite in Narnia.
+    /// </summary>
+    public bool IsFavorite { get; init; }
+}

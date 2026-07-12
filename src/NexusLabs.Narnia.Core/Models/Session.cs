@@ -10,4 +10,10 @@ public sealed record Session(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     int TurnCount = 0,
-    int CheckpointCount = 0);
+    int CheckpointCount = 0)
+{
+    /// <summary>
+    /// Gets whether the session is marked as a favorite in Narnia.
+    /// </summary>
+    public bool IsFavorite { get; init; }
+}

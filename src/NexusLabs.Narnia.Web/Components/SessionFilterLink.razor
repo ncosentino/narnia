@@ -4,7 +4,7 @@
 }
 else
 {
-    <a class="@CssClass" href="@Href">@Value</a>
+    <a class="@CssClass" href="@ResolvedHref">@Value</a>
 }
 
 @code {
@@ -26,7 +26,14 @@ else
     [Parameter]
     public string? CssClass { get; set; }
 
-    private string Href => $"/sessions?{FilterName}={Uri.EscapeDataString(Value!)}";
+    /// <summary>
+    /// Gets or sets an optional caller-provided URL that preserves the current page scope.
+    /// </summary>
+    [Parameter]
+    public string? Href { get; set; }
+
+    private string ResolvedHref =>
+        Href ?? $"/sessions?{FilterName}={Uri.EscapeDataString(Value!)}";
 
     /// <inheritdoc />
     protected override void OnParametersSet()

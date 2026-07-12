@@ -11,10 +11,15 @@ public sealed class SessionSummarySortingTests
         string? cwd = null,
         int turnCount = 0,
         int checkpointCount = 0,
-        DateTimeOffset updatedAt = default) =>
-        new(id, cwd, repository, null, summary, default, updatedAt, turnCount, checkpointCount);
+        DateTimeOffset updatedAt = default,
+        bool isFavorite = false) =>
+        new SessionSummary(id, cwd, repository, null, summary, default, updatedAt, turnCount, checkpointCount)
+        {
+            IsFavorite = isFavorite,
+        };
 
     [Theory]
+    [InlineData("favorite", SessionSortColumn.Favorite)]
     [InlineData("summary", SessionSortColumn.Summary)]
     [InlineData("Summary", SessionSortColumn.Summary)]
     [InlineData("repository", SessionSortColumn.Repository)]
@@ -90,6 +95,21 @@ public sealed class SessionSummarySortingTests
         var sorted = SessionSummarySorting.Sort(sessions, SessionSortColumn.Updated, SessionSortDirection.Ascending);
 
         Assert.Equal(new[] { "2", "3", "1" }, sorted.Select(s => s.Id));
+    }
+
+    [Fact]
+    public void Sort_ByFavorite_Descending_PlacesFavoritesFirst()
+    {
+        var sessions = new[]
+        {
+            Make("1", isFavorite: false),
+            Make("2", isFavorite: true),
+            Make("3", isFavorite: false),
+        };
+
+        var sorted = SessionSummarySorting.Sort(sessions, SessionSortColumn.Favorite, SessionSortDirection.Descending);
+
+        Assert.Equal(new[] { "2", "1", "3" }, sorted.Select(s => s.Id));
     }
 
     [Fact]
