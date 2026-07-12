@@ -5,6 +5,9 @@ namespace NexusLabs.Narnia.Core.Models;
 /// </summary>
 public enum SessionSortColumn
 {
+    /// <summary>Sort by favorite state.</summary>
+    Favorite,
+
     /// <summary>Sort by the displayed session summary.</summary>
     Summary,
 
@@ -48,6 +51,7 @@ public static class SessionSummarySorting
     /// <returns>The parsed column, or <see langword="null"/> for an unknown value.</returns>
     public static SessionSortColumn? ParseColumn(string? value) => value?.ToLowerInvariant() switch
     {
+        "favorite" => SessionSortColumn.Favorite,
         "summary" => SessionSortColumn.Summary,
         "repository" => SessionSortColumn.Repository,
         "directory" => SessionSortColumn.Directory,
@@ -64,6 +68,7 @@ public static class SessionSummarySorting
     /// <returns>The stable query-string value for the column.</returns>
     public static string ToQueryValue(SessionSortColumn column) => column switch
     {
+        SessionSortColumn.Favorite => "favorite",
         SessionSortColumn.Summary => "summary",
         SessionSortColumn.Repository => "repository",
         SessionSortColumn.Directory => "directory",
@@ -102,6 +107,7 @@ public static class SessionSummarySorting
         {
             var primary = column switch
             {
+                SessionSortColumn.Favorite => CompareValue(left.IsFavorite, right.IsFavorite, direction),
                 SessionSortColumn.Summary => CompareText(left.Summary, right.Summary, direction),
                 SessionSortColumn.Repository => CompareText(left.Repository, right.Repository, direction),
                 SessionSortColumn.Directory => CompareText(left.Cwd, right.Cwd, direction),

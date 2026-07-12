@@ -12,6 +12,11 @@ public sealed record SessionOverride(
     public bool IsArchived { get; init; } = false;
 
     /// <summary>
+    /// Gets whether the session is marked as a favorite.
+    /// </summary>
+    public bool IsFavorite { get; init; }
+
+    /// <summary>
     /// Optional local filesystem path for resuming sessions.
     /// Shown as the "Preferred Path" resume command and used by the launch button.
     /// </summary>

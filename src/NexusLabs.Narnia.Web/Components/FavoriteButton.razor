@@ -1,0 +1,32 @@
+<button type="button"
+        class="favorite-toggle @(IsFavorite ? "favorite-toggle--active" : "") @(ShowLabel ? "favorite-toggle--labeled" : "")"
+        title="@(IsFavorite ? "Remove from favorites" : "Add to favorites")"
+        aria-label="@(IsFavorite ? "Remove session from favorites" : "Add session to favorites")"
+        aria-pressed="@IsFavorite"
+        onclick="narniaSetFavorite('@SessionId', @(IsFavorite ? "false" : "true"), this)">
+    <span aria-hidden="true">@(IsFavorite ? "★" : "☆")</span>
+    @if (ShowLabel)
+    {
+        <span>@(IsFavorite ? "Favorited" : "Favorite")</span>
+    }
+</button>
+
+@code {
+    /// <summary>
+    /// Gets or sets the session ID whose favorite state is controlled.
+    /// </summary>
+    [Parameter, EditorRequired]
+    public string SessionId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the current favorite state.
+    /// </summary>
+    [Parameter]
+    public bool IsFavorite { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether a text label is rendered beside the star.
+    /// </summary>
+    [Parameter]
+    public bool ShowLabel { get; set; }
+}

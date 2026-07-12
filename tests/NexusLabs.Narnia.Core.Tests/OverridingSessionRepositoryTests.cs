@@ -206,6 +206,35 @@ public sealed class OverridingSessionRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task ListAllAsync_FavoriteOverride_MergesFavoriteState()
+    {
+        _savedOverrides["sess-1"] = MakeOverride("sess-1") with { IsFavorite = true };
+
+        var results = await _repository.ListAllAsync(ct: TestContext.Current.CancellationToken);
+
+        Assert.True(Assert.Single(results, session => session.Id == "sess-1").IsFavorite);
+        Assert.False(Assert.Single(results, session => session.Id == "sess-2").IsFavorite);
+    }
+
+    [Fact]
+    public async Task GetFileHistoryAsync_FavoriteOverride_MergesFavoriteAndDisplayName()
+    {
+        _savedOverrides["sess-1"] = MakeOverride("sess-1") with
+        {
+            DisplayName = "Favorite session",
+            IsFavorite = true,
+        };
+
+        var results = await _repository.GetFileHistoryAsync(
+            "src/One.cs",
+            TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(results);
+        Assert.Equal("Favorite session", entry.Summary);
+        Assert.True(entry.IsFavorite);
+    }
+
+    [Fact]
     public async Task ListByRepositoryAsync_RepositoryOverride_UsesEffectiveRepository()
     {
         _savedOverrides["sess-1"] = MakeOverride("sess-1", repository: "custom/repo");

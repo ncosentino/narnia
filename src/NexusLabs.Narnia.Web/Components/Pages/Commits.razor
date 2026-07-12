@@ -33,6 +33,7 @@ else if (_matches is not null)
     <table class="sessions-table">
         <thead>
             <tr>
+                <th class="col-favorite">Favorite</th>
                 <th>Match</th>
                 <th>Summary</th>
                 <th>Remote Repository</th>
@@ -46,6 +47,7 @@ else if (_matches is not null)
             {
                 var s = m.Session;
                 <tr>
+                    <td class="col-favorite"><FavoriteButton SessionId="@s.Id" IsFavorite="@s.IsFavorite" /></td>
                     <td>
                         @if (m.Confidence == CommitMatchConfidence.Confirmed)
                         {

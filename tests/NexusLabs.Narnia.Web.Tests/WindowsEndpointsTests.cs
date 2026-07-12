@@ -22,7 +22,10 @@ public sealed class WindowsEndpointsTests
         using var factory = new NarniaWebAppFactory();
         factory.SessionRepository
             .Setup(r => r.GetByIdAsync("sess-1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Session("sess-1", @"C:\dev\x", "owner/repo", "main", "My session", null, Now, Now));
+            .ReturnsAsync(new Session("sess-1", @"C:\dev\x", "owner/repo", "main", "My session", null, Now, Now)
+            {
+                IsFavorite = true,
+            });
 
         var repo = factory.WindowsRepository;
         await repo.UpsertOpenAsync(100, "key-open", [Tab("sess-1", 0, @"C:\dev\x")], Now, Ct);
@@ -39,6 +42,7 @@ public sealed class WindowsEndpointsTests
         var tab = Assert.Single(open.Tabs);
         Assert.Equal("My session", tab.Summary);
         Assert.Equal("owner/repo", tab.Repository);
+        Assert.True(tab.IsFavorite);
         Assert.Single(response.Closed);
     }
 
@@ -218,7 +222,7 @@ public sealed class WindowsEndpointsTests
 
     private sealed record WindowDto(string Id, string Status, List<TabDto> Tabs);
 
-    private sealed record TabDto(string SessionId, string? Summary, string? Repository);
+    private sealed record TabDto(string SessionId, string? Summary, string? Repository, bool IsFavorite);
 
     private sealed record AutostartResponse(bool Supported, bool Enabled);
 }

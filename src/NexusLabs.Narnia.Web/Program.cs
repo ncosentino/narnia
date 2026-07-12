@@ -193,7 +193,6 @@ app.MapPost("/api/sessions/{id}/overrides", async (
     CancellationToken ct) =>
 {
     var now = DateTimeOffset.UtcNow;
-    var existing = await repo.GetOverrideAsync(id, ct);
     var repository = string.IsNullOrWhiteSpace(request.Repository) ? null : request.Repository.Trim();
     if (repository is not null && !IsValidRepositorySlug(repository))
     {
@@ -209,15 +208,14 @@ app.MapPost("/api/sessions/{id}/overrides", async (
         repository,
         string.IsNullOrWhiteSpace(request.Branch) ? null : request.Branch.Trim(),
         string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
-        existing?.CreatedAt ?? now,
+        now,
         now)
     {
-        IsArchived = existing?.IsArchived ?? false,
         LocalPath = string.IsNullOrWhiteSpace(request.LocalPath) ? null : request.LocalPath.Trim(),
         TerminalTitle = string.IsNullOrWhiteSpace(request.TerminalTitle) ? null : request.TerminalTitle.Trim(),
     };
-    await repo.UpsertOverrideAsync(ov, ct);
-    return Results.Ok(ov);
+    await repo.UpsertMetadataAsync(ov, ct);
+    return Results.Ok(await repo.GetOverrideAsync(id, ct));
 });
 
 app.MapDelete("/api/sessions/{id}/overrides", async (
@@ -225,7 +223,7 @@ app.MapDelete("/api/sessions/{id}/overrides", async (
     ISessionOverridesRepository repo,
     CancellationToken ct) =>
 {
-    await repo.DeleteOverrideAsync(id, ct);
+    await repo.ResetMetadataAsync(id, DateTimeOffset.UtcNow, ct);
     return Results.NoContent();
 });
 
@@ -235,22 +233,17 @@ app.MapPost("/api/sessions/{id}/archive", async (
     ISessionOverridesRepository repo,
     CancellationToken ct) =>
 {
-    var now = DateTimeOffset.UtcNow;
-    var existing = await repo.GetOverrideAsync(id, ct);
-    var ov = new SessionOverride(
-        id,
-        existing?.DisplayName,
-        existing?.Repository,
-        existing?.Branch,
-        existing?.Notes,
-        existing?.CreatedAt ?? now,
-        now)
-    {
-        IsArchived = request.Archived,
-        LocalPath = existing?.LocalPath,
-        TerminalTitle = existing?.TerminalTitle,
-    };
-    await repo.UpsertOverrideAsync(ov, ct);
+    await repo.SetArchivedAsync(id, request.Archived, DateTimeOffset.UtcNow, ct);
+    return Results.Ok();
+});
+
+app.MapPost("/api/sessions/{id}/favorite", async (
+    string id,
+    FavoriteRequest request,
+    ISessionOverridesRepository repo,
+    CancellationToken ct) =>
+{
+    await repo.SetFavoriteAsync(id, request.Favorite, DateTimeOffset.UtcNow, ct);
     return Results.Ok();
 });
 
@@ -409,9 +402,11 @@ app.MapPost("/api/launch-bulk", async (
 app.MapGet("/api/windows", async (
     ITerminalWindowAggregator windows,
     ISessionRepository sessionRepo,
+    ISessionOverridesRepository overridesRepo,
     CancellationToken ct) =>
 {
     var snapshot = await windows.GetWindowsAsync(50, ct);
+    var savedOverrides = await overridesRepo.GetAllOverridesAsync(ct);
 
     async Task<object> ProjectAsync(TerminalWindow window)
     {
@@ -427,6 +422,9 @@ app.MapGet("/api/windows", async (
                 summary = session?.Summary,
                 repository = session?.Repository,
                 branch = session?.Branch,
+                isFavorite = session?.IsFavorite
+                    ?? (savedOverrides.TryGetValue(tab.SessionId, out var sessionOverride)
+                        && sessionOverride.IsFavorite),
             });
         }
 
@@ -989,6 +987,8 @@ internal sealed record OverrideRequest(
     string? TerminalTitle);
 
 internal sealed record ArchiveRequest(bool Archived);
+
+internal sealed record FavoriteRequest(bool Favorite);
 
 internal sealed record SettingRequest(string Key, string? Value);
 

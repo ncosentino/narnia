@@ -1,18 +1,20 @@
 @page "/sessions"
+@page "/favorites"
 @using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Repositories
 @inject ISessionRepository Repository
 @inject ISessionSearch Search
 @inject ISessionOverridesRepository OverridesRepository
+@inject NavigationManager Navigation
 
-<PageTitle>Sessions — Narnia</PageTitle>
+<PageTitle>@PageHeading — Narnia</PageTitle>
 
 <div class="page-actions">
-    <h1>Sessions</h1>
+    <h1>@PageHeading</h1>
     <a href="@RefreshUrl" class="btn-refresh">↻ Refresh</a>
 </div>
 
-<form method="get" action="/sessions" class="session-search-form">
+<form method="get" action="@PagePath" class="session-search-form">
     <input type="search"
            name="q"
            value="@Query"
@@ -35,6 +37,13 @@
         <input type="checkbox" name="showArchived" value="true" checked="@ShowArchived" />
         Show archived
     </label>
+    @if (!IsFavoritesPage)
+    {
+        <label class="show-archived-label">
+            <input type="checkbox" name="favoritesOnly" value="true" checked="@FavoritesOnly" />
+            Favorites only
+        </label>
+    }
     <button type="submit">Search</button>
 </form>
 
@@ -78,6 +87,7 @@
         <thead>
             <tr>
                 <th class="col-select"><input type="checkbox" title="Select all" onclick="narniaToggleAll(this)" /></th>
+                <th class="col-favorite"><a class="sort-link" href="@SortUrl(SessionSortColumn.Favorite)" aria-label="@SortAriaLabel("Favorite", SessionSortColumn.Favorite)">Favorite@(SortIndicator(SessionSortColumn.Favorite))</a></th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Summary)" aria-label="@SortAriaLabel("Summary", SessionSortColumn.Summary)">Summary@(SortIndicator(SessionSortColumn.Summary))</a></th>
                 <th>Status</th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Repository)" aria-label="@SortAriaLabel("Remote Repository", SessionSortColumn.Repository)">Remote Repository@(SortIndicator(SessionSortColumn.Repository))</a></th>
@@ -95,6 +105,7 @@
                 _resumableMap?.TryGetValue(s.Id, out nextStepsPreview);
                 <tr class="@(isArchived ? "session-archived" : "")">
                     <td class="col-select"><input type="checkbox" class="session-check" value="@s.Id" onclick="narniaUpdateBulkBar()" /></td>
+                    <td class="col-favorite"><FavoriteButton SessionId="@s.Id" IsFavorite="@s.IsFavorite" /></td>
                     <td>
                         <a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a>
                         @if (isArchived)
@@ -108,8 +119,8 @@
                             <span class="badge-remaining-work" title="@nextStepsPreview">remaining work</span>
                         }
                     </td>
-                    <td><SessionFilterLink FilterName="repository" Value="@s.Repository" /></td>
-                    <td><SessionFilterLink FilterName="cwd" Value="@s.Cwd" CssClass="cwd" /></td>
+                    <td><SessionFilterLink FilterName="repository" Value="@s.Repository" Href="@BuildFilterUrl("repository", s.Repository)" /></td>
+                    <td><SessionFilterLink FilterName="cwd" Value="@s.Cwd" CssClass="cwd" Href="@BuildFilterUrl("cwd", s.Cwd)" /></td>
                     <td>@s.TurnCount</td>
                     <td>@s.CheckpointCount</td>
                     <td>@s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
@@ -142,7 +153,7 @@
 }
 else if (_sessions is not null)
 {
-    <p>No results found.</p>
+    <p>@(EffectiveFavoritesOnly ? "No favorite sessions found." : "No results found.")</p>
 }
 
 @if (_searchResults is not null && _searchResults.Length > 0)
@@ -179,6 +190,10 @@ else if (_sessions is not null)
     [SupplyParameterFromQuery(Name = "showArchived")]
     public bool ShowArchived { get; set; }
 
+    /// <summary>Gets or sets whether only favorite sessions are included.</summary>
+    [SupplyParameterFromQuery(Name = "favoritesOnly")]
+    public bool FavoritesOnly { get; set; }
+
     /// <summary>Gets or sets the exact effective remote-repository filter.</summary>
     [SupplyParameterFromQuery(Name = "repository")]
     public string? RepositoryFilter { get; set; }
@@ -209,6 +224,14 @@ else if (_sessions is not null)
     private int _totalPages;
     private int _currentPage = 1;
 
+    private bool IsFavoritesPage =>
+        string.Equals(
+            new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/'),
+            "/favorites",
+            StringComparison.OrdinalIgnoreCase);
+    private bool EffectiveFavoritesOnly => IsFavoritesPage || FavoritesOnly;
+    private string PagePath => IsFavoritesPage ? "/favorites" : "/sessions";
+    private string PageHeading => IsFavoritesPage ? "Favorite Sessions" : "Sessions";
     private bool HasContentSearch => !string.IsNullOrWhiteSpace(Query);
     private bool HasRepositoryFilter => !string.IsNullOrWhiteSpace(RepositoryFilter);
     private bool HasWorkingDirectoryFilter =>
@@ -226,6 +249,9 @@ else if (_sessions is not null)
     protected override async Task OnInitializedAsync()
     {
         var sessions = await LoadScopedSessionsAsync();
+        if (EffectiveFavoritesOnly)
+            sessions = sessions.Where(session => session.IsFavorite).ToArray();
+
         SearchResult[]? allSearchResults = null;
 
         if (HasContentSearch)
@@ -321,17 +347,26 @@ else if (_sessions is not null)
         int page,
         SessionSortColumn? sortColumn = null,
         SessionSortDirection? sortDirection = null,
-        bool includeExactFilters = true)
+        bool includeExactFilters = true,
+        string? exactFilterName = null,
+        string? exactFilterValue = null)
     {
         var parameters = new List<string>();
         if (HasContentSearch)
             parameters.Add($"q={Uri.EscapeDataString(Query!)}");
 
-        if (includeExactFilters && HasRepositoryFilter)
-            parameters.Add($"repository={Uri.EscapeDataString(RepositoryFilter!)}");
+        if (exactFilterName is not null && exactFilterValue is not null)
+        {
+            parameters.Add($"{exactFilterName}={Uri.EscapeDataString(exactFilterValue)}");
+        }
+        else if (includeExactFilters)
+        {
+            if (HasRepositoryFilter)
+                parameters.Add($"repository={Uri.EscapeDataString(RepositoryFilter!)}");
 
-        if (includeExactFilters && HasWorkingDirectoryFilter)
-            parameters.Add($"cwd={Uri.EscapeDataString(WorkingDirectoryFilter!)}");
+            if (HasWorkingDirectoryFilter)
+                parameters.Add($"cwd={Uri.EscapeDataString(WorkingDirectoryFilter!)}");
+        }
 
         var column = sortColumn ?? ExplicitSortColumn;
         if (column is not null)
@@ -344,13 +379,25 @@ else if (_sessions is not null)
         if (ShowArchived)
             parameters.Add("showArchived=true");
 
+        if (!IsFavoritesPage && FavoritesOnly)
+            parameters.Add("favoritesOnly=true");
+
         if (page > 1)
             parameters.Add($"page={page}");
 
         return parameters.Count == 0
-            ? "/sessions"
-            : "/sessions?" + string.Join("&", parameters);
+            ? PagePath
+            : PagePath + "?" + string.Join("&", parameters);
     }
+
+    private string? BuildFilterUrl(string filterName, string? value) =>
+        value is null
+            ? null
+            : BuildUrl(
+                page: 1,
+                includeExactFilters: false,
+                exactFilterName: filterName,
+                exactFilterValue: value);
 
     private static SessionSortDirection DefaultDirection(SessionSortColumn column) =>
         column is SessionSortColumn.Summary or SessionSortColumn.Repository or SessionSortColumn.Directory

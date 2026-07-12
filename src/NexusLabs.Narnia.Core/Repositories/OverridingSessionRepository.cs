@@ -141,8 +141,22 @@ public sealed class OverridingSessionRepository(
     public ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default) =>
         inner.GetHotFilesAsync(limit, ct);
 
-    public ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default) =>
-        inner.GetFileHistoryAsync(filePath, ct);
+    public async ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default)
+    {
+        var entries = await inner.GetFileHistoryAsync(filePath, ct);
+        var savedOverrides = await overrides.GetAllOverridesAsync(ct);
+        return [.. entries.Select(entry =>
+        {
+            savedOverrides.TryGetValue(entry.SessionId, out var sessionOverride);
+            return sessionOverride is null
+                ? entry
+                : entry with
+                {
+                    Summary = sessionOverride.DisplayName ?? entry.Summary,
+                    IsFavorite = sessionOverride.IsFavorite,
+                };
+        })];
+    }
 
     public async ValueTask<CommitMatch[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default)
     {
@@ -213,6 +227,7 @@ public sealed class OverridingSessionRepository(
             Summary = ov.DisplayName ?? s.Summary,
             Repository = ov.Repository ?? s.Repository,
             Branch = ov.Branch ?? s.Branch,
+            IsFavorite = ov.IsFavorite,
         };
 
     private static SessionSummary Merge(SessionSummary s, SessionOverride ov) =>
@@ -221,6 +236,7 @@ public sealed class OverridingSessionRepository(
             Summary = ov.DisplayName ?? s.Summary,
             Repository = ov.Repository ?? s.Repository,
             Branch = ov.Branch ?? s.Branch,
+            IsFavorite = ov.IsFavorite,
         };
 
     private static ResumeSuggestion Merge(ResumeSuggestion s, SessionOverride ov) =>

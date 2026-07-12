@@ -22,6 +22,7 @@ else if (_session is not null)
     <h1>@(_session.Summary ?? "(no summary)")</h1>
 
     <div class="archive-action">
+        <FavoriteButton SessionId="@_session.Id" IsFavorite="@_session.IsFavorite" ShowLabel="true" />
         <button class="btn-archive @(_override?.IsArchived == true ? "btn-archive--active" : "")"
                 onclick="narniaToggleArchive('@_session.Id', @(_override?.IsArchived == true ? "false" : "true"))">
             @(_override?.IsArchived == true ? "📤 Unarchive" : "📦 Archive")
@@ -66,7 +67,7 @@ else if (_session is not null)
     </dl>
 
     <details class="overrides-panel">
-        <summary>✏️ Edit Session Overrides @(_override is not null ? "(active)" : "")</summary>
+        <summary>✏️ Edit Session Overrides @(HasMetadataOverrides ? "(active)" : "")</summary>
         <div class="overrides-body">
             <p class="overrides-hint">
                 Override fields stored in Narnia's <code>settings.db</code>. Original session-store values are shown below each field.
@@ -109,9 +110,9 @@ else if (_session is not null)
             </div>
             <div class="override-actions">
                 <button class="btn-save" onclick="narniaSaveOverride('@_session.Id')">Save</button>
-                @if (_override is not null)
+                @if (HasMetadataOverrides)
                 {
-                    <button class="btn-reset" onclick="narniaResetOverride('@_session.Id')">Reset to Original</button>
+                    <button class="btn-reset" onclick="narniaResetOverride('@_session.Id')">Reset Metadata</button>
                 }
             </div>
         </div>
@@ -227,6 +228,14 @@ else if (_session is not null)
     private Checkpoint[]? _checkpoints;
     private Turn[]? _turns;
     private bool _loaded;
+    private bool HasMetadataOverrides =>
+        _override is not null
+        && (!string.IsNullOrWhiteSpace(_override.DisplayName)
+            || !string.IsNullOrWhiteSpace(_override.Repository)
+            || !string.IsNullOrWhiteSpace(_override.Branch)
+            || !string.IsNullOrWhiteSpace(_override.Notes)
+            || !string.IsNullOrWhiteSpace(_override.LocalPath)
+            || !string.IsNullOrWhiteSpace(_override.TerminalTitle));
     private string _copilotCommand = "copilot";
 
     protected override async Task OnInitializedAsync()

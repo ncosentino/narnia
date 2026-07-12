@@ -17,7 +17,7 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
             """
-            SELECT session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived, local_path, terminal_title
+            SELECT session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived, local_path, terminal_title, is_favorite
             FROM session_overrides
             WHERE session_id = @session_id
             """;
@@ -39,7 +39,7 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
             """
-            SELECT session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived, local_path, terminal_title
+            SELECT session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived, local_path, terminal_title, is_favorite
             FROM session_overrides
             """;
 
@@ -54,7 +54,8 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         return result;
     }
 
-    public async ValueTask UpsertOverrideAsync(SessionOverride sessionOverride, CancellationToken ct = default)
+    /// <inheritdoc />
+    public async ValueTask UpsertMetadataAsync(SessionOverride sessionOverride, CancellationToken ct = default)
     {
         await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(ct);
@@ -62,15 +63,14 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
             """
-            INSERT INTO session_overrides (session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived, local_path, terminal_title)
-            VALUES (@session_id, @display_name, @repository, @branch, @notes, @created_at, @updated_at, @is_archived, @local_path, @terminal_title)
+            INSERT INTO session_overrides (session_id, display_name, repository, branch, notes, created_at, updated_at, local_path, terminal_title)
+            VALUES (@session_id, @display_name, @repository, @branch, @notes, @created_at, @updated_at, @local_path, @terminal_title)
             ON CONFLICT(session_id) DO UPDATE SET
                 display_name = excluded.display_name,
                 repository   = excluded.repository,
                 branch       = excluded.branch,
                 notes        = excluded.notes,
                 updated_at   = excluded.updated_at,
-                is_archived  = excluded.is_archived,
                 local_path   = excluded.local_path,
                 terminal_title = excluded.terminal_title
             """;
@@ -81,23 +81,105 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         cmd.Parameters.AddWithValue("@notes", (object?)sessionOverride.Notes ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@created_at", sessionOverride.CreatedAt.ToString("o"));
         cmd.Parameters.AddWithValue("@updated_at", sessionOverride.UpdatedAt.ToString("o"));
-        cmd.Parameters.AddWithValue("@is_archived", sessionOverride.IsArchived ? 1 : 0);
         cmd.Parameters.AddWithValue("@local_path", (object?)sessionOverride.LocalPath ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@terminal_title", (object?)sessionOverride.TerminalTitle ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    public async ValueTask DeleteOverrideAsync(string sessionId, CancellationToken ct = default)
+    /// <inheritdoc />
+    public async ValueTask ResetMetadataAsync(
+        string sessionId,
+        DateTimeOffset updatedAt,
+        CancellationToken ct = default)
     {
         await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(ct);
+        await using var transaction = await conn.BeginTransactionAsync(ct);
 
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM session_overrides WHERE session_id = @session_id";
+        cmd.Transaction = (SqliteTransaction)transaction;
+        cmd.CommandText =
+            """
+            UPDATE session_overrides
+            SET display_name = NULL,
+                repository = NULL,
+                branch = NULL,
+                notes = NULL,
+                local_path = NULL,
+                terminal_title = NULL,
+                updated_at = @updated_at
+            WHERE session_id = @session_id;
+
+            DELETE FROM session_overrides
+            WHERE session_id = @session_id
+              AND is_archived = 0
+              AND is_favorite = 0;
+            """;
         cmd.Parameters.AddWithValue("@session_id", sessionId);
+        cmd.Parameters.AddWithValue("@updated_at", updatedAt.ToString("o"));
 
         await cmd.ExecuteNonQueryAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public ValueTask SetArchivedAsync(
+        string sessionId,
+        bool isArchived,
+        DateTimeOffset updatedAt,
+        CancellationToken ct = default) =>
+        SetFlagAsync(sessionId, "is_archived", isArchived, updatedAt, ct);
+
+    /// <inheritdoc />
+    public ValueTask SetFavoriteAsync(
+        string sessionId,
+        bool isFavorite,
+        DateTimeOffset updatedAt,
+        CancellationToken ct = default) =>
+        SetFlagAsync(sessionId, "is_favorite", isFavorite, updatedAt, ct);
+
+    private async ValueTask SetFlagAsync(
+        string sessionId,
+        string column,
+        bool value,
+        DateTimeOffset updatedAt,
+        CancellationToken ct)
+    {
+        if (column is not ("is_archived" or "is_favorite"))
+            throw new ArgumentOutOfRangeException(nameof(column), column, "Unsupported session override flag.");
+
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        await using var transaction = await conn.BeginTransactionAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)transaction;
+        cmd.CommandText =
+            $"""
+            INSERT INTO session_overrides (session_id, created_at, updated_at, {column})
+            VALUES (@session_id, @updated_at, @updated_at, @value)
+            ON CONFLICT(session_id) DO UPDATE SET
+                updated_at = excluded.updated_at,
+                {column} = excluded.{column};
+
+            DELETE FROM session_overrides
+            WHERE session_id = @session_id
+              AND is_archived = 0
+              AND is_favorite = 0
+              AND display_name IS NULL
+              AND repository IS NULL
+              AND branch IS NULL
+              AND notes IS NULL
+              AND local_path IS NULL
+              AND terminal_title IS NULL;
+            """;
+        cmd.Parameters.AddWithValue("@session_id", sessionId);
+        cmd.Parameters.AddWithValue("@updated_at", updatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("@value", value ? 1 : 0);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+        await transaction.CommitAsync(ct);
     }
 
     public async ValueTask<HashSet<string>> GetArchivedSessionIdsAsync(CancellationToken ct = default)
@@ -127,10 +209,12 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         var isArchived = !reader.IsDBNull(7) && reader.GetInt64(7) != 0;
         var localPath = reader.FieldCount > 8 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
         var terminalTitle = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : null;
+        var isFavorite = reader.FieldCount > 10 && !reader.IsDBNull(10) && reader.GetInt64(10) != 0;
 
         return new SessionOverride(sessionId, displayName, repository, branch, notes, createdAt, updatedAt)
         {
             IsArchived = isArchived,
+            IsFavorite = isFavorite,
             LocalPath = localPath,
             TerminalTitle = terminalTitle,
         };

@@ -39,7 +39,10 @@ else if (_history is not null)
             <div class="file-timeline-entry">
                 <div class="file-timeline-date">@entry.FirstSeenAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</div>
                 <div>
-                    <a class="file-timeline-summary" href="/sessions/@entry.SessionId">@(entry.Summary ?? entry.SessionId)</a>
+                    <span class="file-timeline-summary-cell">
+                        <FavoriteButton SessionId="@entry.SessionId" IsFavorite="@entry.IsFavorite" />
+                        <a class="file-timeline-summary" href="/sessions/@entry.SessionId">@(entry.Summary ?? entry.SessionId)</a>
+                    </span>
                     @if (entry.ToolName is not null)
                     {
                         <span class="file-timeline-tool">@entry.ToolName</span>

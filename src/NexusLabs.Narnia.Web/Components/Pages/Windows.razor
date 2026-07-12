@@ -4,6 +4,7 @@
 @using NexusLabs.Narnia.Core.Services
 @inject ITerminalWindowAggregator WindowSources
 @inject ISessionRepository SessionRepository
+@inject ISessionOverridesRepository OverridesRepository
 
 <PageTitle>Sessions — Narnia</PageTitle>
 
@@ -72,12 +73,15 @@
     private IReadOnlyList<TerminalWindow> _open = [];
     private IReadOnlyList<TerminalWindow> _closed = [];
     private readonly Dictionary<string, Session> _sessions = new(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, SessionOverride> _overrides =
+        new Dictionary<string, SessionOverride>(StringComparer.Ordinal);
 
     protected override async Task OnInitializedAsync()
     {
         var snapshot = await WindowSources.GetWindowsAsync(50);
         _open = snapshot.Open;
         _closed = snapshot.Closed;
+        _overrides = await OverridesRepository.GetAllOverridesAsync();
 
         var sessionIds = _open.Concat(_closed)
             .SelectMany(w => w.Tabs)
@@ -110,11 +114,18 @@
             <a class="window-tab-summary" href="/sessions/@sessionId">@(session?.Summary ?? Short(sessionId))</a>
             <span class="window-tab-repo">@(session?.Repository ?? "—")</span>
             <span class="window-tab-dir cwd">@(tab?.Directory ?? session?.Cwd ?? "—")</span>
-            @if (isClosed)
+            @if (isClosed || sessionId is not null)
             {
                 <span class="window-tab-actions">
-                    <button class="launch-btn" onclick="narniaReopenWindow('@record.Id', this)" title="Reopen this session in a new terminal window">🚀 Reopen</button>
-                    <button class="btn-bulk-archive" onclick="narniaDeleteWindow('@record.Id')" title="Delete this record">🗑</button>
+                    @if (sessionId is not null)
+                    {
+                        <FavoriteButton SessionId="@sessionId" IsFavorite="@IsFavorite(sessionId, session)" />
+                    }
+                    @if (isClosed)
+                    {
+                        <button class="launch-btn" onclick="narniaReopenWindow('@record.Id', this)" title="Reopen this session in a new terminal window">🚀 Reopen</button>
+                        <button class="btn-bulk-archive" onclick="narniaDeleteWindow('@record.Id')" title="Delete this record">🗑</button>
+                    }
                 </span>
             }
         </li>
@@ -122,6 +133,10 @@
 
     private Session? Lookup(string sessionId) =>
         _sessions.TryGetValue(sessionId, out var session) ? session : null;
+
+    private bool IsFavorite(string sessionId, Session? session) =>
+        session?.IsFavorite
+        ?? (_overrides.TryGetValue(sessionId, out var sessionOverride) && sessionOverride.IsFavorite);
 
     private string Signature()
     {
@@ -133,7 +148,10 @@
                 w.Tabs.Count.ToString(),
                 w.Pinned ? "1" : "0",
                 w.OccurrenceCount.ToString(),
-                w.Name ?? ""));
+                w.Name ?? "",
+                string.Join(",", w.Tabs
+                    .OrderBy(tab => tab.TabOrder)
+                    .Select(tab => $"{tab.SessionId}:{(IsFavorite(tab.SessionId, Lookup(tab.SessionId)) ? "1" : "0")}"))));
         return string.Join("|", tokens);
     }
 

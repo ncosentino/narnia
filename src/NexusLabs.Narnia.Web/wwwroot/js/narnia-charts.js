@@ -75,7 +75,7 @@ async function narniaSaveOverride(sessionId) {
 }
 
 async function narniaResetOverride(sessionId) {
-    if (!confirm('Reset all overrides for this session? The original session-store values will be shown.')) return;
+    if (!confirm('Reset session metadata overrides? Favorite and archive state will be preserved.')) return;
     const btn = document.querySelector('.btn-reset');
     if (btn) { btn.disabled = true; btn.textContent = 'Resetting…'; }
     try {
@@ -86,11 +86,11 @@ async function narniaResetOverride(sessionId) {
             window.location.reload();
         } else {
             alert('Failed to reset overrides (HTTP ' + resp.status + ')');
-            if (btn) { btn.disabled = false; btn.textContent = 'Reset to Original'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Reset Metadata'; }
         }
     } catch (e) {
         alert('Error resetting overrides: ' + e.message);
-        if (btn) { btn.disabled = false; btn.textContent = 'Reset to Original'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Reset Metadata'; }
     }
 }
 
@@ -824,7 +824,14 @@ function narniaWindowsSignature(data) {
             (w.tabs ? w.tabs.length : 0),
             (w.pinned ? 1 : 0),
             (w.occurrenceCount || 0),
-            (w.name || '')
+            (w.name || ''),
+            (w.tabs || [])
+                .slice()
+                .sort(function (a, b) { return (a.order || 0) - (b.order || 0); })
+                .map(function (tab) {
+                    return tab.sessionId + ':' + (tab.isFavorite ? '1' : '0');
+                })
+                .join(',')
         ].join(':');
     }).join('|');
 }

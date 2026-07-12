@@ -33,6 +33,7 @@ else
     <table class="sessions-table">
         <thead>
             <tr>
+                <th class="col-favorite">Favorite</th>
                 <th>Summary</th>
                 <th>Remote Repository</th>
                 <th>Working Directory</th>
@@ -45,6 +46,7 @@ else
             @foreach (var s in _sessions)
             {
                 <tr>
+                    <td class="col-favorite"><FavoriteButton SessionId="@s.Id" IsFavorite="@s.IsFavorite" /></td>
                     <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
                     <td><SessionFilterLink FilterName="repository" Value="@s.Repository" /></td>
                     <td><SessionFilterLink FilterName="cwd" Value="@s.Cwd" CssClass="cwd" /></td>
@@ -55,7 +57,7 @@ else
             }
         </tbody>
     </table>
-    <p class="home-view-all"><a href="/sessions">View all sessions →</a></p>
+    <p class="home-view-all"><a href="/sessions">View all sessions →</a> · <a href="/favorites">View favorites →</a></p>
 }
 
 @code {
