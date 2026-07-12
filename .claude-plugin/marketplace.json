@@ -13,7 +13,7 @@
       "description": "MCP server for session queries plus skills for managing the Narnia web UI.",
       "source": "./",
       "category": "developer-tools",
-      "homepage": "https://github.devleader.ca/narnia/"
+      "homepage": "https://www.devleader.ca/projects/narnia/"
     }
   ]
 }
