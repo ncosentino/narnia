@@ -30,7 +30,7 @@ else if (_matches is { Length: 0 })
 else if (_matches is not null)
 {
     <p><strong>@_matches.Length session(s)</strong> linked to commit <code>@Sha</code></p>
-    <table class="sessions-table">
+    <table class="sessions-table" data-resizable-table="commit-sessions">
         <thead>
             <tr>
                 <th class="col-favorite">Favorite</th>
