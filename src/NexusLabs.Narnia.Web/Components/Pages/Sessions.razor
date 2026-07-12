@@ -83,10 +83,10 @@
             <span> — ranked by relevance</span>
         }
     </p>
-    <table class="sessions-table" id="sessions-table">
+    <table class="sessions-table" id="sessions-table" data-resizable-table="sessions">
         <thead>
             <tr>
-                <th class="col-select"><input type="checkbox" title="Select all" onclick="narniaToggleAll(this)" /></th>
+                <th class="col-select" data-no-resize><input type="checkbox" title="Select all" onclick="narniaToggleAll(this)" /></th>
                 <th class="col-favorite"><a class="sort-link" href="@SortUrl(SessionSortColumn.Favorite)" aria-label="@SortAriaLabel("Favorite", SessionSortColumn.Favorite)">Favorite@(SortIndicator(SessionSortColumn.Favorite))</a></th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Summary)" aria-label="@SortAriaLabel("Summary", SessionSortColumn.Summary)">Summary@(SortIndicator(SessionSortColumn.Summary))</a></th>
                 <th>Status</th>

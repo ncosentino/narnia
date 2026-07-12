@@ -1,0 +1,60 @@
+.narnia-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+table[data-resizable-table] {
+    width: 100%;
+    min-width: 100%;
+}
+
+table[data-resizable-table][data-narnia-resize-initialized="true"] {
+    min-width: 0;
+    table-layout: fixed;
+}
+
+table[data-resizable-table] th[data-narnia-resizable] {
+    position: relative;
+}
+
+.narnia-column-resizer {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    bottom: 0;
+    width: 8px;
+    z-index: 2;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+table[data-resizable-table] th:last-child .narnia-column-resizer {
+    right: 0;
+}
+
+.narnia-column-resizer::after {
+    content: "";
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    left: 3px;
+    width: 2px;
+    background: transparent;
+}
+
+.narnia-column-resizer:hover::after,
+.narnia-column-resizer:focus-visible::after,
+body.narnia-resizing-columns .narnia-column-resizer::after {
+    background: var(--accent);
+}
+
+.narnia-column-resizer:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+body.narnia-resizing-columns {
+    cursor: col-resize;
+    user-select: none;
+}

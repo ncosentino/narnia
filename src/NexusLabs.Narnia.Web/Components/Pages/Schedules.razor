@@ -42,7 +42,7 @@
 @if (_jobs.Count > 0)
 {
     <h2>Cataloged <span class="window-meta">@_jobs.Count job@(_jobs.Count == 1 ? "" : "s")</span></h2>
-    <table class="schedule-table">
+    <table class="schedule-table" data-resizable-table="scheduled-jobs">
         <thead>
             <tr>
                 <th>Job</th>
@@ -144,7 +144,7 @@
         These scheduled tasks are in the Narnia folder but have no matching job — likely left over
         from an older version. You can remove them from Task Scheduler directly.
     </p>
-    <table class="schedule-table">
+    <table class="schedule-table" data-resizable-table="orphaned-scheduled-tasks">
         <thead>
             <tr>
                 <th>Task</th>

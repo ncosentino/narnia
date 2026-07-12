@@ -262,6 +262,12 @@ try {
         throw 'The packaged Narnia application did not serve its static CSS asset.'
     }
 
+    $tableStyles = Invoke-WebRequest -Uri "$baseUrl/table-resize.css?v=1" -UseBasicParsing -TimeoutSec 10
+    $tableScript = Invoke-WebRequest -Uri "$baseUrl/js/narnia-table-resize.js?v=1" -UseBasicParsing -TimeoutSec 10
+    if ($tableStyles.StatusCode -ne 200 -or $tableScript.StatusCode -ne 200) {
+        throw 'The packaged Narnia application did not serve its table-resizing assets.'
+    }
+
     $initialize = Invoke-McpRequest -Url "$baseUrl/mcp" -Request @{
         jsonrpc = '2.0'
         id = 1

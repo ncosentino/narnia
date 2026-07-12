@@ -8,6 +8,8 @@ Narnia is a single ASP.NET Core app â€” both an MCP server and a local web UI â€
 
 Use the star control in any session view to favorite important sessions. Favorite state is shared across the UI, can be filtered or sorted on the Sessions page, and has a dedicated **Favorites** page.
 
+Table columns can be resized by dragging the separator at the right edge of a header or by focusing it and using the arrow keys. Widths are stored in the browser for each table; double-click a separator or press Escape to restore that column's default width.
+
 The supported prebuilt release is Windows x64. Narnia's defining recovery, scheduling, autostart,
 and terminal-launch features integrate with Windows Terminal, WMI, and Windows Task Scheduler.
 

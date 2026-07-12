@@ -12,7 +12,7 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 ## Features
 
 - **MCP Server** — one shared HTTP endpoint (`/mcp`) exposing 16 tools that any MCP-compatible client (including Copilot CLI) can call to search session history and manage scheduled jobs — no per-client process to launch, every client talks to the same running instance
-- **Web UI** — Blazor Static SSR local web interface for browsing, searching, favoriting, and reading session details, checkpoints, and conversation turns
+- **Web UI** — Blazor Static SSR local web interface for browsing, searching, favoriting, and reading session details, checkpoints, and conversation turns, with persistent browser-local table column widths
 - **Scheduled Jobs** — create, edit, and monitor Windows Task Scheduler-backed `copilot -p` jobs (daily/weekly/monthly) with hidden/headless execution and live log streaming, from the web UI or MCP
 - **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
 - **Session workspace** — reads supplemental metadata from `~/.copilot/session-state/` including git root and session artifact files
