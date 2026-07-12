@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://github.devleader.ca/narnia/sitemap.xml
+Sitemap: https://www.devleader.ca/projects/narnia/sitemap.xml
