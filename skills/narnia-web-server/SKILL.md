@@ -150,14 +150,18 @@ type.
    ```powershell
    # Windows
    Start-Process -FilePath (Join-Path $runDir 'NexusLabs.Narnia.Web.exe') `
-     -ArgumentList '--urls','http://127.0.0.1:5244' -WindowStyle Hidden
+     -ArgumentList '--urls','http://127.0.0.1:5244' `
+     -WorkingDirectory $runDir `
+     -WindowStyle Hidden
    ```
    ```bash
    # macOS / Linux — launch detached
-   nohup dotnet "$runDir/NexusLabs.Narnia.Web.dll" --urls http://127.0.0.1:5244 >/dev/null 2>&1 &
+   (cd "$runDir" && nohup dotnet ./NexusLabs.Narnia.Web.dll \
+     --urls http://127.0.0.1:5244 >/dev/null 2>&1 &)
    ```
    Use a detached background process (the CLI's detached/async mode) so the server keeps running
-   after the session ends.
+   after the session ends. Always launch with the run directory as the process working directory;
+   otherwise Windows can keep the plugin bundle directory locked and prevent a later plugin update.
 5. **Health-check.** Poll `http://127.0.0.1:5244/health` every second for up to ~40 seconds until
    it returns 200.
 6. **Report** the URL; open the browser if the user asked:

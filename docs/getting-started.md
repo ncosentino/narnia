@@ -48,6 +48,7 @@ release:
 $runDir = Join-Path $env:LOCALAPPDATA 'narnia\app'
 Start-Process (Join-Path $runDir 'NexusLabs.Narnia.Web.exe') `
   -ArgumentList '--urls','http://127.0.0.1:5244' `
+  -WorkingDirectory $runDir `
   -WindowStyle Hidden
 ```
 

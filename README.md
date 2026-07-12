@@ -48,6 +48,7 @@ New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 Expand-Archive .\narnia-win-x64.zip -DestinationPath $runDir -Force
 Start-Process (Join-Path $runDir 'NexusLabs.Narnia.Web.exe') `
   -ArgumentList '--urls','http://127.0.0.1:5244' `
+  -WorkingDirectory $runDir `
   -WindowStyle Hidden
 ```
 

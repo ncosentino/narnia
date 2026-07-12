@@ -16,6 +16,11 @@ using NexusLabs.Narnia.Web;
 using NexusLabs.Narnia.Web.Components;
 using NexusLabs.Narnia.Web.Mcp;
 
+// Detached launchers inherit their caller's working directory. Normalize it immediately so the
+// server never keeps a plugin or source directory open, and relative process operations resolve
+// beside the running application.
+Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
