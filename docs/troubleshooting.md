@@ -33,13 +33,14 @@ description: Troubleshooting common Narnia issues including web server startup f
 
 **Symptom:** `list_sessions_by_repository` or `list_sessions_by_cwd` returns an empty array.
 
-**Why it happens:** Path and repository matching is exact. The stored `cwd` must match exactly — including casing and whether it uses forward or backward slashes.
+**Why it happens:** Repository and working-directory tools filter metadata, not conversation keywords. Repository matching uses the effective value after Narnia overrides. Working-directory matching does not convert forward slashes to backslashes.
 
 **Fix:**
 
-- Use `list_recent_sessions` first to see actual `cwd` and `repository` values stored in the database.
-- Copy the exact value from the results into your next query.
+- Use `list_recent_sessions` first to see the effective `repository` and recorded `cwd` values.
+- Copy the relevant field into the matching tool; do not pass a local path to `list_sessions_by_repository`.
 - On Windows, paths are stored with backslashes — use `C:\dev\myproject`, not `C:/dev/myproject`.
+- Repository matching is case-insensitive. Working-directory matching is case-insensitive on Windows and case-sensitive on case-sensitive operating systems.
 
 ---
 
@@ -90,4 +91,5 @@ description: Troubleshooting common Narnia issues including web server startup f
 
 - Try a simpler query first: a single common word that should appear in your sessions.
 - Use prefix matching for partial words: `auth*` instead of `authorization`.
+- Use `list_sessions_by_repository` or `list_sessions_by_cwd` for metadata; `search_sessions` only searches indexed content.
 - Verify sessions exist with `list_recent_sessions` — if that also returns nothing, the database path is likely wrong.

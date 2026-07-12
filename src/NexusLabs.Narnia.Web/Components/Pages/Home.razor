@@ -34,8 +34,8 @@ else
         <thead>
             <tr>
                 <th>Summary</th>
-                <th>Repository</th>
-                <th>Directory</th>
+                <th>Remote Repository</th>
+                <th>Working Directory</th>
                 <th>Turns</th>
                 <th>Checkpoints</th>
                 <th>Updated</th>
@@ -46,8 +46,8 @@ else
             {
                 <tr>
                     <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
-                    <td>@(s.Repository ?? "—")</td>
-                    <td class="cwd">@(s.Cwd ?? "—")</td>
+                    <td><SessionFilterLink FilterName="repository" Value="@s.Repository" /></td>
+                    <td><SessionFilterLink FilterName="cwd" Value="@s.Cwd" CssClass="cwd" /></td>
                     <td>@s.TurnCount</td>
                     <td>@s.CheckpointCount</td>
                     <td>@s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>

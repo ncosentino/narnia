@@ -37,11 +37,12 @@ builder.Configuration.GetSection(NarniaOptions.SectionName).Bind(options);
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<IFileSystem, FileSystem>();
 builder.Services.AddSingleton<SqliteSessionRepository>();
-builder.Services.AddSingleton<ISessionSearch>(sp => sp.GetRequiredService<SqliteSessionRepository>());
 builder.Services.AddSingleton<SqliteSessionOverridesRepository>();
 builder.Services.AddSingleton<ISessionOverridesRepository>(sp => sp.GetRequiredService<SqliteSessionOverridesRepository>());
 builder.Services.AddSingleton<OverridingSessionRepository>();
 builder.Services.AddSingleton<ISessionRepository>(sp => sp.GetRequiredService<OverridingSessionRepository>());
+builder.Services.AddSingleton<OverridingSessionSearch>();
+builder.Services.AddSingleton<ISessionSearch>(sp => sp.GetRequiredService<OverridingSessionSearch>());
 builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
 builder.Services.AddSingleton<SettingsDatabaseRelocator>();
 builder.Services.AddSingleton<SessionService>();
@@ -193,10 +194,19 @@ app.MapPost("/api/sessions/{id}/overrides", async (
 {
     var now = DateTimeOffset.UtcNow;
     var existing = await repo.GetOverrideAsync(id, ct);
+    var repository = string.IsNullOrWhiteSpace(request.Repository) ? null : request.Repository.Trim();
+    if (repository is not null && !IsValidRepositorySlug(repository))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["repository"] = ["Use owner/repository format, such as ncosentino/needlr."],
+        });
+    }
+
     var ov = new SessionOverride(
         id,
         string.IsNullOrWhiteSpace(request.DisplayName) ? null : request.DisplayName.Trim(),
-        string.IsNullOrWhiteSpace(request.Repository) ? null : request.Repository.Trim(),
+        repository,
         string.IsNullOrWhiteSpace(request.Branch) ? null : request.Branch.Trim(),
         string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
         existing?.CreatedAt ?? now,
@@ -859,6 +869,21 @@ return;
 static string ShortSession(string sessionId) =>
     sessionId.Length >= 8 ? sessionId[..8] : sessionId;
 
+static bool IsValidRepositorySlug(string repository)
+{
+    var slashIndex = repository.IndexOf('/');
+    if (slashIndex <= 0 || slashIndex != repository.LastIndexOf('/') || slashIndex == repository.Length - 1)
+        return false;
+
+    var owner = repository[..slashIndex];
+    var name = repository[(slashIndex + 1)..];
+    if (owner is "." or ".." || name is "." or "..")
+        return false;
+
+    return repository.All(character =>
+        char.IsAsciiLetterOrDigit(character)
+        || character is '.' or '-' or '_' or '/');
+}
 
 static string? DetectDefaultShell()
 {

@@ -1,23 +1,51 @@
 namespace NexusLabs.Narnia.Core.Models;
 
+/// <summary>
+/// Columns available when ordering session summaries.
+/// </summary>
 public enum SessionSortColumn
 {
+    /// <summary>Sort by the displayed session summary.</summary>
     Summary,
+
+    /// <summary>Sort by the effective remote repository.</summary>
     Repository,
+
+    /// <summary>Sort by the recorded working directory.</summary>
     Directory,
+
+    /// <summary>Sort by conversation turn count.</summary>
     Turns,
+
+    /// <summary>Sort by checkpoint count.</summary>
     Checkpoints,
+
+    /// <summary>Sort by the last update timestamp.</summary>
     Updated,
 }
 
+/// <summary>
+/// Directions available when ordering session summaries.
+/// </summary>
 public enum SessionSortDirection
 {
+    /// <summary>Order the selected column from low to high.</summary>
     Ascending,
+
+    /// <summary>Order the selected column from high to low.</summary>
     Descending,
 }
 
+/// <summary>
+/// Parses session sort parameters and applies deterministic session ordering.
+/// </summary>
 public static class SessionSummarySorting
 {
+    /// <summary>
+    /// Parses a session sort column from its query-string representation.
+    /// </summary>
+    /// <param name="value">Query-string value to parse.</param>
+    /// <returns>The parsed column, or <see langword="null"/> for an unknown value.</returns>
     public static SessionSortColumn? ParseColumn(string? value) => value?.ToLowerInvariant() switch
     {
         "summary" => SessionSortColumn.Summary,
@@ -29,6 +57,11 @@ public static class SessionSummarySorting
         _ => null,
     };
 
+    /// <summary>
+    /// Converts a session sort column to its query-string representation.
+    /// </summary>
+    /// <param name="column">Column to convert.</param>
+    /// <returns>The stable query-string value for the column.</returns>
     public static string ToQueryValue(SessionSortColumn column) => column switch
     {
         SessionSortColumn.Summary => "summary",
@@ -40,11 +73,24 @@ public static class SessionSummarySorting
         _ => "updated",
     };
 
+    /// <summary>
+    /// Parses a sort direction, defaulting to descending for unknown values.
+    /// </summary>
+    /// <param name="value">Query-string value to parse.</param>
+    /// <returns>The parsed direction.</returns>
     public static SessionSortDirection ParseDirection(string? value) =>
         string.Equals(value, "asc", StringComparison.OrdinalIgnoreCase)
             ? SessionSortDirection.Ascending
             : SessionSortDirection.Descending;
 
+    /// <summary>
+    /// Orders session summaries by the requested column and direction.
+    /// </summary>
+    /// <param name="sessions">Sessions to order.</param>
+    /// <param name="column">Primary sort column.</param>
+    /// <param name="direction">Primary sort direction.</param>
+    /// <returns>A newly allocated, deterministically ordered array.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="sessions"/> is <see langword="null"/>.</exception>
     public static SessionSummary[] Sort(
         IEnumerable<SessionSummary> sessions,
         SessionSortColumn column,
@@ -52,24 +98,55 @@ public static class SessionSummarySorting
     {
         ArgumentNullException.ThrowIfNull(sessions);
 
-        IComparer<SessionSummary> comparer = column switch
+        var comparer = Comparer<SessionSummary>.Create((left, right) =>
         {
-            SessionSortColumn.Summary => Comparer<SessionSummary>.Create(
-                (a, b) => string.Compare(a.Summary, b.Summary, StringComparison.OrdinalIgnoreCase)),
-            SessionSortColumn.Repository => Comparer<SessionSummary>.Create(
-                (a, b) => string.Compare(a.Repository, b.Repository, StringComparison.OrdinalIgnoreCase)),
-            SessionSortColumn.Directory => Comparer<SessionSummary>.Create(
-                (a, b) => string.Compare(a.Cwd, b.Cwd, StringComparison.OrdinalIgnoreCase)),
-            SessionSortColumn.Turns => Comparer<SessionSummary>.Create(
-                (a, b) => a.TurnCount.CompareTo(b.TurnCount)),
-            SessionSortColumn.Checkpoints => Comparer<SessionSummary>.Create(
-                (a, b) => a.CheckpointCount.CompareTo(b.CheckpointCount)),
-            _ => Comparer<SessionSummary>.Create(
-                (a, b) => a.UpdatedAt.CompareTo(b.UpdatedAt)),
-        };
+            var primary = column switch
+            {
+                SessionSortColumn.Summary => CompareText(left.Summary, right.Summary, direction),
+                SessionSortColumn.Repository => CompareText(left.Repository, right.Repository, direction),
+                SessionSortColumn.Directory => CompareText(left.Cwd, right.Cwd, direction),
+                SessionSortColumn.Turns => CompareValue(left.TurnCount, right.TurnCount, direction),
+                SessionSortColumn.Checkpoints => CompareValue(left.CheckpointCount, right.CheckpointCount, direction),
+                _ => CompareValue(left.UpdatedAt, right.UpdatedAt, direction),
+            };
 
-        return direction == SessionSortDirection.Descending
-            ? sessions.OrderByDescending(s => s, comparer).ToArray()
-            : sessions.OrderBy(s => s, comparer).ToArray();
+            if (primary != 0)
+                return primary;
+
+            if (column != SessionSortColumn.Updated)
+            {
+                var updated = right.UpdatedAt.CompareTo(left.UpdatedAt);
+                if (updated != 0)
+                    return updated;
+            }
+
+            return string.Compare(left.Id, right.Id, StringComparison.Ordinal);
+        });
+
+        return sessions.OrderBy(session => session, comparer).ToArray();
+    }
+
+    private static int CompareText(
+        string? left,
+        string? right,
+        SessionSortDirection direction)
+    {
+        if (left is null)
+            return right is null ? 0 : 1;
+        if (right is null)
+            return -1;
+
+        var result = string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+        return direction == SessionSortDirection.Descending ? -result : result;
+    }
+
+    private static int CompareValue<T>(
+        T left,
+        T right,
+        SessionSortDirection direction)
+        where T : IComparable<T>
+    {
+        var result = left.CompareTo(right);
+        return direction == SessionSortDirection.Descending ? -result : result;
     }
 }

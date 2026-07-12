@@ -126,6 +126,36 @@ h3 { font-size: 1rem; margin-top: 1rem; margin-bottom: .4rem; color: var(--text-
 }
 .sessions-table th .sort-link:hover { text-decoration: underline; }
 .cwd { font-family: monospace; font-size: .8rem; color: var(--text-subtle); }
+.session-scope {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem 1rem;
+    margin: -.25rem 0 1rem;
+    padding: .6rem .75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: .88rem;
+}
+.session-scope code { overflow-wrap: anywhere; }
+.session-result-count { color: var(--text-muted); }
+.session-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+.session-pagination a {
+    padding: .35rem .65rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    text-decoration: none;
+    background: var(--surface);
+}
+.session-pagination a:hover { background: var(--surface-muted); }
 
 .resume-command,
 .resume-commands {
@@ -664,4 +694,3 @@ a { color: var(--link); }
 .sched-log-panel { margin: 0 0 1.5rem; padding: .8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-alt); }
 .sched-log-panel textarea { width: 100%; min-height: 300px; font-family: var(--mono, monospace); font-size: .75rem; white-space: pre; }
 .badge-fail-link { cursor: pointer; text-decoration: underline dotted; border: none; }
-

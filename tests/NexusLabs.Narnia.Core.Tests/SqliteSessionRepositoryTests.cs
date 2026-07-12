@@ -88,6 +88,13 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    private async Task ExecuteAsync(string sql)
+    {
+        await using var cmd = _keepAlive.CreateCommand();
+        cmd.CommandText = sql;
+        await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
     private void SeedData()
     {
         using var cmd = _keepAlive.CreateCommand();
@@ -123,6 +130,29 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
                 ('the team briefly mentioned a widget among many other agenda items', 'sess-3', 'turn', '1');
             """;
         cmd.ExecuteNonQuery();
+    }
+
+    [Fact]
+    public async Task ListAllAsync_ReturnsEverySessionOrderedByUpdatedAt()
+    {
+        var results = await _repository.ListAllAsync(ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "sess-3", "sess-2", "sess-1" }, results.Select(session => session.Id));
+    }
+
+    [Fact]
+    public async Task ListAllAsync_EqualUpdatedAt_UsesSessionIdTieBreaker()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO sessions (id, cwd, repository, branch, summary, created_at, updated_at) VALUES
+                ('tie-b', 'C:\dev\tie', 'owner/tie', 'main', 'Tie B', '2025-02-01T00:00:00Z', '2025-02-02T00:00:00Z'),
+                ('tie-a', 'C:\dev\tie', 'owner/tie', 'main', 'Tie A', '2025-02-01T00:00:00Z', '2025-02-02T00:00:00Z');
+            """);
+
+        var results = await _repository.ListAllAsync(ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "tie-a", "tie-b" }, results.Take(2).Select(session => session.Id));
     }
 
     [Fact]
@@ -261,6 +291,17 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchAsync_QueryWithoutSearchableCharacters_ReturnsEmpty()
+    {
+        var results = await _repository.SearchAsync(
+            "///",
+            10,
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
     public async Task SearchAsync_WildcardQuery_ReturnsResults()
     {
         // "cach*" should prefix-match "caching" in the seed data.
@@ -293,6 +334,27 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         var results = await _repository.SearchAsync("widget", 1, TestContext.Current.CancellationToken);
 
         Assert.Single(results);
+    }
+
+    [Fact]
+    public async Task SearchAsync_EqualRanks_UsesSessionIdTieBreaker()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO sessions (id, cwd, repository, branch, summary, created_at, updated_at) VALUES
+                ('search-b', 'C:\dev\search', 'owner/search', 'main', 'Search B', '2025-02-01T00:00:00Z', '2025-02-02T00:00:00Z'),
+                ('search-a', 'C:\dev\search', 'owner/search', 'main', 'Search A', '2025-02-01T00:00:00Z', '2025-02-02T00:00:00Z');
+            INSERT INTO search_index (content, session_id, source_type, source_id) VALUES
+                ('deterministic tie content', 'search-b', 'turn', '1'),
+                ('deterministic tie content', 'search-a', 'turn', '1');
+            """);
+
+        var results = await _repository.SearchAsync(
+            "deterministic",
+            10,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "search-a", "search-b" }, results.Select(result => result.SessionId));
     }
 
     [Fact]

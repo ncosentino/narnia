@@ -9,49 +9,49 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
     private readonly string _connectionString = options.ConnectionString
         ?? $"Data Source={options.DatabasePath};Mode=ReadOnly";
 
-    private static readonly string ListRecentSql =
+    private const string SessionSummarySelectSql =
         """
         SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
                COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c.id) as checkpoint_count
         FROM sessions s
         LEFT JOIN turns t ON t.session_id = s.id
         LEFT JOIN checkpoints c ON c.session_id = s.id
+        """;
+
+    private static readonly string ListAllSql =
+        $"""
+        {SessionSummarySelectSql}
         GROUP BY s.id
-        ORDER BY s.updated_at DESC
+        ORDER BY s.updated_at DESC, s.id
+        """;
+
+    private static readonly string ListRecentSql =
+        $"""
+        {SessionSummarySelectSql}
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC, s.id
         LIMIT @limit
         """;
 
     private static readonly string ListByRepositorySql =
-        """
-        SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
-               COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c.id) as checkpoint_count
-        FROM sessions s
-        LEFT JOIN turns t ON t.session_id = s.id
-        LEFT JOIN checkpoints c ON c.session_id = s.id
+        $"""
+        {SessionSummarySelectSql}
         WHERE s.repository = @repository
         GROUP BY s.id
-        ORDER BY s.updated_at DESC
+        ORDER BY s.updated_at DESC, s.id
         """;
 
     private static readonly string ListByCwdSql =
-        """
-        SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
-               COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c.id) as checkpoint_count
-        FROM sessions s
-        LEFT JOIN turns t ON t.session_id = s.id
-        LEFT JOIN checkpoints c ON c.session_id = s.id
+        $"""
+        {SessionSummarySelectSql}
         WHERE s.cwd = @cwd
         GROUP BY s.id
-        ORDER BY s.updated_at DESC
+        ORDER BY s.updated_at DESC, s.id
         """;
 
     private static readonly string GetByIdSql =
-        """
-        SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
-               COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c.id) as checkpoint_count
-        FROM sessions s
-        LEFT JOIN turns t ON t.session_id = s.id
-        LEFT JOIN checkpoints c ON c.session_id = s.id
+        $"""
+        {SessionSummarySelectSql}
         WHERE s.id = @sessionId
         GROUP BY s.id
         """;
@@ -97,14 +97,16 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         """
         WITH ranked AS (
             SELECT session_id, source_type, source_id, content, rank,
-                   ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY rank) AS rn
+                   ROW_NUMBER() OVER (
+                       PARTITION BY session_id
+                       ORDER BY rank, search_index.rowid) AS rn
             FROM search_index
             WHERE search_index MATCH @query
         )
         SELECT session_id, source_type, source_id, content, rank
         FROM ranked
         WHERE rn = 1
-        ORDER BY rank
+        ORDER BY rank, session_id
         LIMIT @limit
         """;
 
@@ -142,6 +144,13 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         WHERE s.repository IS NOT NULL
         GROUP BY s.repository
         ORDER BY session_count DESC
+        """;
+
+    private static readonly string SessionFileCountsSql =
+        """
+        SELECT session_id, COUNT(*)
+        FROM session_files
+        GROUP BY session_id
         """;
 
     // session_refs is intentionally not aggregated here (e.g. commit/PR/issue counts).
@@ -217,7 +226,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         LEFT JOIN turns t ON t.session_id = s.id
         LEFT JOIN checkpoints c ON c.session_id = s.id
         GROUP BY s.id
-        ORDER BY is_confirmed DESC, s.updated_at DESC
+        ORDER BY is_confirmed DESC, s.updated_at DESC, s.id
         """;
 
     private static readonly string ResumeSuggestionsSql =
@@ -233,7 +242,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
                 SELECT MAX(checkpoint_number) FROM checkpoints WHERE session_id = s.id)
         WHERE c.next_steps IS NOT NULL AND trim(c.next_steps) != ''
         GROUP BY s.id
-        ORDER BY s.updated_at DESC
+        ORDER BY s.updated_at DESC, s.id
         LIMIT @limit
         """;
 
@@ -244,52 +253,38 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         SELECT overview FROM checkpoints WHERE overview IS NOT NULL
         """;
 
-    public async ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, bool includeArchived = false, CancellationToken ct = default)
+    /// <inheritdoc />
+    public ValueTask<SessionSummary[]> ListAllAsync(bool includeArchived = false, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(ct);
-
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = ListRecentSql;
-        cmd.Parameters.AddWithValue("@limit", limit);
-
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        var results = new List<SessionSummary>();
-        while (await reader.ReadAsync(ct))
-            results.Add(ReadSessionSummary(reader));
-        return [.. results];
+        _ = includeArchived;
+        return QuerySessionSummariesAsync(ListAllSql, configure: null, ct);
     }
 
-    public async ValueTask<SessionSummary[]> ListByRepositoryAsync(string repository, bool includeArchived = false, CancellationToken ct = default)
+    public ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, bool includeArchived = false, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(ct);
-
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = ListByRepositorySql;
-        cmd.Parameters.AddWithValue("@repository", repository);
-
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        var results = new List<SessionSummary>();
-        while (await reader.ReadAsync(ct))
-            results.Add(ReadSessionSummary(reader));
-        return [.. results];
+        _ = includeArchived;
+        return QuerySessionSummariesAsync(
+            ListRecentSql,
+            cmd => cmd.Parameters.AddWithValue("@limit", limit),
+            ct);
     }
 
-    public async ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, bool includeArchived = false, CancellationToken ct = default)
+    public ValueTask<SessionSummary[]> ListByRepositoryAsync(string repository, bool includeArchived = false, CancellationToken ct = default)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(ct);
+        _ = includeArchived;
+        return QuerySessionSummariesAsync(
+            ListByRepositorySql,
+            cmd => cmd.Parameters.AddWithValue("@repository", repository),
+            ct);
+    }
 
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = ListByCwdSql;
-        cmd.Parameters.AddWithValue("@cwd", cwd);
-
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        var results = new List<SessionSummary>();
-        while (await reader.ReadAsync(ct))
-            results.Add(ReadSessionSummary(reader));
-        return [.. results];
+    public ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, bool includeArchived = false, CancellationToken ct = default)
+    {
+        _ = includeArchived;
+        return QuerySessionSummariesAsync(
+            ListByCwdSql,
+            cmd => cmd.Parameters.AddWithValue("@cwd", cwd),
+            ct);
     }
 
     public async ValueTask<Session?> GetByIdAsync(string sessionId, CancellationToken ct = default)
@@ -374,14 +369,29 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         return [.. results];
     }
 
-    public async ValueTask<SearchResult[]> SearchAsync(string query, int limit = 20, CancellationToken ct = default)
+    public ValueTask<SearchResult[]> SearchAsync(
+        string query,
+        int limit = 20,
+        CancellationToken ct = default) =>
+        SearchAsync(query, limit, includeArchived: false, ct);
+
+    public async ValueTask<SearchResult[]> SearchAsync(
+        string query,
+        int limit,
+        bool includeArchived,
+        CancellationToken ct = default)
     {
+        _ = includeArchived;
+        var sanitizedQuery = SanitizeFts5Query(query);
+        if (sanitizedQuery.Length == 0)
+            return [];
+
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = SearchSql;
-        cmd.Parameters.AddWithValue("@query", SanitizeFts5Query(query));
+        cmd.Parameters.AddWithValue("@query", sanitizedQuery);
         cmd.Parameters.AddWithValue("@limit", limit);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -389,6 +399,21 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         while (await reader.ReadAsync(ct))
             results.Add(ReadSearchResult(reader));
         return [.. results];
+    }
+
+    internal async ValueTask<IReadOnlyDictionary<string, int>> GetFileCountsBySessionAsync(CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = SessionFileCountsSql;
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new Dictionary<string, int>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(ct))
+            results[reader.GetString(0)] = reader.GetInt32(1);
+        return results;
     }
 
     public async ValueTask<GlobalStats> GetGlobalStatsAsync(CancellationToken ct = default)
@@ -751,6 +776,25 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             if (clean.Length >= 3 && !StopWords.Contains(clean) && clean.All(c => char.IsLetter(c)))
                 yield return clean;
         }
+    }
+
+    private async ValueTask<SessionSummary[]> QuerySessionSummariesAsync(
+        string commandText,
+        Action<SqliteCommand>? configure,
+        CancellationToken ct)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = commandText;
+        configure?.Invoke(cmd);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new List<SessionSummary>();
+        while (await reader.ReadAsync(ct))
+            results.Add(ReadSessionSummary(reader));
+        return [.. results];
     }
 
     private static SessionSummary ReadSessionSummary(SqliteDataReader reader)

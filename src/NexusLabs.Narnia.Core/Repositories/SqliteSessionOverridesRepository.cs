@@ -30,6 +30,30 @@ public sealed class SqliteSessionOverridesRepository(NarniaOptions options) : IS
         return ReadSessionOverride(reader);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyDictionary<string, SessionOverride>> GetAllOverridesAsync(CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            """
+            SELECT session_id, display_name, repository, branch, notes, created_at, updated_at, is_archived, local_path, terminal_title
+            FROM session_overrides
+            """;
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var result = new Dictionary<string, SessionOverride>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(ct))
+        {
+            var sessionOverride = ReadSessionOverride(reader);
+            result[sessionOverride.SessionId] = sessionOverride;
+        }
+
+        return result;
+    }
+
     public async ValueTask UpsertOverrideAsync(SessionOverride sessionOverride, CancellationToken ct = default)
     {
         await using var conn = new SqliteConnection(_connectionString);

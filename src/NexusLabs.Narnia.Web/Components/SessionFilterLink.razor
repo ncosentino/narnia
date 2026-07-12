@@ -1,0 +1,37 @@
+@if (string.IsNullOrWhiteSpace(Value))
+{
+    <span class="@CssClass">—</span>
+}
+else
+{
+    <a class="@CssClass" href="@Href">@Value</a>
+}
+
+@code {
+    /// <summary>
+    /// Gets or sets the exact Sessions-page query parameter to populate.
+    /// </summary>
+    [Parameter, EditorRequired]
+    public string FilterName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the metadata value displayed by the link.
+    /// </summary>
+    [Parameter]
+    public string? Value { get; set; }
+
+    /// <summary>
+    /// Gets or sets an optional CSS class applied to the rendered value.
+    /// </summary>
+    [Parameter]
+    public string? CssClass { get; set; }
+
+    private string Href => $"/sessions?{FilterName}={Uri.EscapeDataString(Value!)}";
+
+    /// <inheritdoc />
+    protected override void OnParametersSet()
+    {
+        if (FilterName is not ("repository" or "cwd"))
+            throw new InvalidOperationException($"Unsupported session filter '{FilterName}'.");
+    }
+}

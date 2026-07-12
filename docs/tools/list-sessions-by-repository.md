@@ -1,16 +1,16 @@
 ---
-description: List all Copilot CLI sessions for a specific git repository in owner/repo format. Filter by project without searching manually.
+description: List visible Copilot CLI sessions for an exact remote repository in owner/repository format, after applying Narnia overrides.
 ---
 
 # list_sessions_by_repository
 
-Returns all sessions associated with a specific git repository. Useful when you know the repo name and want to see everything Copilot CLI has worked on in that project.
+Returns visible sessions whose effective remote repository matches a specific `owner/repository` value. Narnia applies repository overrides before filtering, so corrected metadata is used consistently.
 
 ## Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `repo` | string | Yes | Repository in `owner/repo` format, e.g. `ncosentino/needlr` |
+| `repo` | string | Yes | Remote repository in `owner/repository` format, e.g. `ncosentino/needlr` |
 
 ## Response
 
@@ -41,4 +41,4 @@ Returns a JSON array of session summary objects (same structure as [`list_recent
 
 ## Notes
 
-The `repo` value must match the `repository` field stored in the session record exactly, in `owner/repo` format. If a session was created without a git repository context, it will not appear in this tool's results — use [`list_sessions_by_cwd`](list-sessions-by-cwd.md) as a fallback.
+Matching is exact but case-insensitive. Archived sessions are excluded, and Narnia repository overrides replace incorrect Chronicle values before filtering. A session without a remote repository will not appear — use [`list_sessions_by_cwd`](list-sessions-by-cwd.md) when the working directory is the reliable identifier.

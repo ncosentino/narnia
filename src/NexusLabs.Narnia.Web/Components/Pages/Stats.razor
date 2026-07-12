@@ -39,7 +39,7 @@ else
             </div>
             <div class="stat-card">
                 <div class="stat-value">@_insights.DistinctRepositories</div>
-                <div class="stat-label">Repositories</div>
+                <div class="stat-label">Remote Repositories</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value">@_insights.DistinctBranches</div>
@@ -53,7 +53,7 @@ else
         {
             <div class="stat-card stat-card--wide">
                 <div class="stat-value stat-value--sm">@_stats.MostActiveRepository</div>
-                <div class="stat-label">Most Active Repository</div>
+                <div class="stat-label">Most Active Remote Repository</div>
             </div>
         }
         @if (_stats.BusiestDay is not null)
@@ -129,7 +129,7 @@ else
 
     @if (_repoStats is { Length: > 0 })
     {
-        <h2>Sessions by Repository</h2>
+        <h2>Sessions by Remote Repository</h2>
         <div class="chart-container">
             <canvas id="stats-repo-chart"></canvas>
         </div>
@@ -148,11 +148,18 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _stats = await Repository.GetGlobalStatsAsync();
-        _repoStats = await Repository.GetRepositoryStatsAsync();
-        _insights = await Repository.GetSessionInsightsAsync();
-        _patterns = await Repository.GetActivityPatternsAsync();
-        _growth = await Repository.GetActivityByDateAsync(3650);
+        var statsTask = Repository.GetGlobalStatsAsync().AsTask();
+        var repoStatsTask = Repository.GetRepositoryStatsAsync().AsTask();
+        var insightsTask = Repository.GetSessionInsightsAsync().AsTask();
+        var patternsTask = Repository.GetActivityPatternsAsync().AsTask();
+        var growthTask = Repository.GetActivityByDateAsync(3650).AsTask();
+        await Task.WhenAll(statsTask, repoStatsTask, insightsTask, patternsTask, growthTask);
+
+        _repoStats = await repoStatsTask;
+        _stats = await statsTask;
+        _insights = await insightsTask;
+        _patterns = await patternsTask;
+        _growth = await growthTask;
     }
 
     private static string BuildRepoChartJson(RepositoryStats[] data) =>

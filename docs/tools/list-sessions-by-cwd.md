@@ -1,10 +1,10 @@
 ---
-description: List all Copilot CLI sessions started in a specific working directory path. An alternative to repository-based filtering when the repo field is not set.
+description: List visible Copilot CLI sessions started in an exact working directory. Use this separately from remote-repository filtering.
 ---
 
 # list_sessions_by_cwd
 
-Returns all sessions that were started in a specific working directory. This is the fallback when you don't know the repository name, or when the session was started outside of a git repo.
+Returns visible sessions that were started in a specific working directory. Working Directory is local filesystem metadata and is independent of the session's Remote Repository value.
 
 ## Parameters
 
@@ -40,4 +40,4 @@ Returns a JSON array of session summary objects (same structure as [`list_recent
 
 ## Notes
 
-Path matching is exact — the `cwd` must match the stored value precisely, including casing on case-sensitive systems. On Windows, use backslashes (`C:\dev\myproject`) as that is how paths are stored. If no sessions match, try [`list_sessions_by_repository`](list-sessions-by-repository.md) or [`search_sessions`](search-sessions.md) with the project name instead.
+Path matching follows the operating system's casing rules and ignores one trailing directory separator. On Windows, use the stored backslash form (`C:\dev\myproject`); forward slashes are not normalized. Archived sessions are excluded. If no sessions match, inspect recent session metadata or use [`list_sessions_by_repository`](list-sessions-by-repository.md) with the exact remote repository.
