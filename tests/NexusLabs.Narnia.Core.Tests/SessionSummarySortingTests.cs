@@ -93,7 +93,7 @@ public sealed class SessionSummarySortingTests
     }
 
     [Fact]
-    public void Sort_ByRepository_Ascending_PlacesNullsFirst()
+    public void Sort_ByRepository_Ascending_PlacesNullsLast()
     {
         var sessions = new[]
         {
@@ -104,7 +104,36 @@ public sealed class SessionSummarySortingTests
 
         var sorted = SessionSummarySorting.Sort(sessions, SessionSortColumn.Repository, SessionSortDirection.Ascending);
 
-        Assert.Equal(new[] { "2", "3", "1" }, sorted.Select(s => s.Id));
+        Assert.Equal(new[] { "3", "1", "2" }, sorted.Select(s => s.Id));
+    }
+
+    [Fact]
+    public void Sort_ByRepository_Descending_PlacesNullsLast()
+    {
+        var sessions = new[]
+        {
+            Make("1", repository: "owner/zebra"),
+            Make("2", repository: null),
+            Make("3", repository: "owner/apple"),
+        };
+
+        var sorted = SessionSummarySorting.Sort(sessions, SessionSortColumn.Repository, SessionSortDirection.Descending);
+
+        Assert.Equal(new[] { "1", "3", "2" }, sorted.Select(s => s.Id));
+    }
+
+    [Fact]
+    public void Sort_ByRepository_UsesNewestUpdatedSessionAsTieBreaker()
+    {
+        var sessions = new[]
+        {
+            Make("older", repository: "owner/repo", updatedAt: new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero)),
+            Make("newer", repository: "owner/repo", updatedAt: new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero)),
+        };
+
+        var sorted = SessionSummarySorting.Sort(sessions, SessionSortColumn.Repository, SessionSortDirection.Ascending);
+
+        Assert.Equal(new[] { "newer", "older" }, sorted.Select(s => s.Id));
     }
 
     [Fact]

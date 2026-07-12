@@ -35,7 +35,7 @@ else if (_matches is not null)
             <tr>
                 <th>Match</th>
                 <th>Summary</th>
-                <th>Repository</th>
+                <th>Remote Repository</th>
                 <th>Branch</th>
                 <th>Turns</th>
                 <th>Updated</th>
@@ -57,7 +57,7 @@ else if (_matches is not null)
                         }
                     </td>
                     <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
-                    <td>@(s.Repository ?? "—")</td>
+                    <td><SessionFilterLink FilterName="repository" Value="@s.Repository" /></td>
                     <td>@(s.Branch ?? "—")</td>
                     <td>@s.TurnCount</td>
                     <td>@s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>

@@ -34,9 +34,15 @@ function narniaCopyText(elementId, btn) {
 })();
 
 async function narniaSaveOverride(sessionId) {
+    const repositoryInput = document.getElementById('ov-repo');
+    if (!repositoryInput.checkValidity()) {
+        repositoryInput.reportValidity();
+        return;
+    }
+
     const payload = {
         displayName: document.getElementById('ov-display-name').value,
-        repository: document.getElementById('ov-repo').value,
+        repository: repositoryInput.value,
         branch: document.getElementById('ov-branch').value,
         notes: document.getElementById('ov-notes').value,
         localPath: document.getElementById('ov-local-path').value,
@@ -53,7 +59,13 @@ async function narniaSaveOverride(sessionId) {
         if (resp.ok) {
             window.location.reload();
         } else {
-            alert('Failed to save overrides (HTTP ' + resp.status + ')');
+            let message = 'Failed to save overrides (HTTP ' + resp.status + ')';
+            const contentType = resp.headers.get('content-type') ?? '';
+            if (contentType.includes('json')) {
+                const body = await resp.json();
+                message = body.errors?.repository?.[0] ?? message;
+            }
+            alert(message);
             if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
         }
     } catch (e) {

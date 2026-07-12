@@ -4,17 +4,67 @@ namespace NexusLabs.Narnia.Core.Repositories;
 
 public interface ISessionRepository
 {
+    /// <summary>
+    /// Lists every recorded session, ordered from most recently updated to least recently updated.
+    /// </summary>
+    /// <param name="includeArchived">Whether sessions archived through Narnia should be included.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>All matching session summaries.</returns>
+    ValueTask<SessionSummary[]> ListAllAsync(bool includeArchived = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the most recently updated visible sessions.
+    /// </summary>
+    /// <param name="limit">Maximum number of sessions to return. A negative value returns all sessions.</param>
+    /// <param name="includeArchived">Whether sessions archived through Narnia should be included.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Session summaries ordered from most recently updated to least recently updated.</returns>
     ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, bool includeArchived = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists sessions whose effective remote repository exactly matches the requested value.
+    /// </summary>
+    /// <param name="repository">Repository in <c>owner/repository</c> form.</param>
+    /// <param name="includeArchived">Whether sessions archived through Narnia should be included.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Matching session summaries ordered by most recent update.</returns>
     ValueTask<SessionSummary[]> ListByRepositoryAsync(string repository, bool includeArchived = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists sessions whose recorded working directory exactly matches the requested path.
+    /// </summary>
+    /// <param name="cwd">Working directory path to match.</param>
+    /// <param name="includeArchived">Whether sessions archived through Narnia should be included.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Matching session summaries ordered by most recent update.</returns>
     ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, bool includeArchived = false, CancellationToken ct = default);
     ValueTask<Session?> GetByIdAsync(string sessionId, CancellationToken ct = default);
     ValueTask<Turn[]> GetTurnsAsync(string sessionId, int offset = 0, int limit = 50, CancellationToken ct = default);
     ValueTask<Checkpoint[]> GetCheckpointsAsync(string sessionId, CancellationToken ct = default);
     ValueTask<SessionFile[]> GetFilesAsync(string sessionId, CancellationToken ct = default);
     ValueTask<SessionRef[]> GetRefsAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets global session statistics with repository-derived values based on effective visible metadata.
+    /// </summary>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Global session statistics.</returns>
     ValueTask<GlobalStats> GetGlobalStatsAsync(CancellationToken ct = default);
+
     ValueTask<ActivityDay[]> GetActivityByDateAsync(int days = 90, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets per-repository statistics after applying Narnia overrides and excluding archived sessions.
+    /// </summary>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Repository statistics ordered by descending visible session count.</returns>
     ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets session insights with repository and branch counts based on effective visible metadata.
+    /// </summary>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Aggregated session insights.</returns>
     ValueTask<SessionInsights> GetSessionInsightsAsync(CancellationToken ct = default);
     ValueTask<ActivityPatterns> GetActivityPatternsAsync(CancellationToken ct = default);
     ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default);

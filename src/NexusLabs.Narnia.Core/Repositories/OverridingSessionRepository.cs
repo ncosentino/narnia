@@ -12,22 +12,42 @@ public sealed class OverridingSessionRepository(
     SqliteSessionRepository inner,
     ISessionOverridesRepository overrides) : ISessionRepository
 {
+    /// <inheritdoc />
+    public async ValueTask<SessionSummary[]> ListAllAsync(bool includeArchived = false, CancellationToken ct = default)
+    {
+        var sessions = await inner.ListAllAsync(includeArchived: true, ct);
+        return await MergeAllAsync(sessions, includeArchived, ct);
+    }
+
     public async ValueTask<SessionSummary[]> ListRecentAsync(int limit = 20, bool includeArchived = false, CancellationToken ct = default)
     {
-        var sessions = await inner.ListRecentAsync(limit, includeArchived, ct);
-        return await MergeAllAsync(sessions, includeArchived, ct);
+        var sessions = await ListAllAsync(includeArchived, ct);
+        return limit < 0 ? sessions : sessions.Take(limit).ToArray();
     }
 
     public async ValueTask<SessionSummary[]> ListByRepositoryAsync(string repository, bool includeArchived = false, CancellationToken ct = default)
     {
-        var sessions = await inner.ListByRepositoryAsync(repository, includeArchived, ct);
-        return await MergeAllAsync(sessions, includeArchived, ct);
+        if (string.IsNullOrWhiteSpace(repository))
+            return [];
+
+        var sessions = await ListAllAsync(includeArchived, ct);
+        return sessions
+            .Where(session => string.Equals(
+                session.Repository,
+                repository.Trim(),
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
     }
 
     public async ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, bool includeArchived = false, CancellationToken ct = default)
     {
-        var sessions = await inner.ListByCwdAsync(cwd, includeArchived, ct);
-        return await MergeAllAsync(sessions, includeArchived, ct);
+        if (string.IsNullOrWhiteSpace(cwd))
+            return [];
+
+        var sessions = await ListAllAsync(includeArchived, ct);
+        return sessions
+            .Where(session => PathsEqual(session.Cwd, cwd))
+            .ToArray();
     }
 
     public async ValueTask<Session?> GetByIdAsync(string sessionId, CancellationToken ct = default)
@@ -53,17 +73,67 @@ public sealed class OverridingSessionRepository(
     public ValueTask<SessionRef[]> GetRefsAsync(string sessionId, CancellationToken ct = default) =>
         inner.GetRefsAsync(sessionId, ct);
 
-    public ValueTask<GlobalStats> GetGlobalStatsAsync(CancellationToken ct = default) =>
-        inner.GetGlobalStatsAsync(ct);
+    public async ValueTask<GlobalStats> GetGlobalStatsAsync(CancellationToken ct = default)
+    {
+        var statsTask = inner.GetGlobalStatsAsync(ct).AsTask();
+        var repositoryStatsTask = GetRepositoryStatsAsync(ct).AsTask();
+        await Task.WhenAll(statsTask, repositoryStatsTask);
+
+        var stats = await statsTask;
+        var repositoryStats = await repositoryStatsTask;
+        return stats with
+        {
+            MostActiveRepository = repositoryStats.FirstOrDefault()?.Repository,
+        };
+    }
 
     public ValueTask<ActivityDay[]> GetActivityByDateAsync(int days = 90, CancellationToken ct = default) =>
         inner.GetActivityByDateAsync(days, ct);
 
-    public ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default) =>
-        inner.GetRepositoryStatsAsync(ct);
+    public async ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default)
+    {
+        var sessionsTask = ListAllAsync(includeArchived: false, ct).AsTask();
+        var fileCountsTask = inner.GetFileCountsBySessionAsync(ct).AsTask();
+        await Task.WhenAll(sessionsTask, fileCountsTask);
 
-    public ValueTask<SessionInsights> GetSessionInsightsAsync(CancellationToken ct = default) =>
-        inner.GetSessionInsightsAsync(ct);
+        var sessions = await sessionsTask;
+        var fileCounts = await fileCountsTask;
+
+        return [.. sessions
+            .Where(session => !string.IsNullOrWhiteSpace(session.Repository))
+            .GroupBy(session => session.Repository!, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new RepositoryStats(
+                group.Key,
+                group.Count(),
+                group.Sum(session => session.TurnCount),
+                group.Sum(session => fileCounts.GetValueOrDefault(session.Id)),
+                group.Max(session => session.UpdatedAt)))
+            .OrderByDescending(stats => stats.SessionCount)
+            .ThenBy(stats => stats.Repository, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    public async ValueTask<SessionInsights> GetSessionInsightsAsync(CancellationToken ct = default)
+    {
+        var insightsTask = inner.GetSessionInsightsAsync(ct).AsTask();
+        var sessionsTask = ListAllAsync(includeArchived: false, ct).AsTask();
+        await Task.WhenAll(insightsTask, sessionsTask);
+
+        var insights = await insightsTask;
+        var sessions = await sessionsTask;
+        return insights with
+        {
+            DistinctRepositories = sessions
+                .Select(session => session.Repository)
+                .Where(repository => !string.IsNullOrWhiteSpace(repository))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count(),
+            DistinctBranches = sessions
+                .Select(session => session.Branch)
+                .Where(branch => !string.IsNullOrWhiteSpace(branch))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count(),
+        };
+    }
 
     public ValueTask<ActivityPatterns> GetActivityPatternsAsync(CancellationToken ct = default) =>
         inner.GetActivityPatternsAsync(ct);
@@ -95,31 +165,28 @@ public sealed class OverridingSessionRepository(
     // -------------------------------------------------------------------------
     private async ValueTask<SessionSummary[]> MergeAllAsync(SessionSummary[] sessions, bool includeArchived, CancellationToken ct)
     {
-        SessionSummary[] filtered = sessions;
-        if (!includeArchived)
+        var savedOverrides = await overrides.GetAllOverridesAsync(ct);
+        var result = new List<SessionSummary>(sessions.Length);
+        foreach (var session in sessions)
         {
-            var archivedIds = await overrides.GetArchivedSessionIdsAsync(ct);
-            if (archivedIds.Count > 0)
-                filtered = sessions.Where(s => !archivedIds.Contains(s.Id)).ToArray();
+            savedOverrides.TryGetValue(session.Id, out var sessionOverride);
+            if (!includeArchived && sessionOverride?.IsArchived == true)
+                continue;
+
+            result.Add(sessionOverride is null ? session : Merge(session, sessionOverride));
         }
 
-        var result = new SessionSummary[filtered.Length];
-        for (var i = 0; i < filtered.Length; i++)
-        {
-            var ov = await overrides.GetOverrideAsync(filtered[i].Id, ct);
-            result[i] = ov is null ? filtered[i] : Merge(filtered[i], ov);
-        }
-
-        return result;
+        return [.. result];
     }
 
     private async ValueTask<ResumeSuggestion[]> MergeAllAsync(ResumeSuggestion[] suggestions, CancellationToken ct)
     {
+        var savedOverrides = await overrides.GetAllOverridesAsync(ct);
         var result = new ResumeSuggestion[suggestions.Length];
         for (var i = 0; i < suggestions.Length; i++)
         {
-            var ov = await overrides.GetOverrideAsync(suggestions[i].Session.Id, ct);
-            result[i] = ov is null ? suggestions[i] : Merge(suggestions[i], ov);
+            savedOverrides.TryGetValue(suggestions[i].Session.Id, out var sessionOverride);
+            result[i] = sessionOverride is null ? suggestions[i] : Merge(suggestions[i], sessionOverride);
         }
 
         return result;
@@ -129,11 +196,12 @@ public sealed class OverridingSessionRepository(
     // a targeted ref lookup should still surface an archived session's match rather than hide it.
     private async ValueTask<CommitMatch[]> MergeAllAsync(CommitMatch[] matches, CancellationToken ct)
     {
+        var savedOverrides = await overrides.GetAllOverridesAsync(ct);
         var result = new CommitMatch[matches.Length];
         for (var i = 0; i < matches.Length; i++)
         {
-            var ov = await overrides.GetOverrideAsync(matches[i].Session.Id, ct);
-            result[i] = ov is null ? matches[i] : Merge(matches[i], ov);
+            savedOverrides.TryGetValue(matches[i].Session.Id, out var sessionOverride);
+            result[i] = sessionOverride is null ? matches[i] : Merge(matches[i], sessionOverride);
         }
 
         return result;
@@ -160,4 +228,18 @@ public sealed class OverridingSessionRepository(
 
     private static CommitMatch Merge(CommitMatch m, SessionOverride ov) =>
         m with { Session = Merge(m.Session, ov) };
+
+    private static bool PathsEqual(string? left, string right)
+    {
+        if (left is null)
+            return false;
+
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return string.Equals(
+            Path.TrimEndingDirectorySeparator(left),
+            Path.TrimEndingDirectorySeparator(right.Trim()),
+            comparison);
+    }
 }

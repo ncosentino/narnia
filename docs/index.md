@@ -18,13 +18,13 @@ Narnia exposes 16 tools over one shared HTTP endpoint (`/mcp`): eight for sessio
 | Tool | Description |
 |------|-------------|
 | [`list_recent_sessions`](tools/list-recent-sessions.md) | List the most recently updated sessions |
-| [`search_sessions`](tools/search-sessions.md) | Full-text search across session summaries, turns, and checkpoints |
+| [`search_sessions`](tools/search-sessions.md) | Ranked full-text search across session content |
 | [`get_session_details`](tools/get-session-details.md) | Get full metadata and statistics for a session |
 | [`get_session_checkpoints`](tools/get-session-checkpoints.md) | Retrieve all checkpoints with structured content |
 | [`get_session_turns`](tools/get-session-turns.md) | Paginated conversation turn history |
 | [`get_session_workspace`](tools/get-session-workspace.md) | Workspace metadata and session artifact files |
-| [`list_sessions_by_repository`](tools/list-sessions-by-repository.md) | Filter sessions by git repository |
-| [`list_sessions_by_cwd`](tools/list-sessions-by-cwd.md) | Filter sessions by working directory |
+| [`list_sessions_by_repository`](tools/list-sessions-by-repository.md) | Filter by exact effective remote repository |
+| [`list_sessions_by_cwd`](tools/list-sessions-by-cwd.md) | Filter by exact working directory |
 
 ### Scheduled Jobs
 

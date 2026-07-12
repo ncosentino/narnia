@@ -9,11 +9,28 @@
 
 <div class="page-actions">
     <h1>Sessions</h1>
-    <a href="@(string.IsNullOrWhiteSpace(Query) ? "/sessions" : $"/sessions?q={Uri.EscapeDataString(Query)}")" class="btn-refresh">↻ Refresh</a>
+    <a href="@RefreshUrl" class="btn-refresh">↻ Refresh</a>
 </div>
 
-<form method="get" action="/sessions">
-    <input type="search" name="q" value="@Query" placeholder="Search sessions..." />
+<form method="get" action="/sessions" class="session-search-form">
+    <input type="search"
+           name="q"
+           value="@Query"
+           placeholder="Search session content..."
+           aria-label="Search session content" />
+    @if (HasRepositoryFilter)
+    {
+        <input type="hidden" name="repository" value="@RepositoryFilter" />
+    }
+    @if (HasWorkingDirectoryFilter)
+    {
+        <input type="hidden" name="cwd" value="@WorkingDirectoryFilter" />
+    }
+    @if (ExplicitSortColumn is not null)
+    {
+        <input type="hidden" name="sort" value="@SessionSummarySorting.ToQueryValue(ExplicitSortColumn.Value)" />
+        <input type="hidden" name="dir" value="@(SortDirection == SessionSortDirection.Ascending ? "asc" : "desc")" />
+    }
     <label class="show-archived-label">
         <input type="checkbox" name="showArchived" value="true" checked="@ShowArchived" />
         Show archived
@@ -21,17 +38,50 @@
     <button type="submit">Search</button>
 </form>
 
+@if (HasRepositoryFilter || HasWorkingDirectoryFilter)
+{
+    <div class="session-scope">
+        @if (HasRepositoryFilter)
+        {
+            <span><strong>Remote repository:</strong> @RepositoryFilter</span>
+        }
+        @if (HasWorkingDirectoryFilter)
+        {
+            <span><strong>Working directory:</strong> <code>@WorkingDirectoryFilter</code></span>
+        }
+        <a href="@ClearExactFiltersUrl">Clear exact filters</a>
+    </div>
+}
+
+@if (HasContentSearch)
+{
+    <p class="search-hint">
+        Content search scans summaries, conversations, checkpoints, and workspace artifacts.
+        Remote Repository and Working Directory links use exact filters instead of keyword search.
+    </p>
+}
+
 @if (_sessions is not null && _sessions.Length > 0)
 {
-    <p>@_sessions.Length result(s)</p>
+    <p class="session-result-count">
+        <strong>@_totalResults result(s)</strong>
+        @if (_totalResults > _sessions.Length)
+        {
+            <span> — showing @FirstVisibleResult–@LastVisibleResult</span>
+        }
+        @if (HasContentSearch && ExplicitSortColumn is null)
+        {
+            <span> — ranked by relevance</span>
+        }
+    </p>
     <table class="sessions-table" id="sessions-table">
         <thead>
             <tr>
                 <th class="col-select"><input type="checkbox" title="Select all" onclick="narniaToggleAll(this)" /></th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Summary)" aria-label="@SortAriaLabel("Summary", SessionSortColumn.Summary)">Summary@(SortIndicator(SessionSortColumn.Summary))</a></th>
                 <th>Status</th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Repository)" aria-label="@SortAriaLabel("Repository", SessionSortColumn.Repository)">Repository@(SortIndicator(SessionSortColumn.Repository))</a></th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Directory)" aria-label="@SortAriaLabel("Directory", SessionSortColumn.Directory)">Directory@(SortIndicator(SessionSortColumn.Directory))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Repository)" aria-label="@SortAriaLabel("Remote Repository", SessionSortColumn.Repository)">Remote Repository@(SortIndicator(SessionSortColumn.Repository))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Directory)" aria-label="@SortAriaLabel("Working Directory", SessionSortColumn.Directory)">Working Directory@(SortIndicator(SessionSortColumn.Directory))</a></th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Turns)" aria-label="@SortAriaLabel("Turns", SessionSortColumn.Turns)">Turns@(SortIndicator(SessionSortColumn.Turns))</a></th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Checkpoints)" aria-label="@SortAriaLabel("Checkpoints", SessionSortColumn.Checkpoints)">Checkpoints@(SortIndicator(SessionSortColumn.Checkpoints))</a></th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Updated)" aria-label="@SortAriaLabel("Updated", SessionSortColumn.Updated)">Updated@(SortIndicator(SessionSortColumn.Updated))</a></th>
@@ -58,8 +108,8 @@
                             <span class="badge-remaining-work" title="@nextStepsPreview">remaining work</span>
                         }
                     </td>
-                    <td>@(s.Repository ?? "—")</td>
-                    <td class="cwd">@(s.Cwd ?? "—")</td>
+                    <td><SessionFilterLink FilterName="repository" Value="@s.Repository" /></td>
+                    <td><SessionFilterLink FilterName="cwd" Value="@s.Cwd" CssClass="cwd" /></td>
                     <td>@s.TurnCount</td>
                     <td>@s.CheckpointCount</td>
                     <td>@s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
@@ -67,6 +117,21 @@
             }
         </tbody>
     </table>
+
+    @if (_totalPages > 1)
+    {
+        <nav class="session-pagination" aria-label="Session result pages">
+            @if (_currentPage > 1)
+            {
+                <a href="@PageUrl(_currentPage - 1)">← Previous</a>
+            }
+            <span>Page @_currentPage of @_totalPages</span>
+            @if (_currentPage < _totalPages)
+            {
+                <a href="@PageUrl(_currentPage + 1)">Next →</a>
+            }
+        </nav>
+    }
 
     <div class="bulk-action-bar" id="bulk-action-bar" style="display:none;">
         <span id="bulk-count">0 selected</span>
@@ -82,104 +147,160 @@ else if (_sessions is not null)
 
 @if (_searchResults is not null && _searchResults.Length > 0)
 {
-    <h2>Search Matches</h2>
+    <h2>Match Context</h2>
+    <p class="search-hint">The strongest content match for each result shown on this page.</p>
     @foreach (var r in _searchResults)
     {
+        _sessionsById.TryGetValue(r.SessionId, out var session);
         <div class="search-result">
-            <a href="/sessions/@r.SessionId">@r.SessionId</a>
-            <span class="source-type">@r.SourceType</span>
-            <p>@r.Content</p>
+            <div class="search-result-header">
+                <a href="/sessions/@r.SessionId">@(session?.Summary ?? "(no summary)")</a>
+                <span class="source-type">@FormatSourceType(r.SourceType)</span>
+            </div>
+            @if (session is not null)
+            {
+                <div class="search-result-meta">
+                    @(session.Repository ?? "No remote repository") ·
+                    @(session.Cwd ?? "No working directory") ·
+                    updated @session.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                </div>
+            }
+            <p class="search-result-snippet">@r.Content</p>
         </div>
     }
 }
 
 @code {
+    /// <summary>Gets or sets the full-text content query.</summary>
     [SupplyParameterFromQuery(Name = "q")]
     public string? Query { get; set; }
 
+    /// <summary>Gets or sets whether archived sessions are included.</summary>
     [SupplyParameterFromQuery(Name = "showArchived")]
     public bool ShowArchived { get; set; }
 
+    /// <summary>Gets or sets the exact effective remote-repository filter.</summary>
+    [SupplyParameterFromQuery(Name = "repository")]
+    public string? RepositoryFilter { get; set; }
+
+    /// <summary>Gets or sets the exact recorded working-directory filter.</summary>
+    [SupplyParameterFromQuery(Name = "cwd")]
+    public string? WorkingDirectoryFilter { get; set; }
+
+    /// <summary>Gets or sets the requested sort column.</summary>
     [SupplyParameterFromQuery(Name = "sort")]
     public string? Sort { get; set; }
 
+    /// <summary>Gets or sets the requested sort direction.</summary>
     [SupplyParameterFromQuery(Name = "dir")]
     public string? Dir { get; set; }
 
+    /// <summary>Gets or sets the one-based result page.</summary>
+    [SupplyParameterFromQuery(Name = "page")]
+    public int Page { get; set; } = 1;
+
+    private const int PageSize = 100;
     private SessionSummary[]? _sessions;
     private SearchResult[]? _searchResults;
     private HashSet<string>? _archivedIds;
     private Dictionary<string, string>? _resumableMap;
+    private Dictionary<string, SessionSummary> _sessionsById = [];
+    private int _totalResults;
+    private int _totalPages;
+    private int _currentPage = 1;
 
-    private SessionSortColumn SortColumn => SessionSummarySorting.ParseColumn(Sort) ?? SessionSortColumn.Updated;
+    private bool HasContentSearch => !string.IsNullOrWhiteSpace(Query);
+    private bool HasRepositoryFilter => !string.IsNullOrWhiteSpace(RepositoryFilter);
+    private bool HasWorkingDirectoryFilter =>
+        !HasRepositoryFilter
+        && !string.IsNullOrWhiteSpace(WorkingDirectoryFilter);
+    private SessionSortColumn? ExplicitSortColumn => SessionSummarySorting.ParseColumn(Sort);
+    private SessionSortColumn? DisplaySortColumn => ExplicitSortColumn
+        ?? (HasContentSearch ? null : SessionSortColumn.Updated);
     private SessionSortDirection SortDirection => SessionSummarySorting.ParseDirection(Dir);
+    private int FirstVisibleResult => ((_currentPage - 1) * PageSize) + 1;
+    private int LastVisibleResult => Math.Min(_currentPage * PageSize, _totalResults);
+    private string RefreshUrl => BuildUrl(_currentPage);
+    private string ClearExactFiltersUrl => BuildUrl(page: 1, includeExactFilters: false);
 
     protected override async Task OnInitializedAsync()
     {
-        if (string.IsNullOrWhiteSpace(Query))
-        {
-            _sessions = await Repository.ListRecentAsync(100, ShowArchived);
-        }
-        else
-        {
-            _searchResults = await Search.SearchAsync(Query, 20);
+        var sessions = await LoadScopedSessionsAsync();
+        SearchResult[]? allSearchResults = null;
 
-            var orderedIds = _searchResults
-                .Select(r => r.SessionId)
-                .Distinct()
+        if (HasContentSearch)
+        {
+            allSearchResults = await Search.SearchAsync(
+                Query!,
+                int.MaxValue,
+                ShowArchived);
+            var searchOrder = allSearchResults
+                .Select((result, index) => (SessionId: result.SessionId, Index: index))
+                .ToDictionary(entry => entry.SessionId, entry => entry.Index, StringComparer.Ordinal);
+
+            sessions = sessions
+                .Where(session => searchOrder.ContainsKey(session.Id))
                 .ToArray();
 
-            var sessions = await Task.WhenAll(
-                orderedIds.Select(id => Repository.GetByIdAsync(id).AsTask()));
+            if (ExplicitSortColumn is null)
+                sessions = sessions.OrderBy(session => searchOrder[session.Id]).ToArray();
+        }
 
-            var byId = sessions
-                .Where(s => s is not null)
-                .ToDictionary(s => s!.Id, s => s!);
+        if (ExplicitSortColumn is not null)
+            sessions = SessionSummarySorting.Sort(sessions, ExplicitSortColumn.Value, SortDirection);
 
-            _sessions = orderedIds
-                .Where(byId.ContainsKey)
-                .Select(id => byId[id])
-                .Select(s => new SessionSummary(
-                    s.Id, s.Cwd, s.Repository, s.Branch, s.Summary,
-                    s.CreatedAt, s.UpdatedAt, s.TurnCount, s.CheckpointCount))
+        _totalResults = sessions.Length;
+        _totalPages = Math.Max(1, (int)Math.Ceiling(_totalResults / (double)PageSize));
+        _currentPage = Math.Clamp(Page, 1, _totalPages);
+        _sessions = sessions
+            .Skip((_currentPage - 1) * PageSize)
+            .Take(PageSize)
+            .ToArray();
+        _sessionsById = _sessions.ToDictionary(session => session.Id, StringComparer.Ordinal);
+
+        if (allSearchResults is not null)
+        {
+            var visibleOrder = _sessions
+                .Select((session, index) => (session.Id, Index: index))
+                .ToDictionary(entry => entry.Id, entry => entry.Index, StringComparer.Ordinal);
+            _searchResults = allSearchResults
+                .Where(result => visibleOrder.ContainsKey(result.SessionId))
+                .OrderBy(result => visibleOrder[result.SessionId])
                 .ToArray();
         }
 
         if (ShowArchived)
             _archivedIds = await OverridesRepository.GetArchivedSessionIdsAsync();
 
-        if (_sessions is { Length: > 0 } && SessionSummarySorting.ParseColumn(Sort) is not null)
-            _sessions = SessionSummarySorting.Sort(_sessions, SortColumn, SortDirection);
-
         if (_sessions is { Length: > 0 })
             _resumableMap = await Repository.GetResumableSessionIdsAsync(
                 _sessions.Select(s => s.Id).ToList());
     }
 
+    private async Task<SessionSummary[]> LoadScopedSessionsAsync()
+    {
+        if (HasRepositoryFilter)
+            return await Repository.ListByRepositoryAsync(RepositoryFilter!, ShowArchived);
+
+        if (HasWorkingDirectoryFilter)
+            return await Repository.ListByCwdAsync(WorkingDirectoryFilter!, ShowArchived);
+
+        return await Repository.ListAllAsync(ShowArchived);
+    }
+
     private string SortUrl(SessionSortColumn column)
     {
-        var nextDir = SessionSummarySorting.ParseColumn(Sort) == column && SortDirection == SessionSortDirection.Ascending
-            ? "desc"
-            : "asc";
-
-        var parameters = new List<string>
-        {
-            $"sort={SessionSummarySorting.ToQueryValue(column)}",
-            $"dir={nextDir}",
-        };
-
-        if (!string.IsNullOrWhiteSpace(Query))
-            parameters.Add($"q={Uri.EscapeDataString(Query)}");
-
-        if (ShowArchived)
-            parameters.Add("showArchived=true");
-
-        return "/sessions?" + string.Join("&", parameters);
+        var nextDirection = DisplaySortColumn == column
+            ? SortDirection == SessionSortDirection.Ascending
+                ? SessionSortDirection.Descending
+                : SessionSortDirection.Ascending
+            : DefaultDirection(column);
+        return BuildUrl(page: 1, sortColumn: column, sortDirection: nextDirection);
     }
 
     private string SortIndicator(SessionSortColumn column)
     {
-        if (SessionSummarySorting.ParseColumn(Sort) != column)
+        if (DisplaySortColumn != column)
             return string.Empty;
 
         return SortDirection == SessionSortDirection.Ascending ? " ▲" : " ▼";
@@ -187,10 +308,57 @@ else if (_sessions is not null)
 
     private string SortAriaLabel(string columnName, SessionSortColumn column)
     {
-        if (SessionSummarySorting.ParseColumn(Sort) != column)
+        if (DisplaySortColumn != column)
             return $"Sort by {columnName}";
 
         var current = SortDirection == SessionSortDirection.Ascending ? "ascending" : "descending";
         return $"Sort by {columnName}, currently sorted {current}";
     }
+
+    private string PageUrl(int page) => BuildUrl(page);
+
+    private string BuildUrl(
+        int page,
+        SessionSortColumn? sortColumn = null,
+        SessionSortDirection? sortDirection = null,
+        bool includeExactFilters = true)
+    {
+        var parameters = new List<string>();
+        if (HasContentSearch)
+            parameters.Add($"q={Uri.EscapeDataString(Query!)}");
+
+        if (includeExactFilters && HasRepositoryFilter)
+            parameters.Add($"repository={Uri.EscapeDataString(RepositoryFilter!)}");
+
+        if (includeExactFilters && HasWorkingDirectoryFilter)
+            parameters.Add($"cwd={Uri.EscapeDataString(WorkingDirectoryFilter!)}");
+
+        var column = sortColumn ?? ExplicitSortColumn;
+        if (column is not null)
+        {
+            parameters.Add($"sort={SessionSummarySorting.ToQueryValue(column.Value)}");
+            var direction = sortDirection ?? SortDirection;
+            parameters.Add($"dir={(direction == SessionSortDirection.Ascending ? "asc" : "desc")}");
+        }
+
+        if (ShowArchived)
+            parameters.Add("showArchived=true");
+
+        if (page > 1)
+            parameters.Add($"page={page}");
+
+        return parameters.Count == 0
+            ? "/sessions"
+            : "/sessions?" + string.Join("&", parameters);
+    }
+
+    private static SessionSortDirection DefaultDirection(SessionSortColumn column) =>
+        column is SessionSortColumn.Summary or SessionSortColumn.Repository or SessionSortColumn.Directory
+            ? SessionSortDirection.Ascending
+            : SessionSortDirection.Descending;
+
+    private static string FormatSourceType(string? sourceType) =>
+        string.IsNullOrWhiteSpace(sourceType)
+            ? "content"
+            : sourceType.Replace('_', ' ');
 }

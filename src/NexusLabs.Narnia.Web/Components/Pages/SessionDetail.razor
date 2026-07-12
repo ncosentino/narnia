@@ -47,11 +47,13 @@ else if (_session is not null)
         <dt>ID</dt><dd><code>@_session.Id</code></dd>
         @if (_session.Repository is not null)
         {
-            <dt>Repository</dt><dd>@_session.Repository (@(_session.Branch ?? "unknown branch"))</dd>
+            <dt>Remote Repository</dt>
+            <dd><SessionFilterLink FilterName="repository" Value="@_session.Repository" /> (@(_session.Branch ?? "unknown branch"))</dd>
         }
         @if (_session.Cwd is not null)
         {
-            <dt>Directory</dt><dd><code>@_session.Cwd</code></dd>
+            <dt>Working Directory</dt>
+            <dd><SessionFilterLink FilterName="cwd" Value="@_session.Cwd" CssClass="cwd" /></dd>
         }
         @if (_workspace?.GitRoot is not null)
         {
@@ -76,10 +78,12 @@ else if (_session is not null)
                 <span class="ov-original">session-store summary: @(_rawSession?.Summary ?? "(none)")</span>
             </div>
             <div class="override-field">
-                <label for="ov-repo">Repository</label>
+                <label for="ov-repo">Remote Repository (owner/repository)</label>
                 <input id="ov-repo" type="text" value="@(_override?.Repository ?? "")"
-                       placeholder="@(_rawSession?.Repository ?? "(none)")" />
-                <span class="ov-original">session-store repository: @(_rawSession?.Repository ?? "(none)")</span>
+                       placeholder="@(_rawSession?.Repository ?? "owner/repository")"
+                       pattern="(?!\.\.?/)(?![A-Za-z0-9_.\-]+/\.\.?$)[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+"
+                       title="Use owner/repository format, such as ncosentino/needlr." />
+                <span class="ov-original">session-store remote repository: @(_rawSession?.Repository ?? "(none)")</span>
             </div>
             <div class="override-field">
                 <label for="ov-branch">Branch</label>
@@ -92,7 +96,7 @@ else if (_session is not null)
                 <textarea id="ov-notes" rows="3" placeholder="Personal notes about this session…">@(_override?.Notes ?? "")</textarea>
             </div>
             <div class="override-field">
-                <label for="ov-local-path">Local Path</label>
+                <label for="ov-local-path">Preferred Resume Directory</label>
                 <input id="ov-local-path" type="text" value="@(_override?.LocalPath ?? "")"
                        placeholder="Preferred directory for launching this session" />
                 <span class="ov-original">Used as the "Preferred Path" resume command</span>

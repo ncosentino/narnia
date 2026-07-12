@@ -37,15 +37,15 @@ internal sealed class SessionTools
     }
 
     [McpServerTool(Name = "search_sessions")]
-    [Description("Full-text search across all session content including summaries, conversation turns, and checkpoints. Use FTS5 syntax, e.g. 'dependency injection' or 'auth*'.")]
+    [Description("Full-text search across visible session content including summaries, conversation turns, checkpoints, and workspace artifacts. Archived sessions are excluded. This does not filter repository or working-directory metadata; use the exact list tools for those fields.")]
     public async Task<string> SearchSessionsAsync(
-        [Description("Search query. Supports FTS5 syntax e.g. 'dependency injection' or 'auth*'.")] string query,
+        [Description("Content search query, e.g. 'dependency injection' or the prefix query 'auth*'.")] string query,
         [Description("Maximum number of results to return. Default 10.")] int limit = 10,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var results = await _search.SearchAsync(query, limit, cancellationToken);
+            var results = await _search.SearchAsync(query, limit, ct: cancellationToken);
             return JsonSerializer.Serialize(results, McpJsonContext.Default.SearchResultArray);
         }
         catch (Exception ex)
@@ -91,7 +91,7 @@ internal sealed class SessionTools
     }
 
     [McpServerTool(Name = "list_sessions_by_repository")]
-    [Description("List all sessions for a specific git repository.")]
+    [Description("List visible sessions whose effective remote repository exactly matches an owner/repository value. Narnia repository overrides are applied.")]
     public async Task<string> ListSessionsByRepositoryAsync(
         [Description("Repository in 'owner/repo' format, e.g. 'ncosentino/needlr'.")] string repo,
         CancellationToken cancellationToken = default)
@@ -108,7 +108,7 @@ internal sealed class SessionTools
     }
 
     [McpServerTool(Name = "list_sessions_by_cwd")]
-    [Description("List all sessions that were started in a specific working directory.")]
+    [Description("List visible sessions that were started in a specific working directory. Matching follows the operating system's path casing rules and ignores a trailing directory separator.")]
     public async Task<string> ListSessionsByCwdAsync(
         [Description("Working directory path, e.g. 'C:\\dev\\myproject'.")] string cwd,
         CancellationToken cancellationToken = default)
