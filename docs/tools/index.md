@@ -1,10 +1,10 @@
 ---
-description: Reference for all fifteen Narnia MCP tools -- session history search/browse and scheduled Copilot job management. Use these from any AI assistant that supports MCP.
+description: Reference for all sixteen Narnia MCP tools -- session history search/browse and scheduled Copilot job management. Use these from any AI assistant that supports MCP.
 ---
 
 # MCP Tools
 
-Narnia exposes fifteen MCP tools: eight for working with your local Copilot CLI session history, and seven for managing Narnia-owned scheduled Copilot jobs. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
+Narnia exposes sixteen MCP tools: eight for working with your local Copilot CLI session history, and eight for managing Narnia-owned scheduled Copilot jobs. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
 
 ## Session History Tools
 
@@ -41,6 +41,7 @@ Manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that 
 |------|---------|----------------|
 | [`list_schedules`](list-schedules.md) | All cataloged jobs joined to live task status | — |
 | [`get_schedule`](get-schedule.md) | A single job's full catalog entry by id | `id` |
+| [`get_schedule_log`](get-schedule-log.md) | Latest run log and live running state | `id` |
 | [`create_schedule`](create-schedule.md) | Create a job and (by default) register its task | `name`, `prompt`, `cadenceKind`, `time` |
 | [`update_schedule`](update-schedule.md) | Replace a job's definition and re-register | `id`, `name`, `prompt` |
 | [`set_schedule_enabled`](set-schedule-enabled.md) | Enable/disable a job's task | `id`, `enabled` |
@@ -48,4 +49,3 @@ Manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that 
 | [`delete_schedule`](delete-schedule.md) | Remove a job's task, wrapper, and catalog entry | `id` |
 
 These tools are backed by the same service as the web UI's Schedules page — creating or editing a job through either surface is immediately visible in the other.
-

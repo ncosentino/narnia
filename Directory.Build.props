@@ -9,5 +9,7 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <RootNamespace>$(MSBuildProjectName.Replace('-', '_'))</RootNamespace>
     <AssemblyName>$(MSBuildProjectName)</AssemblyName>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix>dev</VersionSuffix>
   </PropertyGroup>
 </Project>

@@ -60,6 +60,7 @@ nav:
     - list_sessions_by_cwd: tools/list-sessions-by-cwd.md
     - list_schedules: tools/list-schedules.md
     - get_schedule: tools/get-schedule.md
+    - get_schedule_log: tools/get-schedule-log.md
     - create_schedule: tools/create-schedule.md
     - update_schedule: tools/update-schedule.md
     - set_schedule_enabled: tools/set-schedule-enabled.md

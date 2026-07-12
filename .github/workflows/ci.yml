@@ -8,6 +8,74 @@ on:
   workflow_dispatch:
 
 jobs:
+  code:
+    name: Build and test .NET
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore narnia.slnx
+
+      - name: Build
+        run: dotnet build narnia.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test narnia.slnx -c Release --no-build
+
+  release-package:
+    name: Validate Windows release package
+    runs-on: windows-latest
+    needs: [code]
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Read development version
+        id: version
+        shell: pwsh
+        run: |
+          $version = dotnet msbuild `
+            src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj `
+            -nologo `
+            -getProperty:Version
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) {
+            throw "Could not read Narnia's development version."
+          }
+          "value=$($version.Trim())" >> $env:GITHUB_OUTPUT
+
+      - name: Build and smoke-test release package
+        shell: pwsh
+        run: |
+          ./scripts/Publish-NarniaRelease.ps1 `
+            -Version "${{ steps.version.outputs.value }}" `
+            -OutputDirectory ./artifacts/release
+
+      - name: Upload validated package
+        uses: actions/upload-artifact@v4
+        with:
+          name: narnia-win-x64-${{ github.sha }}
+          path: |
+            artifacts/release/narnia-win-x64.zip
+            artifacts/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
+
   docs:
     name: Build and deploy documentation
     runs-on: ubuntu-latest
@@ -30,7 +98,7 @@ jobs:
         run: python scripts/generate-articles.py docs/articles.md
 
       - name: Build documentation
-        run: python -m mkdocs build
+        run: python -m mkdocs build --strict
 
       - name: Deploy documentation (Cloudflare Pages)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'

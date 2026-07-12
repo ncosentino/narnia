@@ -1,5 +1,5 @@
 ---
-description: How to build Narnia from source. Covers dotnet build, dotnet publish, and runtime identifier options for each platform.
+description: How to build Narnia from source and produce the supported self-contained Windows x64 release package.
 ---
 
 # Building from Source
@@ -19,6 +19,10 @@ dotnet build narnia.slnx
 
 Both projects (`NexusLabs.Narnia.Core`, `NexusLabs.Narnia.Web`) build together via the solution file `narnia.slnx`.
 
+Narnia's supported prebuilt release target is **Windows x64**. The session browser and HTTP MCP
+server can compile elsewhere, but terminal-window recovery, scheduled jobs, logon autostart, and
+the complete launch/reopen experience are Windows integrations.
+
 ## Run Tests
 
 ```bash
@@ -27,26 +31,45 @@ dotnet test narnia.slnx
 
 Tests live in `tests/NexusLabs.Narnia.Core.Tests/` (xUnit v3 unit tests) and `tests/NexusLabs.Narnia.Web.Tests/` (`WebApplicationFactory` integration tests); both run together in this one command.
 
-## Publish — Web UI (serves the MCP endpoint too)
+## Publish the Web UI (serves the MCP endpoint too)
 
 The web app is the only executable to publish — it serves the Blazor UI and the `/mcp` endpoint from the same process, so there is no separate MCP server to build:
 
 ```bash
-dotnet publish src/NexusLabs.Narnia.Web -r <RID> -c Release
+dotnet publish src/NexusLabs.Narnia.Web -r win-x64 -c Release --self-contained true
 ```
 
-| Platform | Runtime Identifier (RID) |
-|----------|--------------------------|
-| Windows x64 | `win-x64` |
-| Linux x64 | `linux-x64` |
-| Linux ARM64 | `linux-arm64` |
-| macOS x64 (Intel) | `osx-x64` |
-| macOS ARM64 (Apple Silicon) | `osx-arm64` |
+The published application serves both the Blazor UI and the `/mcp` endpoint on port 5244.
 
-The published binary ends up in `src/NexusLabs.Narnia.Web/bin/Release/net10.0/<RID>/publish/`. Run the output executable directly — it starts serving both the Blazor UI and the MCP endpoint on port 5244.
+!!! note "Not NativeAOT or trimmed"
+    Blazor Static SSR doesn't support Narnia's previous NativeAOT model. The supported release is a
+    self-contained JIT application: users do not need .NET installed, but the release is a ZIP of
+    the application files rather than one native executable.
 
-!!! note "Not NativeAOT"
-    Blazor Static SSR doesn't yet support NativeAOT or full trimming as of .NET 10, so this is a standard framework-dependent/self-contained JIT publish, not a single trimmed native binary. An earlier NativeAOT stdio MCP server project (`NexusLabs.Narnia.McpServer`) was removed in favor of this in-process HTTP server, so every MCP client can share one always-on instance instead of each spawning its own process.
+## Build the Release Package
+
+Use the same reusable packager as CI and the tag-triggered release workflow:
+
+```powershell
+pwsh -File .\scripts\Publish-NarniaRelease.ps1 `
+  -Version "0.1.0-beta.1" `
+  -OutputDirectory .\artifacts\release
+```
+
+The script:
+
+1. Publishes a self-contained, untrimmed `win-x64` application.
+2. Stages the output with `README.md` and `LICENSE`.
+3. Runs the packaged executable with isolated test databases.
+4. Verifies `/health`, rendered UI, static assets, and MCP initialize/tool discovery.
+5. Creates `narnia-win-x64.zip` and `SHA256SUMS.txt`.
+
+The canonical development version lives in `Directory.Build.props`. Source/plugin builds append a
+git or content identity (for example, `0.1.0-dev+git.0ef3ff203603`); release builds override the
+version with the exact tag value.
+
+The packaging script requires PowerShell 7. The packaged application itself is self-contained and
+does not require PowerShell or .NET to run.
 
 ## Development Mode
 

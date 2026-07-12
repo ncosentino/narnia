@@ -3,11 +3,10 @@
     Computes a stable, comparable build identity for a narnia source tree.
 
 .DESCRIPTION
-    Narnia sets no explicit assembly version, so the .NET SDK only appends a "+<sha>" to the
-    informational version when it builds from a git checkout. A plugin-bundle install is not a git
-    checkout, so an un-stamped publish degrades to a bare "1.0.0" and a later update reports
-    "1.0.0 -> 1.0.0", proving nothing. This script produces an identity that is stamped into the
-    publish (see SKILL.md) so /health reports it verbatim:
+    Produces the source-identity suffix used by Get-NarniaBuildVersion.ps1. The full build version
+    combines Narnia's canonical development version from Directory.Build.props with this identity,
+    so /health can distinguish two builds even when both came from plugin bundles without git
+    metadata:
 
       * Git checkout (dev clone or $env:NARNIA_REPO_PATH): the short commit SHA, e.g. "git.0ef3ff203603".
       * Plugin bundle (no git): a deterministic SHA-256 over the 'src' content, e.g.
@@ -22,7 +21,6 @@
 
 .EXAMPLE
     $buildId = & ./Get-NarniaBuildId.ps1 -Root $NARNIA_ROOT
-    dotnet publish ... -p:InformationalVersion="1.0.0+$buildId"
 #>
 [CmdletBinding()]
 param(

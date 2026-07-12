@@ -80,21 +80,20 @@ There is **no** `git clone` and **no** well-known-path search. If neither resolv
 clear error. Getting newer narnia code is done by updating the plugin (`/plugin update narnia`),
 not by cloning here. Record the resolved path as `$NARNIA_ROOT`.
 
-## Stamp a build identity (so updates are verifiable)
+## Stamp a build version (so updates are verifiable)
 
-Narnia sets no explicit assembly version, so the .NET SDK only appends a `+<sha>` to the
-informational version when it builds from a **git checkout**. A plain plugin-bundle install is not
-a git checkout, so an un-stamped publish degrades to a bare `1.0.0` — and a later update could then
-report `1.0.0 → 1.0.0`, telling you nothing about whether the refresh actually took. To make every
-publish carry a meaningful, comparable identity, compute one at publish time and stamp it in.
+Narnia's canonical development version lives in `Directory.Build.props`. A source build also needs
+a content-sensitive identity: a plain plugin bundle is not a git checkout, so the SDK cannot append
+a commit SHA on its own and two different bundles could otherwise report the same version.
 
-The bundled script **[`scripts/Get-NarniaBuildId.ps1`](scripts/Get-NarniaBuildId.ps1)** (beside
-this skill) computes that identity for a narnia source tree — the short git SHA for a checkout, else
-a deterministic SHA-256 of the `src` content (which changes iff the code changes). Invoke it with
-the resolved `$NARNIA_ROOT`:
+The bundled script
+**[`scripts/Get-NarniaBuildVersion.ps1`](scripts/Get-NarniaBuildVersion.ps1)** reads the canonical
+version through MSBuild and appends a source identity — the short git SHA for a checkout, else a
+deterministic SHA-256 of the `src` content (which changes iff the code changes). Invoke it with the
+resolved `$NARNIA_ROOT`:
 
 ```powershell
-$buildId = & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Get-NarniaBuildId.ps1" -Root $NARNIA_ROOT
+$buildVersion = & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Get-NarniaBuildVersion.ps1" -Root $NARNIA_ROOT
 ```
 
 Then **always publish with the stamp** so `/health` (and the run-state file) report it verbatim:
@@ -103,13 +102,14 @@ Then **always publish with the stamp** so `/health` (and the run-state file) rep
 dotnet publish "$NARNIA_ROOT/src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" `
   -c Release -o $runDir `
   -p:IncludeSourceRevisionInInformationalVersion=false `
-  -p:InformationalVersion="1.0.0+$buildId"
+  -p:InformationalVersion="$buildVersion"
 ```
 
 `IncludeSourceRevisionInInformationalVersion=false` stops the SDK appending its own git suffix so
-the stamped value is used verbatim. `Program.cs` reads this informational version, so it surfaces
-as the `version` in `/health` — making the **Update** old → new comparison meaningful for *every*
-install type, bundle or git.
+the stamped value is used verbatim. `Program.cs` reads this informational version, so `/health`
+reports values such as `0.1.0-dev+git.0ef3ff203603` or
+`0.1.0-dev+content.f1a82e159aba`, making the **Update** comparison meaningful for every install
+type.
 
 ## Quick reference
 
@@ -139,11 +139,11 @@ install type, bundle or git.
    build identity (see *Stamp a build identity*):
    ```powershell
    $runDir = Join-Path $env:LOCALAPPDATA 'narnia\app'
-   $buildId = & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Get-NarniaBuildId.ps1" -Root $NARNIA_ROOT
+   $buildVersion = & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Get-NarniaBuildVersion.ps1" -Root $NARNIA_ROOT
    dotnet publish "$NARNIA_ROOT/src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" `
      -c Release -o $runDir `
      -p:IncludeSourceRevisionInInformationalVersion=false `
-     -p:InformationalVersion="1.0.0+$buildId"
+     -p:InformationalVersion="$buildVersion"
    ```
    If publish fails, show the full output to the user and stop.
 4. **Launch detached** from the run dir, bound to loopback so it survives the session:
@@ -197,18 +197,19 @@ bundle this skill resolves. To roll a running server onto the current bundle:
 1. **Record the running version.** `GET /health` and keep its `version` field (or read `Version`
    from the run-state file `<LocalAppData>/narnia/web-server.json`) as the *before* version. If the
    server is down, note that — this becomes a first **Start**, not a version swap.
-2. **Pre-check (skip a needless republish).** Run `scripts/Get-NarniaBuildId.ps1 -Root $NARNIA_ROOT`
-   and compare `1.0.0+<buildId>` to the running `version`. If they match, the server is already on
-   the bundle's code — report "already current" and stop. Because the build id is content-derived,
-   this now works for **bundle installs too**, not just git checkouts.
+2. **Pre-check (skip a needless republish).** Run
+   `scripts/Get-NarniaBuildVersion.ps1 -Root $NARNIA_ROOT` and compare the returned value to the
+   running `version`. If they match, the server is already on the bundle's code — report "already
+   current" and stop. Because the build identity is content-derived, this works for **bundle
+   installs too**, not just git checkouts.
 3. **Stop** (graceful) — releases any file lock on the run dir.
 4. **Re-publish** from `$NARNIA_ROOT` to the run dir **with the build-identity stamp** (see *Stamp a
    build identity*); overwrites the previous copy, safe because the server is stopped.
 5. **Start**, then poll `/health` until it returns 200.
 6. **Report old → new version.** Read the new `version` from `/health` and report the transition
-   (e.g. `1.0.0+content.ab12cd34ef56 → 1.0.0+content.99aa88bb77cc`). Because the id is stamped, a
-   real code change always shows a changed value, and an identical before/after genuinely means the
-   code did not change.
+   (e.g. `0.1.0-dev+content.ab12cd34ef56 → 0.1.0-dev+content.99aa88bb77cc`). Because the identity
+   is stamped, a real code change always shows a changed value, and an identical before/after
+   genuinely means the code did not change.
 
 Never re-publish or rebuild into the run dir while the server is running — stop it first.
 
