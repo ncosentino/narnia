@@ -312,6 +312,20 @@ public sealed class OverridingSessionRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetFileHistoryAsync_DisplayNameOverride_UsesEffectiveSummary()
+    {
+        _savedOverrides["sess-1"] = MakeOverride("sess-1") with { DisplayName = "Custom file session" };
+
+        var results = await _repository.GetFileHistoryAsync(
+            "src/One.cs",
+            TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(results);
+        Assert.Equal("Custom file session", entry.Summary);
+        Assert.Equal("Raw summary", entry.RecordedSummary);
+    }
+
+    [Fact]
     public async Task SearchAsync_ArchivedTopMatch_DoesNotConsumeLimit()
     {
         var raw = await _inner.SearchAsync(

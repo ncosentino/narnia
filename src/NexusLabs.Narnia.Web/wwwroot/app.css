@@ -330,6 +330,8 @@ a { color: var(--link); }
 
 /* ── Hot Files ───────────────────────────────────────────────── */
 .hot-file-path { font-family: monospace; font-size: .82rem; word-break: break-all; }
+.file-path-search { font-family: monospace; }
+.file-timeline-recorded { color: var(--text-subtle); font-size: .8rem; margin-top: .25rem; }
 
 /* ── Resume Suggestions ──────────────────────────────────────── */
 .resume-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }

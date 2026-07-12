@@ -4,76 +4,168 @@
 @using System.Text.Json
 @inject ISessionRepository Repository
 
-<PageTitle>File History — Narnia</PageTitle>
+<PageTitle>Files — Narnia</PageTitle>
 
-<h1>File History</h1>
-<p>View every session that touched a specific file.</p>
+<h1>Files</h1>
+<p>
+    Search the file paths recorded by Copilot sessions. Search ignores path casing and treats
+    forward and backward slashes as equivalent; selecting a result opens that recorded path's
+    session history.
+</p>
 
 <form method="get" action="/files">
-    <input type="text" name="path" value="@Path" placeholder="Enter file path, e.g. src/Program.cs" style="font-family:monospace" />
-    <button type="submit">Look up</button>
+    <input type="search"
+           name="q"
+           value="@Query"
+           placeholder="Search paths, e.g. Program.cs or src/services"
+           aria-label="Search recorded file paths"
+           class="file-path-search" />
+    <button type="submit">Search</button>
 </form>
 
-@if (!string.IsNullOrWhiteSpace(Path) && _history is null)
+@if (!string.IsNullOrWhiteSpace(Path))
 {
-    <p>Loading…</p>
-}
-else if (_history is { Length: 0 })
-{
-    <p>No sessions found for <code>@Path</code>.</p>
-}
-else if (_history is not null)
-{
-    <p><strong>@_history.Length session(s)</strong> touched <code>@Path</code></p>
-
-    <div class="chart-container">
-        <canvas id="file-history-chart"></canvas>
+    <div class="page-actions">
+        <h2>History for <code>@Path</code></h2>
+        <a href="@SearchUrl" class="btn-refresh">← Back to file search</a>
     </div>
-    <script type="application/json" data-chart-id="file-history-chart">
-        @((MarkupString)BuildChartJson(_history))
-    </script>
 
-    <div class="file-timeline">
-        @foreach (var entry in _history)
-        {
-            <div class="file-timeline-entry">
-                <div class="file-timeline-date">@entry.FirstSeenAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</div>
-                <div>
-                    <span class="file-timeline-summary-cell">
-                        <FavoriteButton SessionId="@entry.SessionId" IsFavorite="@entry.IsFavorite" />
-                        <a class="file-timeline-summary" href="/sessions/@entry.SessionId">@(entry.Summary ?? entry.SessionId)</a>
-                    </span>
-                    @if (entry.ToolName is not null)
+    @if (_history is { Length: 0 })
+    {
+        <p>No sessions recorded this exact normalized path. Search for part of the filename to find stored variants.</p>
+    }
+    else if (_history is not null)
+    {
+        <p><strong>@_history.Length session(s)</strong> recorded this path.</p>
+
+        <div class="chart-container">
+            <canvas id="file-history-chart"></canvas>
+        </div>
+        <script type="application/json" data-chart-id="file-history-chart">
+            @((MarkupString)BuildChartJson(_history))
+        </script>
+
+        <div class="file-timeline">
+            @foreach (var entry in _history)
+            {
+                <div class="file-timeline-entry">
+                    <div class="file-timeline-date">@FormatTime(entry.FirstSeenAt)</div>
+                    <div>
+                        <span class="file-timeline-summary-cell">
+                            <FavoriteButton SessionId="@entry.SessionId" IsFavorite="@entry.IsFavorite" />
+                            <a class="file-timeline-summary" href="/sessions/@entry.SessionId">@(entry.Summary ?? entry.SessionId)</a>
+                        </span>
+                        @if (entry.ToolName is not null)
+                        {
+                            <span class="file-timeline-tool">@entry.ToolName</span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(entry.RecordedSummary)
+                        && !string.Equals(entry.RecordedSummary, entry.Summary, StringComparison.Ordinal))
                     {
-                        <span class="file-timeline-tool">@entry.ToolName</span>
+                        <div class="file-timeline-recorded">Session-store summary: @entry.RecordedSummary</div>
+                    }
+                    @if (!string.Equals(entry.RecordedPath, Path, StringComparison.Ordinal))
+                    {
+                        <div class="file-timeline-recorded">Recorded as <code>@entry.RecordedPath</code></div>
+                    }
+                    @if (entry.CheckpointOverview is not null)
+                    {
+                        <div class="file-timeline-overview">@entry.CheckpointOverview</div>
                     }
                 </div>
-                @if (entry.CheckpointOverview is not null)
+            }
+        </div>
+    }
+}
+
+@if (_files is not null)
+{
+    <h2>@(string.IsNullOrWhiteSpace(Query) ? "Recently Recorded Paths" : "Matching Recorded Paths")</h2>
+    @if (_files.Length == 0)
+    {
+        <p>No recorded paths matched <code>@Query</code>.</p>
+    }
+    else
+    {
+        <p>
+            <strong>@_files.Length recorded path(s)</strong>
+            @if (_files.Length == 100)
+            {
+                <span> — showing the first 100; refine the search to narrow the list.</span>
+            }
+        </p>
+        <p class="search-hint">
+            Paths are displayed exactly as recorded. Selecting one opens normalized exact history
+            across slash and casing variants.
+        </p>
+        <table class="sessions-table" data-resizable-table="files">
+            <thead>
+                <tr>
+                    <th>Recorded Path</th>
+                    <th>Sessions</th>
+                    <th>First Seen</th>
+                    <th>Last Seen</th>
+                    <th>Latest Tool</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var file in _files)
                 {
-                    <div class="file-timeline-overview">@entry.CheckpointOverview</div>
+                    <tr>
+                        <td><a class="hot-file-path" href="@HistoryUrl(file.FilePath)">@file.FilePath</a></td>
+                        <td>@file.SessionCount</td>
+                        <td>@FormatTime(file.FirstSeenAt)</td>
+                        <td>@FormatTime(file.LastSeenAt)</td>
+                        <td>@(file.LastToolName ?? "—")</td>
+                    </tr>
                 }
-            </div>
-        }
-    </div>
+            </tbody>
+        </table>
+    }
 }
 
 @code {
+    /// <summary>Gets or sets the path fragment used for discovery.</summary>
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? Query { get; set; }
+
+    /// <summary>Gets or sets the selected recorded path whose history is displayed.</summary>
     [SupplyParameterFromQuery(Name = "path")]
     public string? Path { get; set; }
 
+    private HotFile[]? _files;
     private FileHistoryEntry[]? _history;
+    private string SearchUrl => string.IsNullOrWhiteSpace(Query)
+        ? "/files"
+        : $"/files?q={Uri.EscapeDataString(Query)}";
 
     protected override async Task OnInitializedAsync()
     {
         if (!string.IsNullOrWhiteSpace(Path))
             _history = await Repository.GetFileHistoryAsync(Path);
+
+        if (string.IsNullOrWhiteSpace(Path) || !string.IsNullOrWhiteSpace(Query))
+            _files = await Repository.SearchFilesAsync(Query ?? "", 100);
+    }
+
+    private string HistoryUrl(string filePath)
+    {
+        var parameters = new List<string>
+        {
+            $"path={Uri.EscapeDataString(filePath)}",
+        };
+        if (!string.IsNullOrWhiteSpace(Query))
+            parameters.Add($"q={Uri.EscapeDataString(Query)}");
+        return "/files?" + string.Join("&", parameters);
     }
 
     private static string BuildChartJson(FileHistoryEntry[] data)
     {
         var byMonth = data
-            .GroupBy(e => e.FirstSeenAt.ToString("yyyy-MM"))
-            .OrderBy(g => g.Key)
+            .GroupBy(entry => entry.FirstSeenAt?.ToString("yyyy-MM") ?? "Unknown")
+            .OrderBy(group => group.Key == "Unknown" ? 1 : 0)
+            .ThenBy(group => group.Key)
             .ToArray();
 
         return JsonSerializer.Serialize(new
@@ -81,19 +173,28 @@ else if (_history is not null)
             type = "bar",
             data = new
             {
-                labels = byMonth.Select(g => g.Key).ToArray(),
+                labels = byMonth.Select(group => group.Key).ToArray(),
                 datasets = new[]
                 {
-                    new { label = "Sessions", data = byMonth.Select(g => g.Count()).ToArray(),
-                          backgroundColor = "rgba(239,68,68,0.7)", borderColor = "rgba(239,68,68,1)", borderWidth = 1 }
-                }
+                    new
+                    {
+                        label = "Sessions",
+                        data = byMonth.Select(group => group.Count()).ToArray(),
+                        backgroundColor = "rgba(239,68,68,0.7)",
+                        borderColor = "rgba(239,68,68,1)",
+                        borderWidth = 1,
+                    },
+                },
             },
             options = new
             {
                 responsive = true,
                 plugins = new { legend = new { display = false } },
-                scales = new { y = new { beginAtZero = true, ticks = new { stepSize = 1 } } }
-            }
+                scales = new { y = new { beginAtZero = true, ticks = new { stepSize = 1 } } },
+            },
         });
     }
+
+    private static string FormatTime(DateTimeOffset? value) =>
+        value?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Unknown";
 }
