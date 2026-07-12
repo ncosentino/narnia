@@ -175,25 +175,75 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         SELECT created_at FROM sessions WHERE created_at IS NOT NULL
         """;
 
-    private static readonly string HotFilesSql =
+    private static readonly string FileSummariesSql =
         """
-        SELECT file_path, COUNT(DISTINCT session_id) as session_count, tool_name
-        FROM session_files
-        WHERE file_path IS NOT NULL
-        GROUP BY file_path
-        ORDER BY session_count DESC
+        WITH file_summaries AS (
+            SELECT sf.file_path,
+                   COUNT(DISTINCT sf.session_id) as session_count,
+                   MIN(sf.first_seen_at) as first_seen_at,
+                   MAX(sf.first_seen_at) as last_seen_at,
+                   CASE
+                       WHEN @query = '' THEN 0
+                       WHEN narnia_path_equals(sf.file_path, @query) = 1 THEN 0
+                       WHEN narnia_path_ends_with(sf.file_path, @query) = 1 THEN 1
+                       ELSE 2
+                   END as match_rank,
+                   (
+                       SELECT sf2.tool_name
+                       FROM session_files sf2
+                       WHERE sf2.file_path = sf.file_path
+                       ORDER BY sf2.first_seen_at DESC, sf2.id DESC
+                       LIMIT 1
+                   ) as last_tool_name
+            FROM session_files sf
+            WHERE sf.file_path IS NOT NULL
+              AND (
+                  @query = ''
+                  OR narnia_path_contains(sf.file_path, @query) = 1
+              )
+            GROUP BY sf.file_path
+        )
+        SELECT file_path, session_count, last_tool_name, first_seen_at, last_seen_at
+        FROM file_summaries
+        ORDER BY
+            CASE WHEN @popular = 1 THEN session_count END DESC,
+            CASE WHEN @popular = 0 THEN match_rank END,
+            last_seen_at DESC,
+            session_count DESC,
+            file_path COLLATE NOCASE
         LIMIT @limit
         """;
 
     private static readonly string FileHistorySql =
         """
-        SELECT sf.session_id, s.summary, sf.tool_name, sf.first_seen_at,
-               (SELECT c.overview FROM checkpoints c WHERE c.session_id = sf.session_id
-                ORDER BY c.checkpoint_number LIMIT 1) as checkpoint_overview
-        FROM session_files sf
-        JOIN sessions s ON s.id = sf.session_id
-        WHERE sf.file_path = @filePath
-        ORDER BY sf.first_seen_at
+        WITH file_matches AS (
+            SELECT sf.session_id,
+                   sf.file_path,
+                   sf.tool_name,
+                   sf.first_seen_at,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY sf.session_id
+                       ORDER BY sf.first_seen_at IS NULL, sf.first_seen_at DESC, sf.id DESC
+                   ) as rn
+            FROM session_files sf
+            WHERE narnia_path_equals(sf.file_path, @filePath) = 1
+        )
+        SELECT fm.session_id,
+               s.summary,
+               fm.file_path,
+               fm.tool_name,
+               fm.first_seen_at,
+               (
+                   SELECT c.overview
+                   FROM checkpoints c
+                   WHERE c.session_id = fm.session_id
+                   ORDER BY c.checkpoint_number DESC
+                   LIMIT 1
+               ) as checkpoint_overview
+        FROM file_matches fm
+        JOIN sessions s ON s.id = fm.session_id
+        WHERE fm.rn = 1
+        ORDER BY fm.first_seen_at IS NULL, fm.first_seen_at DESC, fm.session_id
         """;
 
     // Tags each matching session with whether it came from an explicit session_refs row
@@ -573,12 +623,25 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
     }
 
     public async ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default)
+        => await QueryFileSummariesAsync(query: "", limit, popular: true, ct);
+
+    public async ValueTask<HotFile[]> SearchFilesAsync(string query, int limit = 100, CancellationToken ct = default)
+        => await QueryFileSummariesAsync(query, limit, popular: false, ct);
+
+    private async ValueTask<HotFile[]> QueryFileSummariesAsync(
+        string query,
+        int limit,
+        bool popular,
+        CancellationToken ct)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);
+        RegisterFilePathFunctions(connection);
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = HotFilesSql;
+        cmd.CommandText = FileSummariesSql;
+        cmd.Parameters.AddWithValue("@query", query);
+        cmd.Parameters.AddWithValue("@popular", popular ? 1 : 0);
         cmd.Parameters.AddWithValue("@limit", limit);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -588,7 +651,13 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             var filePath = reader.GetString(0);
             var sessionCount = reader.GetInt32(1);
             var toolName = reader.IsDBNull(2) ? null : reader.GetString(2);
-            results.Add(new HotFile(filePath, sessionCount, toolName));
+            var firstSeenAt = ParseNullableDateTimeOffset(reader.IsDBNull(3) ? null : reader.GetString(3));
+            var lastSeenAt = ParseNullableDateTimeOffset(reader.IsDBNull(4) ? null : reader.GetString(4));
+            results.Add(new HotFile(filePath, sessionCount, toolName)
+            {
+                FirstSeenAt = firstSeenAt,
+                LastSeenAt = lastSeenAt,
+            });
         }
         return [.. results];
     }
@@ -597,6 +666,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);
+        RegisterFilePathFunctions(connection);
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = FileHistorySql;
@@ -608,10 +678,14 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         {
             var sessionId = reader.GetString(0);
             var summary = reader.IsDBNull(1) ? null : reader.GetString(1);
-            var toolName = reader.IsDBNull(2) ? null : reader.GetString(2);
-            var firstSeenAt = ParseDateTimeOffset(reader.IsDBNull(3) ? null : reader.GetString(3));
-            var overview = reader.IsDBNull(4) ? null : reader.GetString(4);
-            results.Add(new FileHistoryEntry(sessionId, summary, toolName, firstSeenAt, overview));
+            var recordedPath = reader.IsDBNull(2) ? null : reader.GetString(2);
+            var toolName = reader.IsDBNull(3) ? null : reader.GetString(3);
+            var firstSeenAt = ParseNullableDateTimeOffset(reader.IsDBNull(4) ? null : reader.GetString(4));
+            var overview = reader.IsDBNull(5) ? null : reader.GetString(5);
+            results.Add(new FileHistoryEntry(sessionId, summary, toolName, firstSeenAt, overview)
+            {
+                RecordedPath = recordedPath,
+            });
         }
         return [.. results];
     }
@@ -778,6 +852,49 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         }
     }
 
+    private static void RegisterFilePathFunctions(SqliteConnection connection)
+    {
+        connection.CreateFunction<string?, string?, bool>(
+            "narnia_path_contains",
+            FilePathContains,
+            isDeterministic: true);
+        connection.CreateFunction<string?, string?, bool>(
+            "narnia_path_equals",
+            FilePathsEqual,
+            isDeterministic: true);
+        connection.CreateFunction<string?, string?, bool>(
+            "narnia_path_ends_with",
+            FilePathEndsWith,
+            isDeterministic: true);
+    }
+
+    private static bool FilePathContains(string? path, string? query)
+    {
+        var normalizedPath = NormalizeFilePathShape(path);
+        var normalizedQuery = NormalizeFilePathShape(query);
+        return normalizedPath is not null
+            && normalizedQuery is not null
+            && normalizedPath.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool FilePathsEqual(string? left, string? right) =>
+        string.Equals(
+            NormalizeFilePathShape(left),
+            NormalizeFilePathShape(right),
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool FilePathEndsWith(string? path, string? query)
+    {
+        var normalizedPath = NormalizeFilePathShape(path);
+        var normalizedQuery = NormalizeFilePathShape(query);
+        return normalizedPath is not null
+            && normalizedQuery is not null
+            && normalizedPath.EndsWith("/" + normalizedQuery, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeFilePathShape(string? path) =>
+        path?.Trim().Replace('\\', '/');
+
     private async ValueTask<SessionSummary[]> QuerySessionSummariesAsync(
         string commandText,
         Action<SqliteCommand>? configure,
@@ -893,4 +1010,7 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
 
     private static DateTimeOffset ParseDateTimeOffset(string? value) =>
         DateTimeOffset.TryParse(value, out var dt) ? dt : DateTimeOffset.MinValue;
+
+    private static DateTimeOffset? ParseNullableDateTimeOffset(string? value) =>
+        DateTimeOffset.TryParse(value, out var dt) ? dt : null;
 }

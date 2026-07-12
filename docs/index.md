@@ -10,6 +10,9 @@ Use the star control in any session view to favorite important sessions. Favorit
 
 Table columns can be resized by dragging the separator at the right edge of a header or by focusing it and using the arrow keys. Widths are stored in the browser for each table; double-click a separator or press Escape to restore that column's default width.
 
+The **Files** page searches raw paths recorded by session file activity, normalizing slash direction
+and casing for discovery. Selecting a stored path opens its exact normalized history across sessions.
+
 The supported prebuilt release is Windows x64. Narnia's defining recovery, scheduling, autostart,
 and terminal-launch features integrate with Windows Terminal, WMI, and Windows Task Scheduler.
 

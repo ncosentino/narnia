@@ -753,9 +753,83 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     [Fact]
     public async Task GetHotFilesAsync_ReturnsToolName()
     {
+        await ExecuteAsync(
+            """
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at)
+            VALUES ('sess-2', 'src/Program.cs', 'create', 1, '2025-02-01T10:00:00Z');
+            """);
+
         var results = await _repository.GetHotFilesAsync(10, TestContext.Current.CancellationToken);
 
-        Assert.Equal("edit", results[0].LastToolName);
+        Assert.Equal("create", results[0].LastToolName);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_PathFragment_MatchesAcrossSlashDirectionAndCase()
+    {
+        var results = await _repository.SearchFilesAsync(
+            @"SRC\program.cs",
+            10,
+            TestContext.Current.CancellationToken);
+
+        var result = Assert.Single(results);
+        Assert.Equal("src/Program.cs", result.FilePath);
+        Assert.Equal(new DateTimeOffset(2025, 1, 1, 10, 2, 0, TimeSpan.Zero), result.FirstSeenAt);
+        Assert.Equal(result.FirstSeenAt, result.LastSeenAt);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_EmptyQuery_ReturnsMostRecentlyRecordedPathsFirst()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at)
+            VALUES ('sess-2', 'src/Newest.cs', 'edit', 1, '2025-02-01T10:00:00Z');
+            """);
+
+        var results = await _repository.SearchFilesAsync(
+            "",
+            10,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("src/Newest.cs", results[0].FilePath);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_UnicodeAndWhitespace_UsesSharedNormalization()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at)
+            VALUES ('sess-2', '  C:\Ärea\File.cs  ', 'edit', 1, NULL);
+            """);
+
+        var results = await _repository.SearchFilesAsync(
+            @"c:/ärea/file.cs",
+            10,
+            TestContext.Current.CancellationToken);
+
+        var result = Assert.Single(results);
+        Assert.Equal(@"  C:\Ärea\File.cs  ", result.FilePath);
+        Assert.Null(result.FirstSeenAt);
+        Assert.Null(result.LastSeenAt);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_OrdinalIgnoreCase_HandlesFinalSigma()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at)
+            VALUES ('sess-2', 'C:\Σ\File.cs', 'edit', 1, '2025-02-01T10:00:00Z');
+            """);
+
+        var results = await _repository.SearchFilesAsync(
+            @"c:/ς/file.cs",
+            10,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(@"C:\Σ\File.cs", Assert.Single(results).FilePath);
     }
 
     // ── GetFileHistoryAsync ───────────────────────────────────────────────────
@@ -780,9 +854,69 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     [Fact]
     public async Task GetFileHistoryAsync_IncludesCheckpointOverview()
     {
+        await ExecuteAsync(
+            """
+            INSERT INTO checkpoints (session_id, checkpoint_number, title, overview, created_at)
+            VALUES ('sess-1', 2, 'Latest checkpoint', 'Latest overview', '2025-01-02T11:00:00Z');
+            """);
+
         var results = await _repository.GetFileHistoryAsync("src/Program.cs", TestContext.Current.CancellationToken);
 
-        Assert.Equal("Overview text", results[0].CheckpointOverview);
+        Assert.Equal("Latest overview", results[0].CheckpointOverview);
+    }
+
+    [Fact]
+    public async Task GetFileHistoryAsync_NormalizedVariants_ReturnOneLatestEntryPerSession()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at)
+            VALUES ('sess-1', 'SRC\Program.cs', 'create', 2, '2025-02-01T10:00:00Z');
+            """);
+
+        var results = await _repository.GetFileHistoryAsync(
+            @"src\PROGRAM.cs",
+            TestContext.Current.CancellationToken);
+
+        var result = Assert.Single(results);
+        Assert.Equal("sess-1", result.SessionId);
+        Assert.Equal(@"SRC\Program.cs", result.RecordedPath);
+        Assert.Equal("create", result.ToolName);
+    }
+
+    [Fact]
+    public async Task GetFileHistoryAsync_UnicodeAndWhitespace_UsesSharedNormalization()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at)
+            VALUES ('sess-2', '  C:\Ärea\File.cs  ', 'edit', 1, NULL);
+            """);
+
+        var results = await _repository.GetFileHistoryAsync(
+            @"c:/ärea/file.cs",
+            TestContext.Current.CancellationToken);
+
+        var result = Assert.Single(results);
+        Assert.Equal("sess-2", result.SessionId);
+        Assert.Null(result.FirstSeenAt);
+        Assert.Equal(@"  C:\Ärea\File.cs  ", result.RecordedPath);
+    }
+
+    [Fact]
+    public async Task GetFileHistoryAsync_OrdinalIgnoreCase_HandlesFinalSigma()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at)
+            VALUES ('sess-2', 'C:\Σ\File.cs', 'edit', 1, '2025-02-01T10:00:00Z');
+            """);
+
+        var results = await _repository.GetFileHistoryAsync(
+            @"c:/ς/file.cs",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("sess-2", Assert.Single(results).SessionId);
     }
 
     // ── GetResumeSuggestionsAsync ─────────────────────────────────────────────

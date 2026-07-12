@@ -68,6 +68,16 @@ public interface ISessionRepository
     ValueTask<SessionInsights> GetSessionInsightsAsync(CancellationToken ct = default);
     ValueTask<ActivityPatterns> GetActivityPatternsAsync(CancellationToken ct = default);
     ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches recorded file paths using case-insensitive, separator-normalized substring matching.
+    /// </summary>
+    /// <param name="query">Path fragment to search for. An empty value returns recently recorded paths.</param>
+    /// <param name="limit">Maximum number of path summaries to return.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Matching recorded path summaries.</returns>
+    ValueTask<HotFile[]> SearchFilesAsync(string query, int limit = 100, CancellationToken ct = default);
+
     ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default);
     ValueTask<CommitMatch[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default);
     ValueTask<ResumeSuggestion[]> GetResumeSuggestionsAsync(int limit = 10, CancellationToken ct = default);

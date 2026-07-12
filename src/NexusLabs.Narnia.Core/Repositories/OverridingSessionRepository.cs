@@ -141,6 +141,9 @@ public sealed class OverridingSessionRepository(
     public ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default) =>
         inner.GetHotFilesAsync(limit, ct);
 
+    public ValueTask<HotFile[]> SearchFilesAsync(string query, int limit = 100, CancellationToken ct = default) =>
+        inner.SearchFilesAsync(query, limit, ct);
+
     public async ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default)
     {
         var entries = await inner.GetFileHistoryAsync(filePath, ct);
@@ -154,6 +157,7 @@ public sealed class OverridingSessionRepository(
                 {
                     Summary = sessionOverride.DisplayName ?? entry.Summary,
                     IsFavorite = sessionOverride.IsFavorite,
+                    RecordedSummary = sessionOverride.DisplayName is null ? null : entry.Summary,
                 };
         })];
     }
