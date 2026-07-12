@@ -100,7 +100,11 @@ builder.Services
 
 var app = builder.Build();
 
-app.Services.GetRequiredService<SettingsDatabaseRelocator>().RelocateIfNeeded();
+// Relocation targets the real per-user legacy path. Integration tests and release smoke tests run
+// under the Testing environment with isolated connection strings and must never rename or copy a
+// user's actual legacy settings database.
+if (!app.Environment.IsEnvironment("Testing"))
+    app.Services.GetRequiredService<SettingsDatabaseRelocator>().RelocateIfNeeded();
 app.Services.GetRequiredService<NarniaSettingsDbMigrator>().MigrateUp();
 
 // Headless one-shot: `NexusLabs.Narnia.Web snapshot` records open terminal windows once and

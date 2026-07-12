@@ -18,6 +18,7 @@ packages/
 
 ## Publish
 publish/
+artifacts/
 
 ## Logs
 *.log

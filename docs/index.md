@@ -6,9 +6,12 @@ description: Narnia is an MCP server and Blazor web UI for browsing GitHub Copil
 
 Narnia is a single ASP.NET Core app — both an MCP server and a local web UI — for browsing your [GitHub Copilot CLI](https://githubnext.com/projects/copilot-in-the-cli) session history. It solves a real pain point: when Windows forces a restart (or any machine restarts), all active Copilot sessions disappear. Narnia lets you search, inspect, and resume sessions without losing context.
 
+The supported prebuilt release is Windows x64. Narnia's defining recovery, scheduling, autostart,
+and terminal-launch features integrate with Windows Terminal, WMI, and Windows Task Scheduler.
+
 ## MCP Tools
 
-Narnia exposes 15 tools over one shared HTTP endpoint (`/mcp`): eight for session history, seven for managing scheduled Copilot jobs.
+Narnia exposes 16 tools over one shared HTTP endpoint (`/mcp`): eight for session history, eight for managing scheduled Copilot jobs.
 
 ### Session History
 
@@ -29,6 +32,7 @@ Narnia exposes 15 tools over one shared HTTP endpoint (`/mcp`): eight for sessio
 |------|-------------|
 | [`list_schedules`](tools/list-schedules.md) | All cataloged scheduled jobs joined to live task status |
 | [`get_schedule`](tools/get-schedule.md) | A single scheduled job's full catalog entry by id |
+| [`get_schedule_log`](tools/get-schedule-log.md) | Read the latest run log and whether the task is still running |
 | [`create_schedule`](tools/create-schedule.md) | Create a scheduled job and (by default) register its task |
 | [`update_schedule`](tools/update-schedule.md) | Replace a scheduled job's definition and re-register it |
 | [`set_schedule_enabled`](tools/set-schedule-enabled.md) | Enable/disable a scheduled job's task |

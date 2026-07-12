@@ -1,5 +1,8 @@
 # Narnia
 
+[![CI](https://github.com/ncosentino/narnia/actions/workflows/ci.yml/badge.svg)](https://github.com/ncosentino/narnia/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ncosentino/narnia?include_prereleases&style=flat-square)](https://github.com/ncosentino/narnia/releases)
+
 **Narnia** is a single ASP.NET Core app — both an MCP server and a Blazor web UI — for browsing and searching [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) session history, recovering lost terminal windows, and managing scheduled Copilot jobs.
 
 If you use Copilot CLI heavily, you know the pain: a Windows update reboots your machine and every active session terminal is gone. Narnia makes it easy to find and resume sessions — either by asking a new Copilot session to search for you (via MCP), or by browsing a local web interface.
@@ -8,7 +11,7 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 
 ## Features
 
-- **MCP Server** — one shared HTTP endpoint (`/mcp`) exposing 15 tools that any MCP-compatible client (including Copilot CLI) can call to search session history and manage scheduled jobs — no per-client process to launch, every client talks to the same running instance
+- **MCP Server** — one shared HTTP endpoint (`/mcp`) exposing 16 tools that any MCP-compatible client (including Copilot CLI) can call to search session history and manage scheduled jobs — no per-client process to launch, every client talks to the same running instance
 - **Web UI** — Blazor Static SSR local web interface for browsing, searching, and reading session details, checkpoints, and conversation turns
 - **Scheduled Jobs** — create, edit, and monitor Windows Task Scheduler-backed `copilot -p` jobs (daily/weekly/monthly) with hidden/headless execution and live log streaming, from the web UI or MCP
 - **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
@@ -18,8 +21,9 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- Windows x64 for the supported prebuilt release and the complete recovery/scheduling feature set
 - Copilot CLI with an existing `~/.copilot/session-store.db`
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) only when building from source or using the rolling plugin/source-build channel
 
 ---
 
@@ -28,7 +32,34 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 Narnia is a single process: starting the web app also starts the MCP server. There is no
 separate MCP server to build or launch.
 
-### Start the server
+### Install a tagged Windows x64 release
+
+Download `narnia-win-x64.zip` and `SHA256SUMS.txt` from the
+[Releases page](https://github.com/ncosentino/narnia/releases), verify the archive, and extract it
+directly into Narnia's application directory:
+
+```powershell
+$expected = ((Get-Content .\SHA256SUMS.txt) -split '\s+')[0]
+$actual = (Get-FileHash .\narnia-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "Narnia release checksum mismatch." }
+
+$runDir = Join-Path $env:LOCALAPPDATA 'narnia\app'
+New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+Expand-Archive .\narnia-win-x64.zip -DestinationPath $runDir -Force
+Start-Process (Join-Path $runDir 'NexusLabs.Narnia.Web.exe') `
+  -ArgumentList '--urls','http://127.0.0.1:5244' `
+  -WindowStyle Hidden
+```
+
+The release is self-contained and does not require .NET to be installed. Release executables are
+currently unsigned, so Windows SmartScreen may identify the publisher as unknown; verify the published
+SHA-256 checksum before running the archive.
+
+To update a downloaded release, call `POST http://127.0.0.1:5244/shutdown`, wait for the server to
+exit, replace the application directory with the new ZIP contents, and start it again. Settings,
+schedules, and window history live outside the application directory.
+
+### Run from source
 
 ```bash
 dotnet run --project src/NexusLabs.Narnia.Web
@@ -36,7 +67,7 @@ dotnet run --project src/NexusLabs.Narnia.Web
 
 Then open [http://localhost:5244](http://localhost:5244) in your browser.
 
-You can also ask an LLM to do this for you via the [`narnia-web-server` skill](skills/narnia-web-server/SKILL.md) — it resolves the source, publishes a stamped build, launches it detached, and health-checks it. Once Narnia is installed as a plugin, a `sessionStart` hook (`hooks.json`) relaunches this same server automatically at the start of every Copilot CLI session, so in practice you rarely need to start it by hand.
+You can also ask an LLM to do this for you via the [`narnia-web-server` skill](skills/narnia-web-server/SKILL.md) — the rolling plugin channel resolves the plugin's current source, publishes a stamped development build, launches it detached, and health-checks it. Once Narnia is installed as a plugin, a `sessionStart` hook (`hooks.json`) relaunches an existing published server automatically at the start of every Copilot CLI session.
 
 ### Configure your MCP client
 
@@ -70,6 +101,7 @@ This is exactly what this repo's own [`.mcp.json`](.mcp.json) contains, so a Cop
 | `list_sessions_by_cwd` | Filter sessions by working directory |
 | `list_schedules` | All cataloged scheduled jobs joined to live task status |
 | `get_schedule` | A single scheduled job's full catalog entry by id |
+| `get_schedule_log` | Read the latest run log and whether the job is still running |
 | `create_schedule` | Create a scheduled job and (by default) register its task |
 | `update_schedule` | Replace a scheduled job's definition and re-register it |
 | `set_schedule_enabled` | Enable/disable a scheduled job's task |
@@ -176,6 +208,18 @@ dotnet publish src/NexusLabs.Narnia.Web -c Release -o <output-dir>
 ```
 
 The [`narnia-web-server` skill](skills/narnia-web-server/SKILL.md) does this automatically, stamping a content-derived build identity so `/health` always reflects whether the running server matches the latest source.
+
+### Building the Windows release package
+
+```powershell
+pwsh -File .\scripts\Publish-NarniaRelease.ps1 `
+  -Version "0.1.0-beta.1" `
+  -OutputDirectory .\artifacts\release
+```
+
+This creates and smoke-tests the self-contained `narnia-win-x64.zip`, then writes
+`SHA256SUMS.txt`. Tagged releases run this same script in GitHub Actions. Packaging requires
+PowerShell 7; installing and running the resulting release does not.
 
 ---
 

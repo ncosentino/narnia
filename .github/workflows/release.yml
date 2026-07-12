@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release tag
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Validate tag and main ancestry
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if (-not $tag.StartsWith('v', [StringComparison]::Ordinal)) {
+            throw "Release tag '$tag' must start with 'v'."
+          }
+          $version = ./scripts/Assert-NarniaVersion.ps1 -Version $tag.Substring(1)
+
+          git fetch origin main
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release tag '$tag' does not point to a commit contained in main."
+          }
+
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore narnia.slnx
+
+      - name: Build
+        run: dotnet build narnia.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test narnia.slnx -c Release --no-build
+
+  package:
+    name: Package Windows x64
+    runs-on: windows-latest
+    needs: [verify]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build and smoke-test release package
+        shell: pwsh
+        run: |
+          ./scripts/Publish-NarniaRelease.ps1 `
+            -Version "${{ needs.verify.outputs.version }}" `
+            -OutputDirectory ./artifacts/release
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            artifacts/release/narnia-win-x64.zip
+            artifacts/release/SHA256SUMS.txt
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [verify, package]
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Refuse to overwrite a published release
+        run: |
+          status=$(curl \
+            --silent \
+            --show-error \
+            --output release.json \
+            --write-out "%{http_code}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
+
+          if [[ "$status" == "200" ]]; then
+            if [[ "$(jq -r '.draft' release.json)" != "true" ]]; then
+              echo "Release $GITHUB_REF_NAME is already published; refusing to replace public assets." >&2
+              exit 1
+            fi
+          elif [[ "$status" != "404" ]]; then
+            echo "Could not safely determine release state (GitHub API returned HTTP $status)." >&2
+            cat release.json >&2
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Narnia ${{ github.ref_name }}
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*
+
+      - name: Publish completed release
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft=false \
+              --prerelease
+          else
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft=false \
+              --latest
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
