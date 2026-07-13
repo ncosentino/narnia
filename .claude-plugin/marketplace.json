@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "narnia",
-      "description": "MCP server for session queries plus skills for managing the Narnia web UI.",
+      "description": "MCP server for session queries plus skills for the Narnia web UI, scheduled jobs, and explicit Markdown report email delivery.",
       "source": "./",
       "category": "developer-tools",
       "homepage": "https://www.devleader.ca/projects/narnia/"

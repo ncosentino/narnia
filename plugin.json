@@ -1,6 +1,6 @@
 {
   "name": "narnia",
-  "description": "Session history explorer for GitHub Copilot CLI. Browse, search, and visualize your past coding sessions with a Blazor web UI and MCP server integration.",
+  "description": "Session history explorer for GitHub Copilot CLI, with skills for server lifecycle, scheduled jobs, and explicit Markdown report email delivery.",
   "author": {
     "name": "Nexus Labs"
   },
