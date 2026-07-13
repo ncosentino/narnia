@@ -568,6 +568,56 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         Assert.Equal(3, total);
     }
 
+    // ── GetActivityTimelineAsync ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetActivityTimelineAsync_ReturnsEveryTrackedActivityTypeByDate()
+    {
+        var results = await _repository.GetActivityTimelineAsync(9999, TestContext.Current.CancellationToken);
+
+        var firstDay = Assert.Single(results, day => day.Date == new DateOnly(2025, 1, 1));
+        Assert.Equal(1, firstDay.SessionCount);
+        Assert.Equal(2, firstDay.TurnCount);
+        Assert.Equal(1, firstDay.FilesTouched);
+        Assert.Equal(1, firstDay.CheckpointCount);
+
+        Assert.Equal(3, results.Sum(day => day.SessionCount));
+        Assert.Equal(3, results.Sum(day => day.TurnCount));
+        Assert.Equal(1, results.Sum(day => day.FilesTouched));
+        Assert.Equal(1, results.Sum(day => day.CheckpointCount));
+    }
+
+    [Fact]
+    public async Task GetActivityTimelineAsync_UsesEventDateAndFallsBackToSessionDate()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO turns (session_id, turn_index, user_message, assistant_response, timestamp)
+            VALUES ('sess-1', 2, 'Later question', 'Later answer', '2025-01-05T10:00:00Z');
+
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at)
+            VALUES ('sess-2', 'src/Fallback.cs', 'edit', 1, NULL);
+            """);
+
+        var results = await _repository.GetActivityTimelineAsync(9999, TestContext.Current.CancellationToken);
+
+        var laterTurnDay = Assert.Single(results, day => day.Date == new DateOnly(2025, 1, 5));
+        Assert.Equal(0, laterTurnDay.SessionCount);
+        Assert.Equal(1, laterTurnDay.TurnCount);
+
+        var fallbackDay = Assert.Single(results, day => day.Date == new DateOnly(2025, 1, 3));
+        Assert.Equal(1, fallbackDay.FilesTouched);
+    }
+
+    [Fact]
+    public async Task GetActivityTimelineAsync_ResultsAreSortedByDate()
+    {
+        var results = await _repository.GetActivityTimelineAsync(9999, TestContext.Current.CancellationToken);
+
+        for (var i = 1; i < results.Length; i++)
+            Assert.True(results[i].Date >= results[i - 1].Date);
+    }
+
     // ── GetRepositoryStatsAsync ───────────────────────────────────────────────
 
     [Fact]

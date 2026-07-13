@@ -79,7 +79,7 @@ else
     @if (_growth is { Length: > 0 })
     {
         <h2>Growth Over Time</h2>
-        <p>Cumulative total sessions since your first recorded session.</p>
+        <p>Cumulative sessions, turns, file touches, and checkpoints. Use the legend to show or hide a series.</p>
         <div class="chart-container">
             <canvas id="stats-growth-chart"></canvas>
         </div>
@@ -144,7 +144,7 @@ else
     private RepositoryStats[]? _repoStats;
     private SessionInsights? _insights;
     private ActivityPatterns? _patterns;
-    private ActivityDay[]? _growth;
+    private ActivityTimelineDay[]? _growth;
 
     protected override async Task OnInitializedAsync()
     {
@@ -152,7 +152,7 @@ else
         var repoStatsTask = Repository.GetRepositoryStatsAsync().AsTask();
         var insightsTask = Repository.GetSessionInsightsAsync().AsTask();
         var patternsTask = Repository.GetActivityPatternsAsync().AsTask();
-        var growthTask = Repository.GetActivityByDateAsync(3650).AsTask();
+        var growthTask = Repository.GetActivityTimelineAsync(3650).AsTask();
         await Task.WhenAll(statsTask, repoStatsTask, insightsTask, patternsTask, growthTask);
 
         _repoStats = await repoStatsTask;
@@ -183,10 +183,12 @@ else
             }
         });
 
-    private static string BuildGrowthChartJson(ActivityDay[] data)
+    private static string BuildGrowthChartJson(ActivityTimelineDay[] data)
     {
-        var cumulative = 0;
-        var running = data.Select(d => cumulative += d.SessionCount).ToArray();
+        var sessions = BuildCumulative(data, static day => day.SessionCount);
+        var turns = BuildCumulative(data, static day => day.TurnCount);
+        var files = BuildCumulative(data, static day => day.FilesTouched);
+        var checkpoints = BuildCumulative(data, static day => day.CheckpointCount);
 
         return JsonSerializer.Serialize(new
         {
@@ -196,18 +198,51 @@ else
                 labels = data.Select(d => d.Date.ToString("yyyy-MM-dd")).ToArray(),
                 datasets = new[]
                 {
-                    new { label = "Total Sessions", data = running,
+                    new { label = "Total Sessions", data = sessions, yAxisID = "y",
                           borderColor = "rgba(99,102,241,1)", backgroundColor = "rgba(99,102,241,0.1)",
-                          pointRadius = 0, tension = 0.25, fill = true }
+                          pointRadius = 0, pointHoverRadius = 3, borderWidth = 2, tension = 0.2, fill = false },
+                    new { label = "Total Turns", data = turns, yAxisID = "work",
+                          borderColor = "rgba(249,115,22,1)", backgroundColor = "rgba(249,115,22,0.1)",
+                          pointRadius = 0, pointHoverRadius = 3, borderWidth = 2, tension = 0.2, fill = false },
+                    new { label = "Total Files Touched", data = files, yAxisID = "work",
+                          borderColor = "rgba(16,185,129,1)", backgroundColor = "rgba(16,185,129,0.1)",
+                          pointRadius = 0, pointHoverRadius = 3, borderWidth = 2, tension = 0.2, fill = false },
+                    new { label = "Total Checkpoints", data = checkpoints, yAxisID = "y",
+                          borderColor = "rgba(139,92,246,1)", backgroundColor = "rgba(139,92,246,0.1)",
+                          pointRadius = 0, pointHoverRadius = 3, borderWidth = 2, tension = 0.2, fill = false }
                 }
             },
             options = new
             {
                 responsive = true,
-                plugins = new { legend = new { display = false } },
-                scales = new { y = new { beginAtZero = true } }
+                interaction = new { mode = "index", intersect = false },
+                plugins = new { legend = new { display = true, position = "bottom" } },
+                scales = new
+                {
+                    y = new
+                    {
+                        beginAtZero = true,
+                        position = "left",
+                        title = new { display = true, text = "Sessions / checkpoints" }
+                    },
+                    work = new
+                    {
+                        beginAtZero = true,
+                        position = "right",
+                        grid = new { drawOnChartArea = false },
+                        title = new { display = true, text = "Turns / files touched" }
+                    }
+                }
             }
         });
+    }
+
+    private static int[] BuildCumulative(
+        ActivityTimelineDay[] data,
+        Func<ActivityTimelineDay, int> selectCount)
+    {
+        var total = 0;
+        return data.Select(day => total += selectCount(day)).ToArray();
     }
 
     private static string BuildFileOpsChartJson(SessionInsights insights) =>
