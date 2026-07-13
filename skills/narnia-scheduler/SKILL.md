@@ -131,6 +131,26 @@ A job's prompt runs under a plain `copilot -p` with no pre-injected environment.
 - [ ] **The prompt says exactly what to do with output**, not just "generate X" — e.g. "write the
       result to `./drafts/`, then run `scriptname.ps1 -DraftPath <path>` for the deterministic
       follow-up." There is no hidden wrapper behavior beyond what the prompt says.
+- [ ] **Report delivery is explicit.** For a generated Markdown report, invoke the
+      `narnia-report-email` skill after the report exists. Name the profile and subject in the
+      prompt, state whether zero-finding reports should still be sent, and treat delivery failure as
+      job failure. Never add SMTP values to the schedule wrapper or prompt.
+
+### Explicit Markdown report delivery
+
+Use the `narnia-report-email` skill when a scheduled job should deliver a generated Markdown
+artifact. It resolves its own SMTP profile from Narnia's LocalAppData folder and has a network-free
+render-only mode for supervised validation.
+
+```text
+Run the report-producing skill and write the final Markdown report to an absolute path in the
+current Copilot session workspace. If report generation fails, stop and report the failure.
+
+After the report file exists, invoke the narnia-report-email skill with that report path, profile
+"default", and subject "Weekly engineering report". Send the email even when the report contains
+zero findings. Treat any email-delivery error as a failed job. Do not print or request SMTP
+credentials.
+```
 
 ## Supervised dry run (recommended before trusting any new or migrated job)
 

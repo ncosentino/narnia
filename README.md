@@ -113,7 +113,7 @@ This is exactly what this repo's own [`.mcp.json`](.mcp.json) contains, so a Cop
 
 ## Skills (Plugin System)
 
-Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Code via their plugin systems. Skills let the LLM manage the web UI (and its shared MCP endpoint) lifecycle directly — with full visibility into build output and adaptive error handling.
+Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Code via their plugin systems. Skills provide reusable workflows and deterministic scripts for web-server lifecycle, scheduled jobs, and explicit report delivery.
 
 ### Available Skills
 
@@ -121,6 +121,7 @@ Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Cod
 |-------|-------------|
 | `narnia-web-server` | Start, stop, restart, and check status of the Narnia web UI |
 | `narnia-scheduler` | Create, migrate, and manage Narnia-owned scheduled Copilot jobs |
+| `narnia-report-email` | Render Markdown reports as HTML and explicitly deliver them through a reusable SMTP profile |
 
 ### Installing as a Plugin
 
@@ -231,6 +232,7 @@ narnia/
   skills/
     narnia-web-server/            # Agentic skill for web UI + MCP server lifecycle management
     narnia-scheduler/             # Agentic skill for scheduled Copilot job create/migrate/verify
+    narnia-report-email/          # Deterministic Markdown report rendering + explicit SMTP delivery
   src/
     NexusLabs.Narnia.Core/        # Shared library — trim-safe, AOT-compatible
     NexusLabs.Narnia.Web/         # Blazor Static SSR web app + HTTP MCP server (/mcp), one process

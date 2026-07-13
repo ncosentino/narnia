@@ -44,6 +44,7 @@ Just ask the LLM naturally:
 - *"Migrate my hand-made 'Nightly Backup' scheduled task into Narnia"*
 - *"List my scheduled jobs and tell me if any are failing"*
 - *"Disable my example radar job for now"*
+- *"Schedule my weekly report and explicitly deliver the Markdown with the [narnia-report-email skill](narnia-report-email.md)"*
 
 ## Design Principles
 
@@ -51,3 +52,4 @@ Just ask the LLM naturally:
 - **One format.** Every job is first-class and always editable — there is no separate "adopted" tier.
 - **No pre-injected environment.** A job's prompt/skill must self-resolve its own secrets.
 - **Orchestration lives in the prompt, never in Narnia.** Multi-step behavior is prompt text or a script colocated with the skill it belongs to.
+- **Report delivery stays explicit.** A prompt may invoke `narnia-report-email` after generation, but the scheduler never injects SMTP behavior.

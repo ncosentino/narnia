@@ -70,6 +70,7 @@ nav:
     - Overview: skills/index.md
     - narnia-web-server: skills/narnia-web-server.md
     - narnia-scheduler: skills/narnia-scheduler.md
+    - narnia-report-email: skills/narnia-report-email.md
   - Troubleshooting: troubleshooting.md
   - Building from Source: building.md
   - Articles: articles.md

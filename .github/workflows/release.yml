@@ -56,6 +56,10 @@ jobs:
       - name: Test
         run: dotnet test narnia.slnx -c Release --no-build
 
+      - name: Test report email skill
+        shell: pwsh
+        run: ./skills/narnia-report-email/tests/Send-NarniaReportEmail.Tests.ps1
+
   package:
     name: Package Windows x64
     runs-on: windows-latest
