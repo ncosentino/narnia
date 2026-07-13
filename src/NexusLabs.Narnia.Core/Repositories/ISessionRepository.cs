@@ -51,7 +51,21 @@ public interface ISessionRepository
     /// <returns>Global session statistics.</returns>
     ValueTask<GlobalStats> GetGlobalStatsAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Gets daily session-creation counts for the requested recent window.
+    /// </summary>
+    /// <param name="days">Number of days before today to include.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Session counts ordered from earliest to latest activity date.</returns>
     ValueTask<ActivityDay[]> GetActivityByDateAsync(int days = 90, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets daily counts for sessions, turns, first-observed files, and checkpoints.
+    /// </summary>
+    /// <param name="days">Number of days before today to include.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Activity counts ordered from earliest to latest activity date.</returns>
+    ValueTask<ActivityTimelineDay[]> GetActivityTimelineAsync(int days = 90, CancellationToken ct = default);
 
     /// <summary>
     /// Gets per-repository statistics after applying Narnia overrides and excluding archived sessions.

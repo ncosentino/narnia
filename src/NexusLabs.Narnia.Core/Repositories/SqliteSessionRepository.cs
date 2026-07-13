@@ -122,11 +122,60 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
              GROUP BY DATE(created_at) ORDER BY COUNT(*) DESC LIMIT 1) as busiest_day
         """;
 
-    private static readonly string ActivityByDateSql =
+    private static readonly string ActivityTimelineSql =
         """
-        SELECT DATE(created_at) as day, COUNT(*) as cnt
-        FROM sessions
-        WHERE created_at >= DATE('now', @offset)
+        WITH daily_activity AS (
+            SELECT DATE(s.created_at) as day,
+                   COUNT(*) as session_count,
+                   0 as turn_count,
+                   0 as file_count,
+                   0 as checkpoint_count
+            FROM sessions s
+            WHERE DATE(s.created_at) >= DATE('now', @offset)
+            GROUP BY day
+
+            UNION ALL
+
+            SELECT DATE(COALESCE(t.timestamp, s.created_at)) as day,
+                   0 as session_count,
+                   COUNT(*) as turn_count,
+                   0 as file_count,
+                   0 as checkpoint_count
+            FROM turns t
+            LEFT JOIN sessions s ON s.id = t.session_id
+            WHERE DATE(COALESCE(t.timestamp, s.created_at)) >= DATE('now', @offset)
+            GROUP BY day
+
+            UNION ALL
+
+            SELECT DATE(COALESCE(sf.first_seen_at, s.created_at)) as day,
+                   0 as session_count,
+                   0 as turn_count,
+                   COUNT(*) as file_count,
+                   0 as checkpoint_count
+            FROM session_files sf
+            LEFT JOIN sessions s ON s.id = sf.session_id
+            WHERE DATE(COALESCE(sf.first_seen_at, s.created_at)) >= DATE('now', @offset)
+            GROUP BY day
+
+            UNION ALL
+
+            SELECT DATE(COALESCE(c.created_at, s.created_at)) as day,
+                   0 as session_count,
+                   0 as turn_count,
+                   0 as file_count,
+                   COUNT(*) as checkpoint_count
+            FROM checkpoints c
+            LEFT JOIN sessions s ON s.id = c.session_id
+            WHERE DATE(COALESCE(c.created_at, s.created_at)) >= DATE('now', @offset)
+            GROUP BY day
+        )
+        SELECT day,
+               SUM(session_count) as session_count,
+               SUM(turn_count) as turn_count,
+               SUM(file_count) as file_count,
+               SUM(checkpoint_count) as checkpoint_count
+        FROM daily_activity
         GROUP BY day
         ORDER BY day
         """;
@@ -488,22 +537,37 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         return new GlobalStats(totalSessions, totalTurns, avg, totalFiles, mostActiveRepo, busiestDay);
     }
 
+    /// <inheritdoc />
     public async ValueTask<ActivityDay[]> GetActivityByDateAsync(int days = 90, CancellationToken ct = default)
+    {
+        var timeline = await GetActivityTimelineAsync(days, ct);
+        return [.. timeline
+            .Where(day => day.SessionCount > 0)
+            .Select(day => new ActivityDay(day.Date, day.SessionCount))];
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ActivityTimelineDay[]> GetActivityTimelineAsync(
+        int days = 90,
+        CancellationToken ct = default)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = ActivityByDateSql;
+        cmd.CommandText = ActivityTimelineSql;
         cmd.Parameters.AddWithValue("@offset", $"-{days} days");
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
-        var results = new List<ActivityDay>();
+        var results = new List<ActivityTimelineDay>();
         while (await reader.ReadAsync(ct))
         {
-            var day = DateOnly.Parse(reader.GetString(0));
-            var count = reader.GetInt32(1);
-            results.Add(new ActivityDay(day, count));
+            results.Add(new ActivityTimelineDay(
+                Date: DateOnly.Parse(reader.GetString(0)),
+                SessionCount: reader.GetInt32(1),
+                TurnCount: reader.GetInt32(2),
+                FilesTouched: reader.GetInt32(3),
+                CheckpointCount: reader.GetInt32(4)));
         }
         return [.. results];
     }

@@ -90,6 +90,10 @@ public sealed class OverridingSessionRepository(
     public ValueTask<ActivityDay[]> GetActivityByDateAsync(int days = 90, CancellationToken ct = default) =>
         inner.GetActivityByDateAsync(days, ct);
 
+    /// <inheritdoc />
+    public ValueTask<ActivityTimelineDay[]> GetActivityTimelineAsync(int days = 90, CancellationToken ct = default) =>
+        inner.GetActivityTimelineAsync(days, ct);
+
     public async ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default)
     {
         var sessionsTask = ListAllAsync(includeArchived: false, ct).AsTask();
