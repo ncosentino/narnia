@@ -1,70 +1,210 @@
 @page "/"
 @using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Repositories
+@using NexusLabs.Narnia.Core.Services
 @inject ISessionRepository Repository
+@inject ITerminalWindowAggregator WindowSources
+@inject IScheduledJobRegistry ScheduledJobRegistry
 
-<PageTitle>Narnia — Copilot Session Browser</PageTitle>
-
-<div class="home-hero">
-    <h1>🗡️ Narnia</h1>
-    <p class="home-tagline">Browse, search, and resume your GitHub Copilot CLI sessions — even after a restart.</p>
-    <p class="home-description">
-        Narnia reads your local <code>~/.copilot/session-store.db</code> and session-state files so you can
-        quickly find past work, review conversation history and checkpoints, and pick up where you left off.
-        Use the <a href="/sessions">Sessions</a> page to search across all sessions, or jump straight to a recent one below.
-    </p>
-</div>
+<PageTitle>Dashboard — Narnia</PageTitle>
 
 <div class="page-actions">
-    <h2>Recent Sessions</h2>
+    <div class="dashboard-heading">
+        <h1>🗡️ Dashboard</h1>
+        <p>Find work, recover lost windows, and spot anything that needs attention.</p>
+    </div>
     <a href="/" class="btn-refresh">↻ Refresh</a>
 </div>
 
-@if (_sessions is null)
+<form method="get" action="/sessions" class="dashboard-search">
+    <input type="search" name="q" aria-label="Search sessions" placeholder="Search sessions, turns, and checkpoints…" />
+    <button type="submit">Search sessions</button>
+</form>
+
+@if (!_loaded)
 {
-    <p>Loading...</p>
-}
-else if (_sessions.Length == 0)
-{
-    <p>No sessions found. Make sure <code>~/.copilot/session-store.db</code> exists.</p>
+    <p>Loading dashboard...</p>
 }
 else
 {
-    <table class="sessions-table" data-resizable-table="home-sessions">
-        <thead>
-            <tr>
-                <th class="col-favorite">Favorite</th>
-                <th>Summary</th>
-                <th>Remote Repository</th>
-                <th>Working Directory</th>
-                <th>Turns</th>
-                <th>Checkpoints</th>
-                <th>Updated</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var s in _sessions)
+    <div class="dashboard-summary">
+        <a class="dashboard-summary-card" href="/stats">
+            <span class="dashboard-summary-value">@_sessionCount.ToString("N0")</span>
+            <span class="dashboard-summary-label">Searchable sessions</span>
+            <span class="dashboard-summary-detail">@_turnCount.ToString("N0") recorded turns</span>
+        </a>
+        <a class="dashboard-summary-card" href="/windows">
+            <span class="dashboard-summary-value">@OpenTabCount</span>
+            <span class="dashboard-summary-label">Open Copilot tabs</span>
+            <span class="dashboard-summary-detail">Live recovery tracking</span>
+        </a>
+        <a class="dashboard-summary-card" href="/windows">
+            <span class="dashboard-summary-value">@_windows.Closed.Count</span>
+            <span class="dashboard-summary-label">Recoverable windows</span>
+            <span class="dashboard-summary-detail">@Plural(ClosedTabCount, "tab") available to restore</span>
+        </a>
+        <a id="dashboard-schedules-card" class="dashboard-summary-card" href="/schedules">
+            <span id="dashboard-schedules-value" class="dashboard-summary-value">@_scheduledJobCount</span>
+            <span class="dashboard-summary-label">Scheduled jobs</span>
+            <span id="dashboard-schedules-detail" class="dashboard-summary-detail">Checking live health…</span>
+        </a>
+        <a class="dashboard-summary-card" href="/favorites">
+            <span class="dashboard-summary-value">@_favoriteCount</span>
+            <span class="dashboard-summary-label">Favorite sessions</span>
+            <span class="dashboard-summary-detail">Saved for quick access</span>
+        </a>
+    </div>
+
+    <div class="dashboard-grid">
+        <section class="dashboard-panel">
+            <div class="dashboard-panel-header">
+                <div>
+                    <h2>Continue working</h2>
+                    <p>Recent sessions whose latest checkpoint recorded next steps.</p>
+                </div>
+                <a href="/sessions">Browse sessions →</a>
+            </div>
+
+            @if (_resumeSuggestions.Length == 0)
             {
-                <tr>
-                    <td class="col-favorite"><FavoriteButton SessionId="@s.Id" IsFavorite="@s.IsFavorite" /></td>
-                    <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
-                    <td><SessionFilterLink FilterName="repository" Value="@s.Repository" /></td>
-                    <td><SessionFilterLink FilterName="cwd" Value="@s.Cwd" CssClass="cwd" /></td>
-                    <td>@s.TurnCount</td>
-                    <td>@s.CheckpointCount</td>
-                    <td>@s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
-                </tr>
+                <p class="dashboard-empty">No visible sessions have checkpoint next steps yet.</p>
             }
-        </tbody>
-    </table>
-    <p class="home-view-all"><a href="/sessions">View all sessions →</a> · <a href="/favorites">View favorites →</a></p>
+            else
+            {
+                @foreach (var suggestion in _resumeSuggestions)
+                {
+                    <article class="dashboard-item">
+                        <div class="dashboard-item-header">
+                            <a class="dashboard-item-title" href="/sessions/@suggestion.Session.Id">
+                                @(suggestion.Session.Summary ?? "(no summary)")
+                            </a>
+                            @if (suggestion.Session.IsFavorite)
+                            {
+                                <span class="dashboard-favorite" title="Favorite session">★</span>
+                            }
+                        </div>
+                        <div class="dashboard-item-meta">
+                            @(suggestion.Session.Repository ?? suggestion.Session.Cwd ?? "No repository recorded")
+                            · updated @FormatTime(suggestion.Session.UpdatedAt)
+                            @if (!string.IsNullOrWhiteSpace(suggestion.LatestCheckpointTitle))
+                            {
+                                <span> · @suggestion.LatestCheckpointTitle</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(suggestion.NextStepsPreview))
+                        {
+                            <div class="dashboard-item-body">@suggestion.NextStepsPreview</div>
+                        }
+                    </article>
+                }
+            }
+        </section>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-panel-header">
+                <div>
+                    <h2>Recover recent windows</h2>
+                    <p>Restore a lost Copilot window without finding each session manually.</p>
+                </div>
+                <a href="/windows">View recovery →</a>
+            </div>
+
+            @if (_windows.Closed.Count == 0)
+            {
+                <p class="dashboard-empty">No recently closed windows are available to restore.</p>
+            }
+            else
+            {
+                @foreach (var window in _windows.Closed.Take(3))
+                {
+                    <article class="dashboard-item">
+                        <div class="dashboard-item-header">
+                            <span class="dashboard-item-title">@WindowTitle(window)</span>
+                            <button type="button" class="launch-btn" onclick="narniaReopenWindow('@window.Id', this)">🚀 Restore</button>
+                        </div>
+                        <div class="dashboard-item-meta">@WindowMeta(window)</div>
+                    </article>
+                }
+            }
+        </section>
+
+        <section id="dashboard-schedules-panel" class="dashboard-panel">
+            <div class="dashboard-panel-header">
+                <div>
+                    <h2>Scheduled work</h2>
+                    <p>Live task health and the next unattended Copilot runs.</p>
+                </div>
+                <a href="/schedules">Manage schedules →</a>
+            </div>
+
+            <div id="dashboard-schedules-content">
+                <p class="dashboard-empty">Checking live scheduler health…</p>
+            </div>
+            <noscript>
+                <p class="dashboard-empty">Open the Schedules page to inspect live task health.</p>
+            </noscript>
+        </section>
+    </div>
 }
 
 @code {
-    private SessionSummary[]? _sessions;
+    private TerminalWindowSnapshot _windows = new([], []);
+    private ResumeSuggestion[] _resumeSuggestions = [];
+    private int _sessionCount;
+    private int _turnCount;
+    private int _favoriteCount;
+    private int _scheduledJobCount;
+    private bool _loaded;
+
+    private int OpenTabCount => _windows.Open.Sum(window => window.Tabs.Count);
+    private int ClosedTabCount => _windows.Closed.Sum(window => window.Tabs.Count);
 
     protected override async Task OnInitializedAsync()
     {
-        _sessions = await Repository.ListRecentAsync(10);
+        var sessionsTask = Repository.ListAllAsync().AsTask();
+        var suggestionsTask = Repository.GetResumeSuggestionsAsync(-1).AsTask();
+        var windowsTask = WindowSources.GetWindowsAsync(50).AsTask();
+        var schedulesTask = ScheduledJobRegistry.GetAllAsync().AsTask();
+        await Task.WhenAll(sessionsTask, suggestionsTask, windowsTask, schedulesTask);
+
+        var sessions = await sessionsTask;
+        var visibleSessionIds = sessions.Select(session => session.Id).ToHashSet(StringComparer.Ordinal);
+        _sessionCount = sessions.Length;
+        _turnCount = sessions.Sum(session => session.TurnCount);
+        _favoriteCount = sessions.Count(session => session.IsFavorite);
+        _windows = await windowsTask;
+        _scheduledJobCount = (await schedulesTask).Count;
+        _resumeSuggestions =
+        [
+            .. (await suggestionsTask)
+                .Where(suggestion => visibleSessionIds.Contains(suggestion.Session.Id))
+                .OrderByDescending(suggestion => suggestion.Session.IsFavorite)
+                .ThenByDescending(suggestion => suggestion.Session.UpdatedAt)
+                .Take(3),
+        ];
+        _loaded = true;
     }
+
+    private static string WindowTitle(TerminalWindow window) =>
+        !string.IsNullOrWhiteSpace(window.Name)
+            ? window.Name
+            : Plural(window.Tabs.Count, "Copilot tab");
+
+    private static string WindowMeta(TerminalWindow window)
+    {
+        var directory = window.Tabs
+            .Select(tab => tab.Directory)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        var closed = window.ClosedAt is null ? null : $"closed {FormatTime(window.ClosedAt.Value)}";
+        return string.Join(
+            " · ",
+            new[] { Plural(window.Tabs.Count, "tab"), directory, closed }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
+    }
+
+    private static string FormatTime(DateTimeOffset time) =>
+        time.ToLocalTime().ToString("MMM d, yyyy h:mm tt");
+
+    private static string Plural(int count, string singular) =>
+        $"{count} {singular}{(count == 1 ? "" : "s")}";
 }

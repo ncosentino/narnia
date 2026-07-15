@@ -330,17 +330,35 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
 
     private static readonly string ResumeSuggestionsSql =
         """
+        WITH latest_checkpoints AS (
+            SELECT session_id,
+                   title,
+                   next_steps,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY session_id
+                       ORDER BY checkpoint_number DESC) as row_number
+            FROM checkpoints
+        ),
+        turn_counts AS (
+            SELECT session_id, COUNT(*) as turn_count
+            FROM turns
+            GROUP BY session_id
+        ),
+        checkpoint_counts AS (
+            SELECT session_id, COUNT(*) as checkpoint_count
+            FROM checkpoints
+            GROUP BY session_id
+        )
         SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
-               COUNT(DISTINCT t.id) as turn_count, COUNT(DISTINCT c2.id) as checkpoint_count,
-               c.title as cp_title, c.next_steps
+               COALESCE(t.turn_count, 0) as turn_count,
+               COALESCE(cc.checkpoint_count, 0) as checkpoint_count,
+               c.title as cp_title,
+               c.next_steps
         FROM sessions s
-        LEFT JOIN turns t ON t.session_id = s.id
-        LEFT JOIN checkpoints c2 ON c2.session_id = s.id
-        JOIN checkpoints c ON c.session_id = s.id
-            AND c.checkpoint_number = (
-                SELECT MAX(checkpoint_number) FROM checkpoints WHERE session_id = s.id)
+        JOIN latest_checkpoints c ON c.session_id = s.id AND c.row_number = 1
+        LEFT JOIN turn_counts t ON t.session_id = s.id
+        LEFT JOIN checkpoint_counts cc ON cc.session_id = s.id
         WHERE c.next_steps IS NOT NULL AND trim(c.next_steps) != ''
-        GROUP BY s.id
         ORDER BY s.updated_at DESC, s.id
         LIMIT @limit
         """;

@@ -557,6 +557,175 @@ async function narniaDeleteGroup(id) {
 }
 
 // ── Scheduled jobs ───────────────────────────────────────────────────────────
+(function () {
+    function plural(count, singular) {
+        return count + ' ' + singular + (count === 1 ? '' : 's');
+    }
+
+    function formatTime(value) {
+        if (!value) return null;
+        var date = new Date(value);
+        return Number.isNaN(date.getTime())
+            ? null
+            : new Intl.DateTimeFormat(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+            }).format(date);
+    }
+
+    function scheduleStatus(job) {
+        switch (job.health) {
+            case 'drift':
+                return 'Task missing';
+            case 'failed':
+                return 'Failed (0x' + Number(job.status.lastResult).toString(16).toUpperCase() + ')';
+            case 'running':
+                return 'Running now';
+            case 'neverrun':
+                return 'Never run';
+            case 'disabled':
+                return 'Disabled';
+            case 'succeeded':
+                if (!job.status?.nextRunTime) return 'Healthy';
+                break;
+        }
+
+        var nextRun = formatTime(job.status?.nextRunTime);
+        return nextRun ? ('Next ' + nextRun) : 'No upcoming run';
+    }
+
+    function appendItem(container, title, status, meta, attention, link) {
+        var article = document.createElement('article');
+        article.className = 'dashboard-item' + (attention ? ' dashboard-item--attention' : '');
+
+        var header = document.createElement('div');
+        header.className = 'dashboard-item-header';
+
+        var titleElement = document.createElement(link ? 'a' : 'span');
+        titleElement.className = 'dashboard-item-title';
+        titleElement.textContent = title;
+        if (link) titleElement.href = link;
+        header.appendChild(titleElement);
+
+        if (status) {
+            var statusElement = document.createElement('span');
+            statusElement.className = 'dashboard-schedule-state';
+            statusElement.textContent = status;
+            header.appendChild(statusElement);
+        }
+
+        article.appendChild(header);
+        if (meta) {
+            var metaElement = document.createElement('div');
+            metaElement.className = 'dashboard-item-meta';
+            metaElement.textContent = meta;
+            article.appendChild(metaElement);
+        }
+        container.appendChild(article);
+    }
+
+    async function loadDashboardSchedules() {
+        var card = document.getElementById('dashboard-schedules-card');
+        var value = document.getElementById('dashboard-schedules-value');
+        var detail = document.getElementById('dashboard-schedules-detail');
+        var panel = document.getElementById('dashboard-schedules-panel');
+        var content = document.getElementById('dashboard-schedules-content');
+        if (!card || !value || !detail || !panel || !content) return;
+
+        try {
+            var response = await fetch('/api/schedules');
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            var data = await response.json();
+            var jobs = data.jobs || [];
+            var untracked = data.untracked || [];
+            value.textContent = jobs.length.toLocaleString();
+            content.replaceChildren();
+
+            if (!data.schedulerSupported) {
+                detail.textContent = 'Live health unavailable';
+                var unavailable = document.createElement('p');
+                unavailable.className = 'dashboard-empty';
+                unavailable.textContent = 'Live scheduler health is unavailable on this platform.';
+                content.appendChild(unavailable);
+                return;
+            }
+
+            var attention = jobs.filter(function (job) { return job.requiresAttention; });
+            var attentionCount = attention.length + untracked.length;
+            var runningCount = jobs.filter(function (job) { return job.health === 'running'; }).length;
+            card.classList.toggle('dashboard-summary-card--attention', attentionCount > 0);
+            panel.classList.toggle('dashboard-panel--attention', attentionCount > 0);
+
+            if (attentionCount > 0) {
+                detail.textContent =
+                    plural(attentionCount, 'item') + (attentionCount === 1 ? ' needs' : ' need') + ' attention';
+            } else if (jobs.length === 0) {
+                detail.textContent = 'No jobs cataloged';
+            } else if (runningCount > 0) {
+                detail.textContent = plural(runningCount, 'job') + ' running';
+            } else {
+                detail.textContent = 'No failures or drift';
+            }
+
+            if (jobs.length === 0 && untracked.length === 0) {
+                var empty = document.createElement('p');
+                empty.className = 'dashboard-empty';
+                empty.textContent = 'No scheduled jobs are cataloged.';
+                content.appendChild(empty);
+                return;
+            }
+
+            if (untracked.length > 0) {
+                appendItem(
+                    content,
+                    plural(untracked.length, 'orphaned task'),
+                    null,
+                    "Present in Task Scheduler but missing from Narnia's catalog.",
+                    true,
+                    null);
+            }
+
+            var highlights = attention.length > 0
+                ? attention.sort(function (a, b) {
+                    return Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0);
+                })
+                : jobs.sort(function (a, b) {
+                    if (a.health === 'running' && b.health !== 'running') return -1;
+                    if (b.health === 'running' && a.health !== 'running') return 1;
+                    return (Date.parse(a.status?.nextRunTime) || Number.MAX_SAFE_INTEGER)
+                        - (Date.parse(b.status?.nextRunTime) || Number.MAX_SAFE_INTEGER);
+                });
+
+            highlights.slice(0, 3).forEach(function (job) {
+                appendItem(
+                    content,
+                    job.name,
+                    scheduleStatus(job),
+                    job.cadence || 'Cadence not recorded',
+                    job.requiresAttention,
+                    '/schedules');
+            });
+        } catch (error) {
+            detail.textContent = 'Live health unavailable';
+            content.replaceChildren();
+            var failed = document.createElement('p');
+            failed.className = 'dashboard-empty';
+            failed.textContent = 'Could not load live scheduled-job health.';
+            content.appendChild(failed);
+            console.error('Narnia: failed to load dashboard schedules', error);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadDashboardSchedules);
+    } else {
+        loadDashboardSchedules();
+    }
+})();
+
 function narniaScheduleFormBody(register) {
     var days = [];
     var checks = document.querySelectorAll('.sched-day:checked');

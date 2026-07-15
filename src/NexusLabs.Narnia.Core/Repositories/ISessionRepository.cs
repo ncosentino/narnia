@@ -94,6 +94,12 @@ public interface ISessionRepository
 
     ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default);
     ValueTask<CommitMatch[]> GetSessionsByRefAsync(string refValue, CancellationToken ct = default);
+    /// <summary>
+    /// Gets sessions whose latest checkpoint records next steps, ordered by most recent activity.
+    /// </summary>
+    /// <param name="limit">Maximum suggestions to return. A negative value returns all suggestions.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Sessions with checkpoint-based continuation context.</returns>
     ValueTask<ResumeSuggestion[]> GetResumeSuggestionsAsync(int limit = 10, CancellationToken ct = default);
     ValueTask<Dictionary<string, string>> GetResumableSessionIdsAsync(IReadOnlyList<string> sessionIds, CancellationToken ct = default);
     ValueTask<KeywordFrequency[]> GetTopKeywordsAsync(int topN = 50, CancellationToken ct = default);

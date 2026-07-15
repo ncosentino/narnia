@@ -177,9 +177,8 @@ public sealed class ScheduledJobService(
         if (job is null)
             return ScheduledJobLogView.Missing;
 
-        // The live State (not LastResult — see RenderHealth/Health in Schedules.razor) is the
-        // authoritative "is it executing right now" signal, so a caller can keep polling a log
-        // that is still being written instead of mistaking a partial log for a finished run.
+        // The live state is authoritative while a task runs; LastResult still describes the
+        // previous completed run until the scheduler records the new result.
         var status = await taskProvider.GetAsync(job.TaskFolder, job.TaskName, ct);
         var isRunning = status?.State == ScheduledTaskState.Running;
 
