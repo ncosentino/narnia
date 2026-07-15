@@ -1,0 +1,29 @@
+<a href="@Href" class="@CssClass" target="@Target" rel="@Relationship">
+    <span class="nav-icon" aria-hidden="true">@Icon</span>
+    <span>@Label</span>
+</a>
+
+@code {
+    /// <summary>Gets or sets the navigation destination.</summary>
+    [Parameter, EditorRequired]
+    public string Href { get; set; } = "";
+
+    /// <summary>Gets or sets the decorative icon shown before the label.</summary>
+    [Parameter, EditorRequired]
+    public string Icon { get; set; } = "";
+
+    /// <summary>Gets or sets the visible navigation label.</summary>
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+
+    /// <summary>Gets or sets an optional CSS class for the link.</summary>
+    [Parameter]
+    public string? CssClass { get; set; }
+
+    /// <summary>Gets or sets whether the destination opens in a new browser tab.</summary>
+    [Parameter]
+    public bool External { get; set; }
+
+    private string? Target => External ? "_blank" : null;
+    private string? Relationship => External ? "noopener" : null;
+}

@@ -77,9 +77,11 @@ body {
     padding: .75rem 1.5rem;
 }
 
-.header nav { display: flex; gap: 1.5rem; align-items: center; }
+.header nav { display: flex; gap: 1.5rem; row-gap: .65rem; align-items: center; flex-wrap: wrap; }
 .header a { color: var(--header-text); text-decoration: none; }
 .header a:hover { color: var(--header-hover); }
+.header nav > a { display: inline-flex; align-items: center; gap: .3rem; }
+.nav-icon { width: 1.1em; line-height: 1; text-align: center; }
 .brand { font-weight: 700; font-size: 1.1rem; }
 
 /* ── Theme toggle ────────────────────────────────────────────────────────── */
