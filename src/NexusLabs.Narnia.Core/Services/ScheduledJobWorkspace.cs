@@ -1,5 +1,6 @@
 using NexusLabs.Narnia.Core.Configuration;
 using System.IO.Abstractions;
+using System.Text;
 using System.Linq;
 
 namespace NexusLabs.Narnia.Core.Services;
@@ -76,7 +77,12 @@ public sealed class ScheduledJobWorkspace(NarniaOptions options, IFileSystem fil
             fileSystem.Directory.CreateDirectory(dir);
 
         var path = LauncherPath(jobId);
-        await fileSystem.File.WriteAllTextAsync(path, content, ct);
+        await AtomicTextFile.WriteAsync(
+            fileSystem,
+            path,
+            content,
+            Encoding.Unicode,
+            ct);
         return path;
     }
 

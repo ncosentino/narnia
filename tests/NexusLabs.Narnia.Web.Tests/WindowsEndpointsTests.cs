@@ -127,6 +127,18 @@ public sealed class WindowsEndpointsTests
     }
 
     [Fact]
+    public async Task Startup_RepairsEnabledAutostartConfiguration()
+    {
+        using var factory = new NarniaWebAppFactory();
+        factory.Autostart.SetupGet(a => a.IsSupported).Returns(true);
+
+        var client = factory.CreateClient();
+        await client.GetAsync("/health", Ct);
+
+        factory.Autostart.Verify(a => a.EnsureConfigured(), Times.Once);
+    }
+
+    [Fact]
     public async Task PostAutostart_Enable_CallsManagerEnable()
     {
         using var factory = new NarniaWebAppFactory();

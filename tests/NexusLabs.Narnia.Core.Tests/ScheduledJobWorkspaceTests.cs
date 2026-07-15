@@ -58,6 +58,9 @@ public sealed class ScheduledJobWorkspaceTests
 
         Assert.Equal(@"C:\narnia\schedules\job-1\run.vbs", path);
         Assert.Equal("' vbs content", fs.File.ReadAllText(path));
+        var bytes = fs.File.ReadAllBytes(path);
+        Assert.Equal(0xFF, bytes[0]);
+        Assert.Equal(0xFE, bytes[1]);
     }
 
     [Fact]
