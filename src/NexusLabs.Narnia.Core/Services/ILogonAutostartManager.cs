@@ -15,6 +15,12 @@ public interface ILogonAutostartManager
     /// <summary>Installs the autostart entry (idempotent).</summary>
     void Enable();
 
+    /// <summary>
+    /// Rewrites an existing enabled entry into the current supported launch format. Does nothing
+    /// when autostart is disabled.
+    /// </summary>
+    void EnsureConfigured();
+
     /// <summary>Removes the autostart entry (idempotent).</summary>
     void Disable();
 }

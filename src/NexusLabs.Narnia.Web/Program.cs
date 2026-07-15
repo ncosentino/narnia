@@ -128,6 +128,19 @@ if (args.Contains("snapshot", StringComparer.OrdinalIgnoreCase))
     return;
 }
 
+var logonAutostart = app.Services.GetRequiredService<ILogonAutostartManager>();
+if (logonAutostart.IsSupported)
+{
+    try
+    {
+        logonAutostart.EnsureConfigured();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Could not repair the Narnia logon autostart entry.");
+    }
+}
+
 var serverVersion = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
     ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString();

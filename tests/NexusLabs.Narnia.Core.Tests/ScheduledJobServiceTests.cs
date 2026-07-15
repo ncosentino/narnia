@@ -198,7 +198,7 @@ public sealed class ScheduledJobServiceTests
 
         var result = await service.CreateAsync(Input(), register: false, Ct);
 
-        Assert.Contains("powershell.exe -NoProfile", result.Script);
+        Assert.Contains("\"\"powershell.exe\"\" -NoProfile", result.Script);
     }
 
     [Fact]

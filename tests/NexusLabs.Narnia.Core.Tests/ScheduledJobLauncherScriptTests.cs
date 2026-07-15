@@ -9,7 +9,7 @@ public sealed class ScheduledJobLauncherScriptTests
     {
         var vbs = ScheduledJobLauncherScript.Build("pwsh.exe", @"C:\narnia\abc\run.ps1");
 
-        Assert.Contains("pwsh.exe -NoProfile -ExecutionPolicy Bypass -File", vbs);
+        Assert.Contains("\"\"pwsh.exe\"\" -NoProfile -ExecutionPolicy Bypass -File", vbs);
         Assert.Contains(@"C:\narnia\abc\run.ps1", vbs);
     }
 
@@ -38,9 +38,21 @@ public sealed class ScheduledJobLauncherScriptTests
     {
         var vbs = ScheduledJobLauncherScript.Build("pwsh.exe", @"C:\Program Files\narnia\run.ps1");
 
-        // Doubled quotes are VBScript's own escaping for a literal '"' inside a string literal —
-        // the command line the child process actually sees has single quotes around the path.
+        // Doubled quotes are VBScript's escaping for a literal quote; the child command line
+        // receives one pair of double quotes around the path.
         Assert.Contains("-File \"\"C:\\Program Files\\narnia\\run.ps1\"\"", vbs);
+    }
+
+    [Fact]
+    public void Build_QuotesHostExecutableSoSpacesAreOneArgument()
+    {
+        var vbs = ScheduledJobLauncherScript.Build(
+            @"C:\Program Files\PowerShell\7\pwsh.exe",
+            @"C:\narnia\run.ps1");
+
+        Assert.Contains(
+            "\"\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\"\" -NoProfile",
+            vbs);
     }
 
     [Fact]
