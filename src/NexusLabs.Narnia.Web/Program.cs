@@ -706,34 +706,40 @@ app.MapGet("/api/schedules", async (
 {
     var view = await jobService.ListAsync(ct);
 
-    var projectedJobs = view.Jobs.Select(v => (object)new
+    var projectedJobs = view.Jobs.Select(v =>
     {
-        id = v.Job.Id,
-        name = v.Job.Name,
-        description = v.Job.Description,
-        cwd = v.Job.Cwd,
-        cadence = v.Job.Cadence,
-        args = v.Job.Args,
-        scriptPath = v.Job.ScriptPath,
-        logDir = v.Job.LogDir,
-        allowFlags = v.Job.AllowFlags,
-        taskFolder = v.Job.TaskFolder,
-        taskName = v.Job.TaskName,
-        notes = v.Job.Notes,
-        createdAt = v.Job.CreatedAt,
-        updatedAt = v.Job.UpdatedAt,
-        prompt = v.Job.Prompt,
-        cadenceKind = v.Job.CadenceKind,
-        cadenceTime = v.Job.CadenceTime,
-        cadenceDays = v.Job.CadenceDays,
-        copilotArgs = v.Job.CopilotArgs,
-        skills = v.Job.Skills.Select(s => new
+        var health = v.Status.GetHealthKind();
+        return (object)new
         {
-            skill = s.Skill,
-            resolution = s.Resolution.ToString().ToLowerInvariant(),
-        }),
-        status = v.Status is null ? null : ProjectStatus(v.Status),
-        taskFound = v.TaskFound,
+            id = v.Job.Id,
+            name = v.Job.Name,
+            description = v.Job.Description,
+            cwd = v.Job.Cwd,
+            cadence = v.Job.Cadence,
+            args = v.Job.Args,
+            scriptPath = v.Job.ScriptPath,
+            logDir = v.Job.LogDir,
+            allowFlags = v.Job.AllowFlags,
+            taskFolder = v.Job.TaskFolder,
+            taskName = v.Job.TaskName,
+            notes = v.Job.Notes,
+            createdAt = v.Job.CreatedAt,
+            updatedAt = v.Job.UpdatedAt,
+            prompt = v.Job.Prompt,
+            cadenceKind = v.Job.CadenceKind,
+            cadenceTime = v.Job.CadenceTime,
+            cadenceDays = v.Job.CadenceDays,
+            copilotArgs = v.Job.CopilotArgs,
+            skills = v.Job.Skills.Select(s => new
+            {
+                skill = s.Skill,
+                resolution = s.Resolution.ToString().ToLowerInvariant(),
+            }),
+            status = v.Status is null ? null : ProjectStatus(v.Status),
+            taskFound = v.TaskFound,
+            health = health.ToString().ToLowerInvariant(),
+            requiresAttention = health.RequiresAttention(),
+        };
     }).ToList();
 
     var untracked = view.Untracked.Select(ProjectStatus).ToList();

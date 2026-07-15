@@ -1,9 +1,7 @@
 @page "/schedules"
 @using NexusLabs.Narnia.Core.Models
-@using NexusLabs.Narnia.Core.Repositories
 @using NexusLabs.Narnia.Core.Services
-@inject IScheduledJobRegistry Registry
-@inject IScheduledTaskProvider TaskProvider
+@inject IScheduledJobService JobService
 
 <PageTitle>Scheduled Jobs — Narnia</PageTitle>
 
@@ -25,7 +23,7 @@
     A catalog of your scheduled Copilot jobs. Narnia is a registry only — <strong>Windows Task
     Scheduler still runs everything</strong>; this page joins each cataloged job to what the
     scheduler actually reports (last run, next run, result) and flags anything that has drifted.
-    @if (!TaskProvider.IsSupported)
+    @if (!_schedulerSupported)
     {
         <span class="schedule-warn">Live task status is unavailable on this platform.</span>
     }
@@ -172,64 +170,38 @@
 }
 
 @code {
-    private const string NarniaFolder = @"\Narnia\";
-
-    private IReadOnlyList<JobView> _jobs = [];
+    private IReadOnlyList<ScheduledJobStatusView> _jobs = [];
     private IReadOnlyList<ScheduledTaskStatus> _untracked = [];
+    private bool _schedulerSupported;
 
     protected override async Task OnInitializedAsync()
     {
-        var jobs = await Registry.GetAllAsync();
-        var narniaTasks = await TaskProvider.ListInFolderAsync(NarniaFolder);
-
-        var tasksByKey = new Dictionary<string, ScheduledTaskStatus>(StringComparer.OrdinalIgnoreCase);
-        foreach (var task in narniaTasks)
-            tasksByKey[Key(task.TaskFolder, task.TaskName)] = task;
-
-        var matched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var views = new List<JobView>(jobs.Count);
-        foreach (var job in jobs)
-        {
-            var key = Key(job.TaskFolder, job.TaskName);
-            if (!tasksByKey.TryGetValue(key, out var status))
-                status = await TaskProvider.GetAsync(job.TaskFolder, job.TaskName);
-
-            if (status is not null)
-                matched.Add(key);
-
-            views.Add(new JobView(job, status));
-        }
-
-        _jobs = views;
-        _untracked = narniaTasks
-            .Where(t => !matched.Contains(Key(t.TaskFolder, t.TaskName)))
-            .ToList();
+        var view = await JobService.ListAsync();
+        _schedulerSupported = view.SchedulerSupported;
+        _jobs = view.Jobs;
+        _untracked = view.Untracked;
     }
-
-    private static string Key(string folder, string name) => $"{folder.Trim('\\')}|{name}";
 
     private static string FormatTime(DateTimeOffset? time) =>
         time?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—";
 
     private RenderFragment RenderHealth(string? jobId, ScheduledTaskStatus? status) => __builder =>
     {
-        if (status is null)
+        var health = status.GetHealthKind();
+        if (health == ScheduledTaskHealthKind.Drift)
         {
             <span class="badge-health badge-drift" title="No matching scheduled task found">drift</span>
             return;
         }
 
-        // The live State is authoritative for "is this executing right now" — it comes straight
-        // from Get-ScheduledTask, independent of LastResult (which, while a run is in progress,
-        // still holds SCHED_S_TASK_RUNNING, a status code, not a failure — see Health() below).
-        if (status.State == ScheduledTaskState.Running)
+        if (health == ScheduledTaskHealthKind.Running)
         {
             <button type="button" class="badge-health badge-running badge-fail-link" onclick="narniaScheduleViewLog('@jobId', null)" title="Click to watch its log">● running</button>
             return;
         }
 
-        var (cssClass, label) = Health(status.LastResult);
-        if (jobId is not null && cssClass == "badge-fail")
+        var (cssClass, label) = HealthPresentation(health, status?.LastResult);
+        if (jobId is not null && health == ScheduledTaskHealthKind.Failed)
         {
             <button type="button" class="badge-health @cssClass badge-fail-link" onclick="narniaScheduleViewLog('@jobId', null)" title="Click to see why it failed">@label</button>
         }
@@ -239,26 +211,19 @@
         }
     };
 
-    // Interprets a Windows Task Scheduler last-result code. 0 = success. Codes in the documented
-    // 0x41300-0x41308 range (SCHED_S_*) are scheduler status/informational codes, not a failed run
-    // of the task's own action, and must never be shown as "failed": 0x41303 (has not run) and
-    // 0x41301 (running) are the two Narnia jobs hit in practice, but the whole range is handled so
-    // no other benign code is misreported either. Anything else is a genuine failure (the wrapper
-    // script's real exit code, e.g. 1), surfaced with its hex value.
-    // https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-error-and-success-constants
-    private static (string CssClass, string Label) Health(int? lastResult) => lastResult switch
+    private static (string CssClass, string Label) HealthPresentation(
+        ScheduledTaskHealthKind health,
+        int? lastResult) => health switch
     {
-        null or 267011 => ("badge-neutral", "never run"),          // 0x41303 SCHED_S_TASK_HAS_NOT_RUN
-        0 => ("badge-ok", "ok"),
-        267009 => ("badge-running", "● running"),                  // 0x41301 SCHED_S_TASK_RUNNING
-        267010 => ("badge-neutral", "disabled"),                   // 0x41302 SCHED_S_TASK_DISABLED
-        267012 => ("badge-neutral", "no more runs scheduled"),      // 0x41304 SCHED_S_TASK_NO_MORE_RUNS
-        267013 => ("badge-neutral", "not fully scheduled"),         // 0x41305 SCHED_S_TASK_NOT_SCHEDULED
-        267014 => ("badge-neutral", "terminated"),                  // 0x41306 SCHED_S_TASK_TERMINATED
-        267015 => ("badge-neutral", "no valid triggers"),           // 0x41307 SCHED_S_TASK_NO_VALID_TRIGGERS
-        267016 => ("badge-neutral", "event trigger"),               // 0x41308 SCHED_S_EVENT_TRIGGER
-        _ => ("badge-fail", $"failed (0x{lastResult.Value:X})"),
+        ScheduledTaskHealthKind.NeverRun => ("badge-neutral", "never run"),
+        ScheduledTaskHealthKind.Succeeded => ("badge-ok", "ok"),
+        ScheduledTaskHealthKind.Disabled => ("badge-neutral", "disabled"),
+        ScheduledTaskHealthKind.NoMoreRunsScheduled => ("badge-neutral", "no more runs scheduled"),
+        ScheduledTaskHealthKind.NotFullyScheduled => ("badge-neutral", "not fully scheduled"),
+        ScheduledTaskHealthKind.Terminated => ("badge-neutral", "terminated"),
+        ScheduledTaskHealthKind.NoValidTriggers => ("badge-neutral", "no valid triggers"),
+        ScheduledTaskHealthKind.EventTrigger => ("badge-neutral", "event trigger"),
+        ScheduledTaskHealthKind.Failed => ("badge-fail", $"failed (0x{lastResult!.Value:X})"),
+        _ => ("badge-neutral", health.ToString().ToLowerInvariant()),
     };
-
-    private sealed record JobView(ScheduledJob Job, ScheduledTaskStatus? Status);
 }

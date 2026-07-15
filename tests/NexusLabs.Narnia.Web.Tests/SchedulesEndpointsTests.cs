@@ -43,6 +43,8 @@ public sealed class SchedulesEndpointsTests
         Assert.True(job.TaskFound);
         Assert.NotNull(job.Status);
         Assert.Equal(0, job.Status!.LastResult);
+        Assert.Equal("succeeded", job.Health);
+        Assert.False(job.RequiresAttention);
         Assert.Equal("ready", job.Status.State);
         Assert.Empty(response.Untracked);
         var skill = Assert.Single(job.Skills);
@@ -62,6 +64,8 @@ public sealed class SchedulesEndpointsTests
         var job = Assert.Single(response!.Jobs);
         Assert.False(job.TaskFound);
         Assert.Null(job.Status);
+        Assert.Equal("drift", job.Health);
+        Assert.True(job.RequiresAttention);
     }
 
     [Fact]
@@ -79,6 +83,26 @@ public sealed class SchedulesEndpointsTests
         var untracked = Assert.Single(response.Untracked);
         Assert.Equal("Hand-made", untracked.TaskName);
         Assert.Equal(1, untracked.LastResult);
+    }
+
+    [Fact]
+    public async Task SchedulesPage_UsesSharedHealthClassification()
+    {
+        using var factory = new NarniaWebAppFactory();
+        await factory.ScheduledJobRegistry.CreateAsync(
+            Draft("Failing job", "Narnia - Failing job"), Now, Ct);
+        factory.ScheduledTaskProvider
+            .Setup(p => p.ListInFolderAsync(@"\Narnia\", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ScheduledTaskStatus>)
+            [
+                Status(@"\Narnia\", "Narnia - Failing job", lastResult: 1),
+            ]);
+
+        var client = factory.CreateClient();
+        var html = await client.GetStringAsync("/schedules", Ct);
+
+        Assert.Contains("Failing job", html, StringComparison.Ordinal);
+        Assert.Contains("failed (0x1)", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -324,7 +348,14 @@ public sealed class SchedulesEndpointsTests
 
     private sealed record SchedulesResponse(bool SchedulerSupported, List<JobDto> Jobs, List<StatusDto> Untracked);
 
-    private sealed record JobDto(string Id, string Name, bool TaskFound, List<SkillDto> Skills, StatusDto? Status);
+    private sealed record JobDto(
+        string Id,
+        string Name,
+        bool TaskFound,
+        List<SkillDto> Skills,
+        StatusDto? Status,
+        string Health,
+        bool RequiresAttention);
 
     private sealed record SkillDto(string Skill, string Resolution);
 

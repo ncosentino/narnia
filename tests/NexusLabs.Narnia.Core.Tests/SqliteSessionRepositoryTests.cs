@@ -996,6 +996,14 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
         Assert.Empty(results);
     }
 
+    [Fact]
+    public async Task GetResumeSuggestionsAsync_NegativeLimitReturnsAllSuggestions()
+    {
+        var results = await _repository.GetResumeSuggestionsAsync(-1, TestContext.Current.CancellationToken);
+
+        Assert.Single(results);
+    }
+
     // ── GetTopKeywordsAsync ───────────────────────────────────────────────────
 
     [Fact]
