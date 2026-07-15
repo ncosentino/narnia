@@ -88,6 +88,42 @@ else
         </script>
     }
 
+    @if (_recentActivity is not null)
+    {
+        <h2>Recent Session Activity</h2>
+        <form method="get" action="/stats">
+            <label>
+                Days to show:
+                <select name="days" onchange="this.form.submit()">
+                    <option value="30" selected="@(SelectedDays == 30)">Last 30 days</option>
+                    <option value="60" selected="@(SelectedDays == 60)">Last 60 days</option>
+                    <option value="90" selected="@(SelectedDays == 90)">Last 90 days</option>
+                    <option value="180" selected="@(SelectedDays == 180)">Last 180 days</option>
+                    <option value="365" selected="@(SelectedDays == 365)">Last year</option>
+                </select>
+            </label>
+            <button type="submit">Apply</button>
+        </form>
+        @if (_recentActivity.Length == 0)
+        {
+            <p>No sessions were recorded in this period.</p>
+        }
+        else
+        {
+            <div class="activity-summary">
+                <span>Total: <strong>@_recentActivity.Sum(day => day.SessionCount) sessions</strong></span>
+                <span>Active days: <strong>@_recentActivity.Length</strong></span>
+                <span>Peak: <strong>@PeakActivity.SessionCount sessions</strong> on @PeakActivity.Date.ToString("yyyy-MM-dd")</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="stats-activity-chart"></canvas>
+            </div>
+            <script type="application/json" data-chart-id="stats-activity-chart">
+                @((MarkupString)BuildActivityChartJson(_recentActivity))
+            </script>
+        }
+    }
+
     @if (_insights is not null)
     {
         <h2>Session Composition</h2>
@@ -105,6 +141,45 @@ else
         <script type="application/json" data-chart-id="stats-origin-chart">
             @((MarkupString)BuildOriginChartJson(_insights))
         </script>
+    }
+
+    @if (_hotFiles is not null)
+    {
+        <h2>Most Touched Files</h2>
+        <p>Recorded file paths ranked by the number of distinct Copilot sessions that touched them.</p>
+        @if (_hotFiles.Length == 0)
+        {
+            <p>No file data has been recorded yet.</p>
+        }
+        else
+        {
+            <div class="chart-container">
+                <canvas id="stats-hot-files-chart"></canvas>
+            </div>
+            <script type="application/json" data-chart-id="stats-hot-files-chart">
+                @((MarkupString)BuildHotFilesChartJson(_hotFiles))
+            </script>
+
+            <table class="sessions-table" data-resizable-table="stats-hot-files">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Sessions</th>
+                        <th>Latest Tool</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var file in _hotFiles)
+                    {
+                        <tr>
+                            <td><a href="/files?path=@Uri.EscapeDataString(file.FilePath)" class="hot-file-path">@file.FilePath</a></td>
+                            <td>@file.SessionCount</td>
+                            <td>@(file.LastToolName ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
     }
 
     @if (_patterns is not null)
@@ -145,6 +220,16 @@ else
     private SessionInsights? _insights;
     private ActivityPatterns? _patterns;
     private ActivityTimelineDay[]? _growth;
+    private ActivityDay[]? _recentActivity;
+    private HotFile[]? _hotFiles;
+
+    /// <summary>Gets or sets the recent-activity window selected through the query string.</summary>
+    [SupplyParameterFromQuery(Name = "days")]
+    public int Days { get; set; } = 90;
+
+    private int SelectedDays => Days is 30 or 60 or 90 or 180 or 365 ? Days : 90;
+    private ActivityDay PeakActivity =>
+        _recentActivity!.OrderByDescending(day => day.SessionCount).ThenBy(day => day.Date).First();
 
     protected override async Task OnInitializedAsync()
     {
@@ -153,13 +238,23 @@ else
         var insightsTask = Repository.GetSessionInsightsAsync().AsTask();
         var patternsTask = Repository.GetActivityPatternsAsync().AsTask();
         var growthTask = Repository.GetActivityTimelineAsync(3650).AsTask();
-        await Task.WhenAll(statsTask, repoStatsTask, insightsTask, patternsTask, growthTask);
+        var hotFilesTask = Repository.GetHotFilesAsync(25).AsTask();
+        await Task.WhenAll(statsTask, repoStatsTask, insightsTask, patternsTask, growthTask, hotFilesTask);
 
         _repoStats = await repoStatsTask;
         _stats = await statsTask;
         _insights = await insightsTask;
         _patterns = await patternsTask;
         _growth = await growthTask;
+        _hotFiles = await hotFilesTask;
+
+        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-SelectedDays));
+        _recentActivity =
+        [
+            .. _growth
+                .Where(day => day.Date >= cutoff && day.SessionCount > 0)
+                .Select(day => new ActivityDay(day.Date, day.SessionCount)),
+        ];
     }
 
     private static string BuildRepoChartJson(RepositoryStats[] data) =>
@@ -245,6 +340,37 @@ else
         return data.Select(day => total += selectCount(day)).ToArray();
     }
 
+    private static string BuildActivityChartJson(ActivityDay[] data) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "bar",
+            data = new
+            {
+                labels = data.Select(day => day.Date.ToString("yyyy-MM-dd")).ToArray(),
+                datasets = new[]
+                {
+                    new
+                    {
+                        label = "Sessions",
+                        data = data.Select(day => day.SessionCount).ToArray(),
+                        backgroundColor = "rgba(99,102,241,0.7)",
+                        borderColor = "rgba(99,102,241,1)",
+                        borderWidth = 1,
+                    },
+                },
+            },
+            options = new
+            {
+                responsive = true,
+                plugins = new { legend = new { display = false } },
+                scales = new
+                {
+                    x = new { ticks = new { maxRotation = 45, minRotation = 45 } },
+                    y = new { beginAtZero = true, ticks = new { stepSize = 1 } },
+                },
+            },
+        });
+
     private static string BuildFileOpsChartJson(SessionInsights insights) =>
         JsonSerializer.Serialize(new
         {
@@ -286,6 +412,37 @@ else
                 plugins = new { legend = new { position = "bottom" }, title = new { display = true, text = "Session Origin" } }
             }
         });
+
+    private static string BuildHotFilesChartJson(HotFile[] data)
+    {
+        var top = data.Take(15).ToArray();
+        return JsonSerializer.Serialize(new
+        {
+            type = "bar",
+            data = new
+            {
+                labels = top.Select(file => System.IO.Path.GetFileName(file.FilePath)).ToArray(),
+                datasets = new[]
+                {
+                    new
+                    {
+                        label = "Sessions",
+                        data = top.Select(file => file.SessionCount).ToArray(),
+                        backgroundColor = "rgba(16,185,129,0.7)",
+                        borderColor = "rgba(16,185,129,1)",
+                        borderWidth = 1,
+                    },
+                },
+            },
+            options = new
+            {
+                indexAxis = "y",
+                responsive = true,
+                plugins = new { legend = new { display = false } },
+                scales = new { x = new { beginAtZero = true, ticks = new { stepSize = 1 } } },
+            },
+        });
+    }
 
     private static string BuildDayOfWeekChartJson(IReadOnlyList<DayOfWeekActivity> data) =>
         JsonSerializer.Serialize(new
