@@ -118,56 +118,56 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             (SELECT COUNT(*) FROM session_files) as total_files,
             (SELECT repository FROM sessions WHERE repository IS NOT NULL
              GROUP BY repository ORDER BY COUNT(*) DESC LIMIT 1) as most_active_repo,
-            (SELECT DATE(created_at) FROM sessions
-             GROUP BY DATE(created_at) ORDER BY COUNT(*) DESC LIMIT 1) as busiest_day
+            (SELECT DATE(created_at, 'localtime') FROM sessions
+             GROUP BY DATE(created_at, 'localtime') ORDER BY COUNT(*) DESC LIMIT 1) as busiest_day
         """;
 
     private static readonly string ActivityTimelineSql =
         """
         WITH daily_activity AS (
-            SELECT DATE(s.created_at) as day,
+            SELECT DATE(s.created_at, 'localtime') as day,
                    COUNT(*) as session_count,
                    0 as turn_count,
                    0 as file_count,
                    0 as checkpoint_count
             FROM sessions s
-            WHERE DATE(s.created_at) >= DATE('now', @offset)
+            WHERE DATE(s.created_at, 'localtime') >= DATE('now', 'localtime', @offset)
             GROUP BY day
 
             UNION ALL
 
-            SELECT DATE(COALESCE(t.timestamp, s.created_at)) as day,
+            SELECT DATE(COALESCE(t.timestamp, s.created_at), 'localtime') as day,
                    0 as session_count,
                    COUNT(*) as turn_count,
                    0 as file_count,
                    0 as checkpoint_count
             FROM turns t
             LEFT JOIN sessions s ON s.id = t.session_id
-            WHERE DATE(COALESCE(t.timestamp, s.created_at)) >= DATE('now', @offset)
+            WHERE DATE(COALESCE(t.timestamp, s.created_at), 'localtime') >= DATE('now', 'localtime', @offset)
             GROUP BY day
 
             UNION ALL
 
-            SELECT DATE(COALESCE(sf.first_seen_at, s.created_at)) as day,
+            SELECT DATE(COALESCE(sf.first_seen_at, s.created_at), 'localtime') as day,
                    0 as session_count,
                    0 as turn_count,
                    COUNT(*) as file_count,
                    0 as checkpoint_count
             FROM session_files sf
             LEFT JOIN sessions s ON s.id = sf.session_id
-            WHERE DATE(COALESCE(sf.first_seen_at, s.created_at)) >= DATE('now', @offset)
+            WHERE DATE(COALESCE(sf.first_seen_at, s.created_at), 'localtime') >= DATE('now', 'localtime', @offset)
             GROUP BY day
 
             UNION ALL
 
-            SELECT DATE(COALESCE(c.created_at, s.created_at)) as day,
+            SELECT DATE(COALESCE(c.created_at, s.created_at), 'localtime') as day,
                    0 as session_count,
                    0 as turn_count,
                    0 as file_count,
                    COUNT(*) as checkpoint_count
             FROM checkpoints c
             LEFT JOIN sessions s ON s.id = c.session_id
-            WHERE DATE(COALESCE(c.created_at, s.created_at)) >= DATE('now', @offset)
+            WHERE DATE(COALESCE(c.created_at, s.created_at), 'localtime') >= DATE('now', 'localtime', @offset)
             GROUP BY day
         )
         SELECT day,
@@ -178,6 +178,14 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         FROM daily_activity
         GROUP BY day
         ORDER BY day
+        """;
+
+    private static readonly string SessionActivitySourcesSql =
+        """
+        SELECT cwd, repository, host_type, COUNT(*) as session_count
+        FROM sessions
+        WHERE DATE(created_at, 'localtime') = @date
+        GROUP BY cwd, repository, host_type
         """;
 
     private static readonly string RepositoryStatsSql =
@@ -589,6 +597,196 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         }
         return [.. results];
     }
+
+    /// <inheritdoc />
+    public async ValueTask<SessionActivitySource[]> GetSessionActivitySourcesAsync(
+        DateOnly date,
+        CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = SessionActivitySourcesSql;
+        cmd.Parameters.AddWithValue("@date", date.ToString("yyyy-MM-dd"));
+
+        var grouped = new Dictionary<string, SessionActivitySource>(StringComparer.OrdinalIgnoreCase);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var cwd = reader.IsDBNull(0) ? null : reader.GetString(0);
+            var repository = reader.IsDBNull(1) ? null : reader.GetString(1);
+            var hostType = reader.IsDBNull(2) ? null : reader.GetString(2);
+            var count = reader.GetInt32(3);
+            var source = CreateActivitySource(cwd, repository, hostType, count);
+            var key =
+                $"{source.Kind}\u001F{source.Repository}\u001F{source.WorkingDirectory}" +
+                $"\u001F{source.IncludesDescendants}\u001F{source.HostType}";
+
+            grouped[key] = grouped.TryGetValue(key, out var existing)
+                ? existing with { SessionCount = existing.SessionCount + count }
+                : source;
+        }
+
+        return
+        [
+            .. grouped.Values
+                .OrderByDescending(source => source.SessionCount)
+                .ThenBy(source => source.Label, StringComparer.OrdinalIgnoreCase),
+        ];
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<SessionSummary[]> ListByActivitySourceAsync(
+        SessionActivitySourceFilter filter,
+        bool includeArchived = false,
+        CancellationToken ct = default)
+    {
+        _ = includeArchived;
+        var conditions = new List<string>
+        {
+            "DATE(s.created_at, 'localtime') = @date",
+        };
+        switch (filter.Kind)
+        {
+            case SessionActivitySourceKind.RemoteRepository:
+                conditions.Add("s.repository = @repository COLLATE NOCASE");
+                break;
+            case SessionActivitySourceKind.WorkingDirectory:
+                conditions.Add("s.repository IS NULL");
+                conditions.Add("s.cwd IS NOT NULL");
+                break;
+            case SessionActivitySourceKind.Host:
+                conditions.Add("s.repository IS NULL");
+                conditions.Add("s.cwd IS NULL");
+                break;
+            case SessionActivitySourceKind.Unknown:
+                conditions.Add("s.repository IS NULL");
+                conditions.Add("s.cwd IS NULL");
+                conditions.Add("s.host_type IS NULL");
+                break;
+        }
+
+        if (filter.HostTypeMissing)
+            conditions.Add("s.host_type IS NULL");
+        else if (filter.HostType is not null)
+            conditions.Add("s.host_type = @hostType COLLATE NOCASE");
+
+        var sql =
+            $"""
+            {SessionSummarySelectSql}
+            WHERE {string.Join(" AND ", conditions)}
+            GROUP BY s.id
+            ORDER BY s.updated_at DESC, s.id
+            """;
+        var sessions = await QuerySessionSummariesAsync(
+            sql,
+            cmd =>
+            {
+                cmd.Parameters.AddWithValue("@date", filter.Date.ToString("yyyy-MM-dd"));
+                if (filter.Repository is not null)
+                    cmd.Parameters.AddWithValue("@repository", filter.Repository);
+                if (filter.HostType is not null)
+                    cmd.Parameters.AddWithValue("@hostType", filter.HostType);
+            },
+            ct);
+
+        if (filter.Kind != SessionActivitySourceKind.WorkingDirectory
+            || filter.WorkingDirectory is null)
+        {
+            return sessions;
+        }
+
+        return
+        [
+            .. sessions.Where(session =>
+            {
+                if (session.Cwd is null)
+                    return false;
+                var normalized = NormalizeWorkingDirectory(session.Cwd);
+                return normalized.IncludesDescendants == filter.IncludesGeneratedChildren
+                    && normalized.Path.Equals(
+                        filter.WorkingDirectory,
+                        StringComparison.OrdinalIgnoreCase);
+            }),
+        ];
+    }
+
+    private static SessionActivitySource CreateActivitySource(
+        string? cwd,
+        string? repository,
+        string? hostType,
+        int count)
+    {
+        repository = string.IsNullOrWhiteSpace(repository) ? null : repository.Trim();
+        cwd = string.IsNullOrWhiteSpace(cwd) ? null : cwd.Trim();
+        hostType = string.IsNullOrWhiteSpace(hostType) ? null : hostType.Trim();
+
+        if (repository is not null)
+        {
+            return new SessionActivitySource(
+                SessionActivitySourceKind.RemoteRepository,
+                repository,
+                repository,
+                null,
+                false,
+                hostType,
+                count);
+        }
+
+        if (cwd is not null)
+        {
+            var (workingDirectory, includesDescendants, separator) = NormalizeWorkingDirectory(cwd);
+            return new SessionActivitySource(
+                SessionActivitySourceKind.WorkingDirectory,
+                includesDescendants ? $"{workingDirectory}{separator}*" : workingDirectory,
+                null,
+                workingDirectory,
+                includesDescendants,
+                hostType,
+                count);
+        }
+
+        if (hostType is not null)
+        {
+            return new SessionActivitySource(
+                SessionActivitySourceKind.Host,
+                $"Host: {hostType}",
+                null,
+                null,
+                false,
+                hostType,
+                count);
+        }
+
+        return new SessionActivitySource(
+            SessionActivitySourceKind.Unknown,
+            "Unknown source",
+            null,
+            null,
+            false,
+            null,
+            count);
+    }
+
+    private static (string Path, bool IncludesDescendants, char Separator) NormalizeWorkingDirectory(
+        string cwd)
+    {
+        var trimmed = cwd.TrimEnd('\\', '/');
+        var separatorIndex = Math.Max(trimmed.LastIndexOf('\\'), trimmed.LastIndexOf('/'));
+        if (separatorIndex <= 0)
+            return (trimmed, false, Path.DirectorySeparatorChar);
+
+        var leaf = trimmed[(separatorIndex + 1)..];
+        if (!IsGeneratedDirectoryName(leaf))
+            return (trimmed, false, trimmed[separatorIndex]);
+
+        return (trimmed[..separatorIndex], true, trimmed[separatorIndex]);
+    }
+
+    private static bool IsGeneratedDirectoryName(string value) =>
+        Guid.TryParse(value, out _)
+        || (value.Length == 32 && value.All(Uri.IsHexDigit));
 
     public async ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default)
     {

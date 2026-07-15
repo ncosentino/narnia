@@ -28,6 +28,30 @@
     {
         <input type="hidden" name="cwd" value="@WorkingDirectoryFilter" />
     }
+    @if (HasActivitySourceFilter)
+    {
+        <input type="hidden" name="activitySourceKind" value="@ActivitySourceKindFilter" />
+        @if (!string.IsNullOrWhiteSpace(ActivitySourceFilter))
+        {
+            <input type="hidden" name="activitySource" value="@ActivitySourceFilter" />
+        }
+        @if (ActivityGeneratedChildren)
+        {
+            <input type="hidden" name="activityGeneratedChildren" value="true" />
+        }
+        @if (!string.IsNullOrWhiteSpace(ActivityHostTypeFilter))
+        {
+            <input type="hidden" name="activityHostType" value="@ActivityHostTypeFilter" />
+        }
+        @if (ActivityHostTypeMissing)
+        {
+            <input type="hidden" name="activityHostTypeMissing" value="true" />
+        }
+    }
+    @if (HasCreatedDateFilter)
+    {
+        <input type="hidden" name="createdDate" value="@CreatedDateFilter" />
+    }
     @if (ExplicitSortColumn is not null)
     {
         <input type="hidden" name="sort" value="@SessionSummarySorting.ToQueryValue(ExplicitSortColumn.Value)" />
@@ -47,7 +71,7 @@
     <button type="submit">Search</button>
 </form>
 
-@if (HasRepositoryFilter || HasWorkingDirectoryFilter)
+@if (HasRepositoryFilter || HasWorkingDirectoryFilter || HasActivitySourceFilter || HasCreatedDateFilter)
 {
     <div class="session-scope">
         @if (HasRepositoryFilter)
@@ -58,7 +82,15 @@
         {
             <span><strong>Working directory:</strong> <code>@WorkingDirectoryFilter</code></span>
         }
-        <a href="@ClearExactFiltersUrl">Clear exact filters</a>
+        @if (HasActivitySourceFilter)
+        {
+            <span><strong>Recorded source:</strong> <code>@ActivitySourceDisplay</code></span>
+        }
+        @if (HasCreatedDateFilter)
+        {
+            <span><strong>Created on:</strong> @CreatedDateFilter</span>
+        }
+        <a href="@ClearScopeFiltersUrl">Clear filters</a>
     </div>
 }
 
@@ -66,7 +98,8 @@
 {
     <p class="search-hint">
         Content search scans summaries, conversations, checkpoints, and workspace artifacts.
-        Remote Repository and Working Directory links use exact filters instead of keyword search.
+        Repository, working-directory, and creation-date constraints are applied as structured
+        filters instead of keyword search.
     </p>
 }
 
@@ -202,6 +235,30 @@ else if (_sessions is not null)
     [SupplyParameterFromQuery(Name = "cwd")]
     public string? WorkingDirectoryFilter { get; set; }
 
+    /// <summary>Gets or sets the local session-creation date filter in yyyy-MM-dd form.</summary>
+    [SupplyParameterFromQuery(Name = "createdDate")]
+    public string? CreatedDateFilter { get; set; }
+
+    /// <summary>Gets or sets the recorded activity-source kind filter.</summary>
+    [SupplyParameterFromQuery(Name = "activitySourceKind")]
+    public string? ActivitySourceKindFilter { get; set; }
+
+    /// <summary>Gets or sets the recorded repository or working-directory source value.</summary>
+    [SupplyParameterFromQuery(Name = "activitySource")]
+    public string? ActivitySourceFilter { get; set; }
+
+    /// <summary>Gets or sets whether generated direct child directories are matched.</summary>
+    [SupplyParameterFromQuery(Name = "activityGeneratedChildren")]
+    public bool ActivityGeneratedChildren { get; set; }
+
+    /// <summary>Gets or sets the recorded host type filter.</summary>
+    [SupplyParameterFromQuery(Name = "activityHostType")]
+    public string? ActivityHostTypeFilter { get; set; }
+
+    /// <summary>Gets or sets whether sessions with no recorded host type are matched.</summary>
+    [SupplyParameterFromQuery(Name = "activityHostTypeMissing")]
+    public bool ActivityHostTypeMissing { get; set; }
+
     /// <summary>Gets or sets the requested sort column.</summary>
     [SupplyParameterFromQuery(Name = "sort")]
     public string? Sort { get; set; }
@@ -231,12 +288,25 @@ else if (_sessions is not null)
             StringComparison.OrdinalIgnoreCase);
     private bool EffectiveFavoritesOnly => IsFavoritesPage || FavoritesOnly;
     private string PagePath => IsFavoritesPage ? "/favorites" : "/sessions";
-    private string PageHeading => IsFavoritesPage ? "Favorite Sessions" : "Sessions";
+    private string PageHeading => IsFavoritesPage
+        ? "Favorite Sessions"
+        : HasCreatedDateFilter
+            ? $"Sessions on {CreatedDateFilter}"
+            : "Sessions";
     private bool HasContentSearch => !string.IsNullOrWhiteSpace(Query);
     private bool HasRepositoryFilter => !string.IsNullOrWhiteSpace(RepositoryFilter);
     private bool HasWorkingDirectoryFilter =>
         !HasRepositoryFilter
         && !string.IsNullOrWhiteSpace(WorkingDirectoryFilter);
+    private bool HasCreatedDateFilter => TryGetCreatedDate(out _);
+    private bool HasActivitySourceFilter => TryGetActivitySourceFilter(out _);
+    private string ActivitySourceDisplay =>
+        ActivityGeneratedChildren
+            ? $"{ActivitySourceFilter}\\*"
+            : ActivitySourceFilter
+              ?? ActivityHostTypeFilter
+              ?? ActivitySourceKindFilter
+              ?? "unknown";
     private SessionSortColumn? ExplicitSortColumn => SessionSummarySorting.ParseColumn(Sort);
     private SessionSortColumn? DisplaySortColumn => ExplicitSortColumn
         ?? (HasContentSearch ? null : SessionSortColumn.Updated);
@@ -244,11 +314,22 @@ else if (_sessions is not null)
     private int FirstVisibleResult => ((_currentPage - 1) * PageSize) + 1;
     private int LastVisibleResult => Math.Min(_currentPage * PageSize, _totalResults);
     private string RefreshUrl => BuildUrl(_currentPage);
-    private string ClearExactFiltersUrl => BuildUrl(page: 1, includeExactFilters: false);
+    private string ClearScopeFiltersUrl => BuildUrl(
+        page: 1,
+        includeExactFilters: false,
+        includeCreatedDateFilter: false);
 
     protected override async Task OnInitializedAsync()
     {
         var sessions = await LoadScopedSessionsAsync();
+        if (!HasActivitySourceFilter && TryGetCreatedDate(out var createdDate))
+        {
+            sessions =
+            [
+                .. sessions.Where(session =>
+                    DateOnly.FromDateTime(session.CreatedAt.LocalDateTime.Date) == createdDate),
+            ];
+        }
         if (EffectiveFavoritesOnly)
             sessions = sessions.Where(session => session.IsFavorite).ToArray();
 
@@ -305,6 +386,13 @@ else if (_sessions is not null)
 
     private async Task<SessionSummary[]> LoadScopedSessionsAsync()
     {
+        if (TryGetActivitySourceFilter(out var activitySource))
+        {
+            return await Repository.ListByActivitySourceAsync(
+                activitySource,
+                ShowArchived);
+        }
+
         if (HasRepositoryFilter)
             return await Repository.ListByRepositoryAsync(RepositoryFilter!, ShowArchived);
 
@@ -348,6 +436,7 @@ else if (_sessions is not null)
         SessionSortColumn? sortColumn = null,
         SessionSortDirection? sortDirection = null,
         bool includeExactFilters = true,
+        bool includeCreatedDateFilter = true,
         string? exactFilterName = null,
         string? exactFilterValue = null)
     {
@@ -366,7 +455,23 @@ else if (_sessions is not null)
 
             if (HasWorkingDirectoryFilter)
                 parameters.Add($"cwd={Uri.EscapeDataString(WorkingDirectoryFilter!)}");
+
+            if (HasActivitySourceFilter)
+            {
+                parameters.Add($"activitySourceKind={Uri.EscapeDataString(ActivitySourceKindFilter!)}");
+                if (!string.IsNullOrWhiteSpace(ActivitySourceFilter))
+                    parameters.Add($"activitySource={Uri.EscapeDataString(ActivitySourceFilter)}");
+                if (ActivityGeneratedChildren)
+                    parameters.Add("activityGeneratedChildren=true");
+                if (!string.IsNullOrWhiteSpace(ActivityHostTypeFilter))
+                    parameters.Add($"activityHostType={Uri.EscapeDataString(ActivityHostTypeFilter)}");
+                if (ActivityHostTypeMissing)
+                    parameters.Add("activityHostTypeMissing=true");
+            }
         }
+
+        if (includeCreatedDateFilter && HasCreatedDateFilter)
+            parameters.Add($"createdDate={Uri.EscapeDataString(CreatedDateFilter!)}");
 
         var column = sortColumn ?? ExplicitSortColumn;
         if (column is not null)
@@ -398,6 +503,45 @@ else if (_sessions is not null)
                 includeExactFilters: false,
                 exactFilterName: filterName,
                 exactFilterValue: value);
+
+    private bool TryGetCreatedDate(out DateOnly date) =>
+        DateOnly.TryParseExact(
+            CreatedDateFilter,
+            "yyyy-MM-dd",
+            out date);
+
+    private bool TryGetActivitySourceFilter(out SessionActivitySourceFilter filter)
+    {
+        filter = null!;
+        if (!TryGetCreatedDate(out var date)
+            || !Enum.TryParse<SessionActivitySourceKind>(
+                ActivitySourceKindFilter,
+                ignoreCase: true,
+                out var kind))
+        {
+            return false;
+        }
+
+        var source = string.IsNullOrWhiteSpace(ActivitySourceFilter)
+            ? null
+            : ActivitySourceFilter;
+        if ((kind is SessionActivitySourceKind.RemoteRepository
+                or SessionActivitySourceKind.WorkingDirectory)
+            && source is null)
+        {
+            return false;
+        }
+
+        filter = new SessionActivitySourceFilter(
+            date,
+            kind,
+            kind == SessionActivitySourceKind.RemoteRepository ? source : null,
+            kind == SessionActivitySourceKind.WorkingDirectory ? source : null,
+            ActivityGeneratedChildren,
+            string.IsNullOrWhiteSpace(ActivityHostTypeFilter) ? null : ActivityHostTypeFilter,
+            ActivityHostTypeMissing);
+        return true;
+    }
 
     private static SessionSortDirection DefaultDirection(SessionSortColumn column) =>
         column is SessionSortColumn.Summary or SessionSortColumn.Repository or SessionSortColumn.Directory

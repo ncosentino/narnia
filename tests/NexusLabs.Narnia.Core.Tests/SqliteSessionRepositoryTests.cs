@@ -618,6 +618,88 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
             Assert.True(results[i].Date >= results[i - 1].Date);
     }
 
+    [Fact]
+    public async Task GetSessionActivitySourcesAsync_CollapsesGeneratedWorkingDirectories()
+    {
+        var now = DateTimeOffset.Now;
+        var date = DateOnly.FromDateTime(now.Date);
+        await ExecuteAsync(
+            $"""
+            INSERT INTO sessions (id, cwd, repository, branch, summary, created_at, updated_at) VALUES
+                ('eval-1', 'C:\Temp\bg-eval-judge\10873c94704f4fcea064cda3049c6251', NULL, NULL, 'Eval one', '{now:O}', '{now:O}'),
+                ('eval-2', 'C:\Temp\bg-eval-judge\4a636c27fc9a455aa29b53dc8d3089c6', NULL, NULL, 'Eval two', '{now:O}', '{now:O}'),
+                ('exact-trailing', 'C:\dev\exact\', NULL, NULL, 'Exact directory', '{now:O}', '{now:O}'),
+                ('repo-source', 'C:\dev\sample', 'owner/sample', 'main', 'Repository session', '{now:O}', '{now:O}');
+            """);
+
+        var results = await _repository.GetSessionActivitySourcesAsync(
+            date,
+            TestContext.Current.CancellationToken);
+
+        var eval = Assert.Single(
+            results,
+            source => source.WorkingDirectory == @"C:\Temp\bg-eval-judge");
+        Assert.Equal(2, eval.SessionCount);
+        Assert.True(eval.IncludesDescendants);
+        Assert.Equal(@"C:\Temp\bg-eval-judge\*", eval.Label);
+
+        var repository = Assert.Single(
+            results,
+            source => source.Repository == "owner/sample");
+        Assert.Equal(1, repository.SessionCount);
+        Assert.Equal(SessionActivitySourceKind.RemoteRepository, repository.Kind);
+
+        var sessions = await _repository.ListByActivitySourceAsync(
+            new SessionActivitySourceFilter(
+                date,
+                SessionActivitySourceKind.WorkingDirectory,
+                null,
+                @"C:\Temp\bg-eval-judge",
+                true,
+                null,
+                true),
+            includeArchived: true,
+            ct: TestContext.Current.CancellationToken);
+        Assert.Equal(2, sessions.Length);
+        Assert.All(
+            sessions,
+            session => Assert.StartsWith(
+                @"C:\Temp\bg-eval-judge\",
+                session.Cwd,
+                StringComparison.OrdinalIgnoreCase));
+
+        var exactSessions = await _repository.ListByActivitySourceAsync(
+            new SessionActivitySourceFilter(
+                date,
+                SessionActivitySourceKind.WorkingDirectory,
+                null,
+                @"C:\dev\exact",
+                false,
+                null,
+                true),
+            includeArchived: true,
+            ct: TestContext.Current.CancellationToken);
+        Assert.Equal("exact-trailing", Assert.Single(exactSessions).Id);
+    }
+
+    [Fact]
+    public async Task GetActivityTimelineAsync_UsesMachineLocalDate()
+    {
+        var now = DateTimeOffset.Now;
+        var expectedDate = DateOnly.FromDateTime(now.Date);
+        await ExecuteAsync(
+            $"""
+            INSERT INTO sessions (id, cwd, repository, branch, summary, created_at, updated_at)
+            VALUES ('local-date', 'C:\dev\local', NULL, NULL, 'Local date', '{now.ToUniversalTime():O}', '{now.ToUniversalTime():O}');
+            """);
+
+        var results = await _repository.GetActivityTimelineAsync(
+            1,
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(results, day => day.Date == expectedDate);
+    }
+
     // ── GetRepositoryStatsAsync ───────────────────────────────────────────────
 
     [Fact]

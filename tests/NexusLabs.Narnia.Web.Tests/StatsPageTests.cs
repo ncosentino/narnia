@@ -41,6 +41,21 @@ public sealed class StatsPageTests
                 new HotFile("src/Program.cs", 4, "edit"),
                 new HotFile("docs/README.md", 2, "create"),
             ]);
+        factory.SessionRepository
+            .Setup(repository => repository.GetSessionActivitySourcesAsync(
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new SessionActivitySource(
+                    SessionActivitySourceKind.WorkingDirectory,
+                    @"C:\Temp\bg-eval-judge\*",
+                    null,
+                    @"C:\Temp\bg-eval-judge",
+                    true,
+                    null,
+                    1517),
+            ]);
 
         var client = factory.CreateClient();
         var html = await client.GetStringAsync("/stats", TestContext.Current.CancellationToken);
@@ -59,11 +74,11 @@ public sealed class StatsPageTests
                 dataset => dataset.GetProperty("label").GetString()!,
                 StringComparer.Ordinal);
 
-        Assert.Equal([1, 2], ReadValues(datasets["Total Sessions"]));
+        Assert.Equal([1, 2], ReadValues(datasets["Total Raw Sessions"]));
         Assert.Equal([2, 3], ReadValues(datasets["Total Turns"]));
         Assert.Equal([1, 3], ReadValues(datasets["Total Files Touched"]));
         Assert.Equal([0, 3], ReadValues(datasets["Total Checkpoints"]));
-        Assert.Equal("y", datasets["Total Sessions"].GetProperty("yAxisID").GetString());
+        Assert.Equal("y", datasets["Total Raw Sessions"].GetProperty("yAxisID").GetString());
         Assert.Equal("work", datasets["Total Turns"].GetProperty("yAxisID").GetString());
 
         using var activityChart = ParseChart(html, "stats-activity-chart");
@@ -79,13 +94,21 @@ public sealed class StatsPageTests
         Assert.Equal([4, 2], ReadValues(hotFilesDataset));
         Assert.Contains("data-resizable-table=\"stats-hot-files\"", html, StringComparison.Ordinal);
         Assert.Contains("/files?path=src%2FProgram.cs", html, StringComparison.Ordinal);
+        Assert.Contains("data-chart-href-template=", html, StringComparison.Ordinal);
+        Assert.Contains(@"C:\Temp\bg-eval-judge\*", html, StringComparison.Ordinal);
+        Assert.Contains("1517", html, StringComparison.Ordinal);
+        Assert.Contains("activitySourceKind=WorkingDirectory", html, StringComparison.Ordinal);
+        Assert.Contains("activitySource=C%3A%5CTemp%5Cbg-eval-judge", html, StringComparison.Ordinal);
+        Assert.Contains("activityGeneratedChildren=true", html, StringComparison.Ordinal);
+        Assert.Contains("activityHostTypeMissing=true", html, StringComparison.Ordinal);
+        Assert.Contains("showArchived=true", html, StringComparison.Ordinal);
     }
 
     private static JsonDocument ParseChart(string html, string chartId)
     {
         var match = Regex.Match(
             html,
-            $"""<script type="application/json" data-chart-id="{chartId}">\s*(?<json>.*?)\s*</script>""",
+            $"""<script type="application/json"[^>]*data-chart-id="{chartId}"[^>]*>\s*(?<json>.*?)\s*</script>""",
             RegexOptions.Singleline);
         Assert.True(match.Success);
         return JsonDocument.Parse(match.Groups["json"].Value);

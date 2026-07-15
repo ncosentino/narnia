@@ -94,6 +94,22 @@ public sealed class OverridingSessionRepository(
     public ValueTask<ActivityTimelineDay[]> GetActivityTimelineAsync(int days = 90, CancellationToken ct = default) =>
         inner.GetActivityTimelineAsync(days, ct);
 
+    /// <inheritdoc />
+    public ValueTask<SessionActivitySource[]> GetSessionActivitySourcesAsync(
+        DateOnly date,
+        CancellationToken ct = default) =>
+        inner.GetSessionActivitySourcesAsync(date, ct);
+
+    /// <inheritdoc />
+    public async ValueTask<SessionSummary[]> ListByActivitySourceAsync(
+        SessionActivitySourceFilter filter,
+        bool includeArchived = false,
+        CancellationToken ct = default)
+    {
+        var sessions = await inner.ListByActivitySourceAsync(filter, includeArchived, ct);
+        return await MergeAllAsync(sessions, includeArchived, ct);
+    }
+
     public async ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default)
     {
         var sessionsTask = ListAllAsync(includeArchived: false, ct).AsTask();

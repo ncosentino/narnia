@@ -17,7 +17,7 @@ else
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-value">@_stats.TotalSessions</div>
-            <div class="stat-label">Sessions</div>
+            <div class="stat-label">Raw Sessions</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">@_stats.TotalTurns</div>
@@ -25,7 +25,7 @@ else
         </div>
         <div class="stat-card">
             <div class="stat-value">@_stats.AvgTurnsPerSession.ToString("F1")</div>
-            <div class="stat-label">Avg Turns / Session</div>
+            <div class="stat-label">Avg Turns / Raw Session</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">@_stats.TotalFilesTouched</div>
@@ -79,7 +79,7 @@ else
     @if (_growth is { Length: > 0 })
     {
         <h2>Growth Over Time</h2>
-        <p>Cumulative sessions, turns, file touches, and checkpoints. Use the legend to show or hide a series.</p>
+        <p>Cumulative raw Copilot session records, turns, file touches, and checkpoints. Use the legend to show or hide a series.</p>
         <div class="chart-container">
             <canvas id="stats-growth-chart"></canvas>
         </div>
@@ -90,7 +90,11 @@ else
 
     @if (_recentActivity is not null)
     {
-        <h2>Recent Session Activity</h2>
+        <h2>Recent Raw Session Activity</h2>
+        <p>
+            These are raw Copilot session records, not a count of human work sessions. Automated
+            tools and evaluation harnesses can create many short sessions.
+        </p>
         <form method="get" action="/stats">
             <label>
                 Days to show:
@@ -111,16 +115,61 @@ else
         else
         {
             <div class="activity-summary">
-                <span>Total: <strong>@_recentActivity.Sum(day => day.SessionCount) sessions</strong></span>
+                <span>Total: <strong>@_recentActivity.Sum(day => day.SessionCount) raw sessions</strong></span>
                 <span>Active days: <strong>@_recentActivity.Length</strong></span>
-                <span>Peak: <strong>@PeakActivity.SessionCount sessions</strong> on @PeakActivity.Date.ToString("yyyy-MM-dd")</span>
+                <span>
+                    Peak: <strong>@PeakActivity.SessionCount raw sessions</strong> on
+                    <a href="@ActivityDateUrl(PeakActivity.Date)">@PeakActivity.Date.ToString("yyyy-MM-dd")</a>
+                </span>
             </div>
             <div class="chart-container">
                 <canvas id="stats-activity-chart"></canvas>
             </div>
-            <script type="application/json" data-chart-id="stats-activity-chart">
+            <script type="application/json"
+                    data-chart-id="stats-activity-chart"
+                    data-chart-href-template="@ActivityDateNavigationTemplate">
                 @((MarkupString)BuildActivityChartJson(_recentActivity))
             </script>
+
+            @if (_selectedActivityDate is not null)
+            {
+                <h3 id="session-sources">Session sources for @_selectedActivityDate.Value.ToString("yyyy-MM-dd")</h3>
+                @if (_activitySources.Length == 0)
+                {
+                    <p>No raw session records were found for this local date.</p>
+                }
+                else
+                {
+                    <p class="search-hint">
+                        @_activitySources.Sum(source => source.SessionCount) raw session records,
+                        grouped by recorded provenance. Generated GUID working directories are
+                        collapsed into their parent directory.
+                    </p>
+                    <table class="sessions-table" data-resizable-table="stats-session-sources">
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Type</th>
+                                <th>Host</th>
+                                <th>Raw Sessions</th>
+                                <th>Inspect</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var source in _activitySources)
+                            {
+                                <tr>
+                                    <td class="@(source.Kind == SessionActivitySourceKind.WorkingDirectory ? "cwd" : "")">@source.Label</td>
+                                    <td>@FormatSourceKind(source.Kind)</td>
+                                    <td>@(source.HostType ?? "not recorded")</td>
+                                    <td>@source.SessionCount</td>
+                                    <td><a href="@BuildSourceSessionUrl(source)">View sessions →</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            }
         }
     }
 
@@ -185,7 +234,7 @@ else
     @if (_patterns is not null)
     {
         <h2>When You Work</h2>
-        <p>Session start times, in your local time zone.</p>
+        <p>Raw session creation times, in your local time zone.</p>
         <div class="chart-row">
             <div class="chart-container">
                 <canvas id="stats-dow-chart"></canvas>
@@ -204,7 +253,7 @@ else
 
     @if (_repoStats is { Length: > 0 })
     {
-        <h2>Sessions by Remote Repository</h2>
+        <h2>Raw Sessions by Remote Repository</h2>
         <div class="chart-container">
             <canvas id="stats-repo-chart"></canvas>
         </div>
@@ -221,11 +270,17 @@ else
     private ActivityPatterns? _patterns;
     private ActivityTimelineDay[]? _growth;
     private ActivityDay[]? _recentActivity;
+    private SessionActivitySource[] _activitySources = [];
+    private DateOnly? _selectedActivityDate;
     private HotFile[]? _hotFiles;
 
     /// <summary>Gets or sets the recent-activity window selected through the query string.</summary>
     [SupplyParameterFromQuery(Name = "days")]
     public int Days { get; set; } = 90;
+
+    /// <summary>Gets or sets the local activity date selected for source inspection.</summary>
+    [SupplyParameterFromQuery(Name = "activityDate")]
+    public string? ActivityDate { get; set; }
 
     private int SelectedDays => Days is 30 or 60 or 90 or 180 or 365 ? Days : 90;
     private ActivityDay PeakActivity =>
@@ -248,13 +303,25 @@ else
         _growth = await growthTask;
         _hotFiles = await hotFilesTask;
 
-        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-SelectedDays));
+        var cutoff = DateOnly.FromDateTime(DateTime.Now.Date.AddDays(-SelectedDays));
         _recentActivity =
         [
             .. _growth
                 .Where(day => day.Date >= cutoff && day.SessionCount > 0)
                 .Select(day => new ActivityDay(day.Date, day.SessionCount)),
         ];
+
+        if (_recentActivity.Length > 0)
+        {
+            _selectedActivityDate = DateOnly.TryParseExact(
+                ActivityDate,
+                "yyyy-MM-dd",
+                out var selectedDate)
+                ? selectedDate
+                : PeakActivity.Date;
+            _activitySources = await Repository.GetSessionActivitySourcesAsync(
+                _selectedActivityDate.Value);
+        }
     }
 
     private static string BuildRepoChartJson(RepositoryStats[] data) =>
@@ -266,7 +333,7 @@ else
                 labels = data.Select(r => r.Repository).ToArray(),
                 datasets = new[]
                 {
-                    new { label = "Sessions", data = data.Select(r => r.SessionCount).ToArray(),
+                    new { label = "Raw Sessions", data = data.Select(r => r.SessionCount).ToArray(),
                           backgroundColor = "rgba(99,102,241,0.7)", borderColor = "rgba(99,102,241,1)", borderWidth = 1 }
                 }
             },
@@ -293,7 +360,7 @@ else
                 labels = data.Select(d => d.Date.ToString("yyyy-MM-dd")).ToArray(),
                 datasets = new[]
                 {
-                    new { label = "Total Sessions", data = sessions, yAxisID = "y",
+                    new { label = "Total Raw Sessions", data = sessions, yAxisID = "y",
                           borderColor = "rgba(99,102,241,1)", backgroundColor = "rgba(99,102,241,0.1)",
                           pointRadius = 0, pointHoverRadius = 3, borderWidth = 2, tension = 0.2, fill = false },
                     new { label = "Total Turns", data = turns, yAxisID = "work",
@@ -318,7 +385,7 @@ else
                     {
                         beginAtZero = true,
                         position = "left",
-                        title = new { display = true, text = "Sessions / checkpoints" }
+                        title = new { display = true, text = "Raw sessions / checkpoints" }
                     },
                     work = new
                     {
@@ -351,7 +418,7 @@ else
                 {
                     new
                     {
-                        label = "Sessions",
+                        label = "Raw Sessions",
                         data = data.Select(day => day.SessionCount).ToArray(),
                         backgroundColor = "rgba(99,102,241,0.7)",
                         borderColor = "rgba(99,102,241,1)",
@@ -370,6 +437,47 @@ else
                 },
             },
         });
+
+    private string ActivityDateNavigationTemplate =>
+        $"/stats?days={SelectedDays}&activityDate={{label}}#session-sources";
+
+    private string ActivityDateUrl(DateOnly date) =>
+        ActivityDateNavigationTemplate.Replace(
+            "{label}",
+            Uri.EscapeDataString(date.ToString("yyyy-MM-dd")),
+            StringComparison.Ordinal);
+
+    private string BuildSourceSessionUrl(SessionActivitySource source)
+    {
+        var parameters = new List<string>
+        {
+            $"createdDate={Uri.EscapeDataString(_selectedActivityDate!.Value.ToString("yyyy-MM-dd"))}",
+            $"activitySourceKind={Uri.EscapeDataString(source.Kind.ToString())}",
+            "showArchived=true",
+        };
+        if (source.Repository is not null)
+            parameters.Add($"activitySource={Uri.EscapeDataString(source.Repository)}");
+        else if (source.WorkingDirectory is not null)
+        {
+            parameters.Add($"activitySource={Uri.EscapeDataString(source.WorkingDirectory)}");
+            if (source.IncludesDescendants)
+                parameters.Add("activityGeneratedChildren=true");
+        }
+        if (source.HostType is not null)
+            parameters.Add($"activityHostType={Uri.EscapeDataString(source.HostType)}");
+        else
+            parameters.Add("activityHostTypeMissing=true");
+
+        return "/sessions?" + string.Join("&", parameters);
+    }
+
+    private static string FormatSourceKind(SessionActivitySourceKind kind) => kind switch
+    {
+        SessionActivitySourceKind.RemoteRepository => "Remote repository",
+        SessionActivitySourceKind.WorkingDirectory => "Working directory",
+        SessionActivitySourceKind.Host => "Host",
+        _ => "Unknown",
+    };
 
     private static string BuildFileOpsChartJson(SessionInsights insights) =>
         JsonSerializer.Serialize(new
