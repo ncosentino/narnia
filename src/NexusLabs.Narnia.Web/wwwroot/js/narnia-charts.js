@@ -19,6 +19,23 @@ function narniaCopyText(elementId, btn) {
             if (!canvas) return;
             try {
                 var config = JSON.parse(el.textContent);
+                var hrefTemplate = el.getAttribute('data-chart-href-template');
+                if (hrefTemplate) {
+                    config.options = config.options || {};
+                    config.options.onClick = function (_, elements) {
+                        if (!elements || elements.length === 0) return;
+                        var index = elements[0].index;
+                        var label = config.data.labels[index];
+                        window.location.assign(
+                            hrefTemplate.replace('{label}', encodeURIComponent(label)));
+                    };
+                    config.options.onHover = function (event, elements) {
+                        if (event.native && event.native.target) {
+                            event.native.target.style.cursor =
+                                elements && elements.length > 0 ? 'pointer' : 'default';
+                        }
+                    };
+                }
                 new Chart(canvas, config);
             } catch (e) {
                 console.error('Narnia: failed to init chart ' + id, e);

@@ -251,6 +251,39 @@ public sealed class OverridingSessionRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task ListByActivitySourceAsync_UsesRecordedMembershipThenMergesOverrides()
+    {
+        _savedOverrides["sess-1"] = MakeOverride(
+            "sess-1",
+            repository: "custom/repo") with
+        {
+            IsArchived = true,
+        };
+        var filter = new SessionActivitySourceFilter(
+            new DateOnly(2025, 1, 1),
+            SessionActivitySourceKind.RemoteRepository,
+            "owner/repo-a",
+            null,
+            false,
+            null,
+            true);
+
+        var hidden = await _repository.ListByActivitySourceAsync(
+            filter,
+            includeArchived: false,
+            ct: TestContext.Current.CancellationToken);
+        var visible = await _repository.ListByActivitySourceAsync(
+            filter,
+            includeArchived: true,
+            ct: TestContext.Current.CancellationToken);
+
+        Assert.Empty(hidden);
+        var session = Assert.Single(visible);
+        Assert.Equal("sess-1", session.Id);
+        Assert.Equal("custom/repo", session.Repository);
+    }
+
+    [Fact]
     public async Task ListByCwdAsync_TrailingSeparatorAndCaseDiffer_ReturnsSession()
     {
         var results = await _repository.ListByCwdAsync(

@@ -68,6 +68,30 @@ public interface ISessionRepository
     ValueTask<ActivityTimelineDay[]> GetActivityTimelineAsync(int days = 90, CancellationToken ct = default);
 
     /// <summary>
+    /// Gets recorded session provenance grouped by repository, host, or normalized working
+    /// directory for one local calendar date.
+    /// </summary>
+    /// <param name="date">Local calendar date to inspect.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Source groups ordered by descending raw session count.</returns>
+    ValueTask<SessionActivitySource[]> GetSessionActivitySourcesAsync(
+        DateOnly date,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the sessions represented by an activity source row using recorded provenance values
+    /// before applying display overrides.
+    /// </summary>
+    /// <param name="filter">Exact recorded source and local-date filter.</param>
+    /// <param name="includeArchived">Whether archived sessions are included.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Matching session summaries ordered by most recent update.</returns>
+    ValueTask<SessionSummary[]> ListByActivitySourceAsync(
+        SessionActivitySourceFilter filter,
+        bool includeArchived = false,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Gets per-repository statistics after applying Narnia overrides and excluding archived sessions.
     /// </summary>
     /// <param name="ct">Cancellation token for the operation.</param>
@@ -82,6 +106,16 @@ public interface ISessionRepository
     ValueTask<SessionInsights> GetSessionInsightsAsync(CancellationToken ct = default);
     ValueTask<ActivityPatterns> GetActivityPatternsAsync(CancellationToken ct = default);
     ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets enriched file hotspots with project or generated-data context.
+    /// </summary>
+    /// <param name="perCategoryLimit">Maximum identities returned for each category.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Top contextual hotspots and complete category counts.</returns>
+    ValueTask<FileHotspotSummary> GetFileHotspotsAsync(
+        int perCategoryLimit = 25,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Searches recorded file paths using case-insensitive, separator-normalized substring matching.

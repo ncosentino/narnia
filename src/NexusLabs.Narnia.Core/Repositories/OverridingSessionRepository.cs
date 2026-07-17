@@ -94,6 +94,22 @@ public sealed class OverridingSessionRepository(
     public ValueTask<ActivityTimelineDay[]> GetActivityTimelineAsync(int days = 90, CancellationToken ct = default) =>
         inner.GetActivityTimelineAsync(days, ct);
 
+    /// <inheritdoc />
+    public ValueTask<SessionActivitySource[]> GetSessionActivitySourcesAsync(
+        DateOnly date,
+        CancellationToken ct = default) =>
+        inner.GetSessionActivitySourcesAsync(date, ct);
+
+    /// <inheritdoc />
+    public async ValueTask<SessionSummary[]> ListByActivitySourceAsync(
+        SessionActivitySourceFilter filter,
+        bool includeArchived = false,
+        CancellationToken ct = default)
+    {
+        var sessions = await inner.ListByActivitySourceAsync(filter, includeArchived, ct);
+        return await MergeAllAsync(sessions, includeArchived, ct);
+    }
+
     public async ValueTask<RepositoryStats[]> GetRepositoryStatsAsync(CancellationToken ct = default)
     {
         var sessionsTask = ListAllAsync(includeArchived: false, ct).AsTask();
@@ -144,6 +160,12 @@ public sealed class OverridingSessionRepository(
 
     public ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default) =>
         inner.GetHotFilesAsync(limit, ct);
+
+    /// <inheritdoc />
+    public ValueTask<FileHotspotSummary> GetFileHotspotsAsync(
+        int perCategoryLimit = 25,
+        CancellationToken ct = default) =>
+        inner.GetFileHotspotsAsync(perCategoryLimit, ct);
 
     public ValueTask<HotFile[]> SearchFilesAsync(string query, int limit = 100, CancellationToken ct = default) =>
         inner.SearchFilesAsync(query, limit, ct);
