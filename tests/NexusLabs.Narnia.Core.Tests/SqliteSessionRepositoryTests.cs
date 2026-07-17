@@ -224,6 +224,19 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetByIdsAsync_ReturnsExistingSessionsKeyedById()
+    {
+        var sessions = await _repository.GetByIdsAsync(
+            ["sess-2", "does-not-exist", "sess-1", "sess-2", " "],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, sessions.Count);
+        Assert.Equal("Build the API", sessions["sess-1"].Summary);
+        Assert.Equal("Fix the tests", sessions["sess-2"].Summary);
+        Assert.False(sessions.ContainsKey("does-not-exist"));
+    }
+
+    [Fact]
     public async Task GetTurnsAsync_ReturnsOrderedTurns()
     {
         var turns = await _repository.GetTurnsAsync("sess-1", 0, 10, TestContext.Current.CancellationToken);

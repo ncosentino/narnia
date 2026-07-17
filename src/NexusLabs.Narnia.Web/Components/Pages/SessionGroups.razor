@@ -1,3 +1,4 @@
+@page "/session-groups"
 @page "/groups"
 @using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Repositories
@@ -9,22 +10,22 @@
 
 <div class="page-actions">
     <h1>📁 Session Groups</h1>
-    <a href="/groups" class="btn-refresh">↻ Refresh</a>
+    <a href="/session-groups" class="btn-refresh">↻ Refresh</a>
 </div>
 
 <p class="settings-hint">
-    Groups are named sets of sessions you can reopen together — handy for a workspace of sessions you
-    always want to restore after a crash or a machine restart. Create a group by selecting sessions on
-    the <a href="/sessions">Sessions</a> page and choosing <em>Save as Group</em>, or by snapshotting
-    your open sessions on the <a href="/windows">Windows</a> page. Reopening a group never affects the
+    Session groups are named, ordered sets of exact sessions you can reopen together. Create one by
+    selecting sessions on the <a href="/sessions">Sessions</a> page and choosing
+    <em>Save as Session Group</em>, or by snapshotting open sessions on the
+    <a href="/windows">Windows</a> page. Reopening or deleting a session group never changes the
     sessions themselves.
 </p>
 
 @if (_groups.Count == 0)
 {
     <p>
-        No groups yet. Select sessions on the <a href="/sessions">Sessions</a> page or the
-        <a href="/windows">Windows</a> page and choose <em>Save as group</em>.
+        No session groups yet. Select sessions on the <a href="/sessions">Sessions</a> page or the
+        <a href="/windows">Windows</a> page and choose <em>Save as Session Group</em>.
     </p>
 }
 else
@@ -35,10 +36,10 @@ else
             <div class="page-actions group-head">
                 <h2>@group.Name <span class="window-meta">@group.Members.Count session@(group.Members.Count == 1 ? "" : "s")</span></h2>
                 <div class="closed-controls">
-                    <label class="closed-control" title="Off: each session opens in its own window. On: the whole group opens as tabs in one window."><input type="checkbox" id="group-one-window-@group.Id" /> Open as tabs in one window</label>
-                    <button class="launch-btn" onclick="narniaReopenGroup('@group.Id', this)" title="Reopen every session in this group">🚀 Reopen group</button>
-                    <button class="btn-refresh" data-name="@group.Name" onclick="narniaRenameGroup('@group.Id', this)" title="Rename this group">✏️ Rename</button>
-                    <button class="btn-bulk-archive" onclick="narniaDeleteGroup('@group.Id')" title="Delete this group">🗑 Delete</button>
+                    <label class="closed-control" title="Off: each session opens in its own window. On: the whole session group opens as tabs in one window."><input type="checkbox" id="session-group-one-window-@group.Id" /> Open as tabs in one window</label>
+                    <button class="launch-btn" onclick="narniaReopenSessionGroup('@group.Id', this)" title="Reopen every session in this session group">🚀 Reopen group</button>
+                    <button class="btn-refresh" data-name="@group.Name" onclick="narniaRenameSessionGroup('@group.Id', this)" title="Rename this session group">✏️ Rename</button>
+                    <button class="btn-bulk-archive" onclick="narniaDeleteSessionGroup('@group.Id')" title="Delete this session group">🗑 Delete</button>
                 </div>
             </div>
             <div class="window-card">
@@ -75,14 +76,11 @@ else
         var sessionIds = _groups
             .SelectMany(g => g.Members)
             .Select(m => m.SessionId)
-            .Distinct(StringComparer.Ordinal);
-
-        foreach (var sessionId in sessionIds)
-        {
-            var session = await SessionRepository.GetByIdAsync(sessionId);
-            if (session is not null)
-                _sessions[sessionId] = session;
-        }
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var sessions = await SessionRepository.GetByIdsAsync(sessionIds);
+        foreach (var pair in sessions)
+            _sessions[pair.Key] = pair.Value;
     }
 
     private Session? Lookup(string sessionId) =>

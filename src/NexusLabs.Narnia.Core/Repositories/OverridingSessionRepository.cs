@@ -50,6 +50,24 @@ public sealed class OverridingSessionRepository(
             .ToArray();
     }
 
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyDictionary<string, Session>> GetByIdsAsync(
+        IReadOnlyCollection<string> sessionIds,
+        CancellationToken ct = default)
+    {
+        var sessions = await inner.GetByIdsAsync(sessionIds, ct);
+        if (sessions.Count == 0)
+            return sessions;
+
+        var savedOverrides = await overrides.GetAllOverridesAsync(ct);
+        return sessions.ToDictionary(
+            pair => pair.Key,
+            pair => savedOverrides.TryGetValue(pair.Key, out var sessionOverride)
+                ? Merge(pair.Value, sessionOverride)
+                : pair.Value,
+            StringComparer.Ordinal);
+    }
+
     public async ValueTask<Session?> GetByIdAsync(string sessionId, CancellationToken ct = default)
     {
         var session = await inner.GetByIdAsync(sessionId, ct);
