@@ -8,6 +8,10 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
 {
     private readonly string _connectionString = options.ConnectionString
         ?? $"Data Source={options.DatabasePath};Mode=ReadOnly";
+    private readonly string _temporaryPath = Path.GetTempPath();
+    private readonly string _sessionStatePath = options.SessionStatePath;
+    private readonly string _copilotPath =
+        Path.GetDirectoryName(options.SessionStatePath) ?? options.SessionStatePath;
 
     private const string SessionSummarySelectSql =
         """
@@ -271,6 +275,77 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         LIMIT @limit
         """;
 
+    private static readonly string FileHotspotsSql =
+        """
+        WITH file_events AS (
+            SELECT narnia_file_identity(sf.file_path, s.cwd) as file_identity,
+                   sf.session_id,
+                   sf.tool_name,
+                   sf.first_seen_at,
+                   sf.id,
+                   s.repository,
+                   s.cwd
+            FROM session_files sf
+            LEFT JOIN sessions s ON s.id = sf.session_id
+            WHERE sf.file_path IS NOT NULL
+        ),
+        file_summaries AS (
+            SELECT file_identity,
+                   COUNT(DISTINCT session_id) as session_count,
+                   MIN(first_seen_at) as first_seen_at,
+                   MAX(first_seen_at) as last_seen_at
+            FROM file_events
+            WHERE file_identity IS NOT NULL
+            GROUP BY file_identity COLLATE NOCASE
+        ),
+        latest_tools AS (
+            SELECT file_identity,
+                   tool_name,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY file_identity COLLATE NOCASE
+                       ORDER BY first_seen_at DESC, id DESC) as row_number
+            FROM file_events
+            WHERE file_identity IS NOT NULL
+        ),
+        context_counts AS (
+            SELECT file_identity,
+                   repository,
+                   cwd,
+                   COUNT(DISTINCT session_id) as context_sessions,
+                   MAX(first_seen_at) as context_last_seen
+            FROM file_events
+            WHERE file_identity IS NOT NULL
+            GROUP BY file_identity COLLATE NOCASE, repository, cwd
+        ),
+        ranked_contexts AS (
+            SELECT file_identity,
+                   repository,
+                   cwd,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY file_identity COLLATE NOCASE
+                       ORDER BY narnia_path_is_within(file_identity, cwd) DESC,
+                                context_sessions DESC,
+                                context_last_seen DESC,
+                                repository IS NULL,
+                                repository,
+                                cwd) as row_number
+            FROM context_counts
+        )
+        SELECT fs.file_identity,
+               fs.session_count,
+               lt.tool_name,
+               fs.first_seen_at,
+               fs.last_seen_at,
+               rc.repository,
+               rc.cwd
+        FROM file_summaries fs
+        LEFT JOIN latest_tools lt
+          ON lt.file_identity = fs.file_identity COLLATE NOCASE AND lt.row_number = 1
+        LEFT JOIN ranked_contexts rc
+          ON rc.file_identity = fs.file_identity COLLATE NOCASE AND rc.row_number = 1
+        ORDER BY fs.session_count DESC, fs.last_seen_at DESC, fs.file_identity COLLATE NOCASE
+        """;
+
     private static readonly string FileHistorySql =
         """
         WITH file_matches AS (
@@ -283,7 +358,10 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
                        ORDER BY sf.first_seen_at IS NULL, sf.first_seen_at DESC, sf.id DESC
                    ) as rn
             FROM session_files sf
-            WHERE narnia_path_equals(sf.file_path, @filePath) = 1
+            JOIN sessions source_session ON source_session.id = sf.session_id
+            WHERE narnia_file_identity(sf.file_path, source_session.cwd)
+                    = narnia_file_identity(@filePath, NULL) COLLATE NOCASE
+               OR narnia_path_equals(sf.file_path, @filePath) = 1
         )
         SELECT fm.session_id,
                s.summary,
@@ -905,6 +983,64 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
     public async ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default)
         => await QueryFileSummariesAsync(query: "", limit, popular: true, ct);
 
+    /// <inheritdoc />
+    public async ValueTask<FileHotspotSummary> GetFileHotspotsAsync(
+        int perCategoryLimit = 25,
+        CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+        RegisterFilePathFunctions(connection);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = FileHotspotsSql;
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var projectFiles = new List<HotFile>(perCategoryLimit);
+        var artifacts = new List<HotFile>(perCategoryLimit);
+        var projectFileCount = 0;
+        var artifactCount = 0;
+        while (await reader.ReadAsync(ct))
+        {
+            var filePath = reader.GetString(0);
+            var sessionCount = reader.GetInt32(1);
+            var toolName = reader.IsDBNull(2) ? null : reader.GetString(2);
+            var firstSeenAt = ParseNullableDateTimeOffset(reader.IsDBNull(3) ? null : reader.GetString(3));
+            var lastSeenAt = ParseNullableDateTimeOffset(reader.IsDBNull(4) ? null : reader.GetString(4));
+            var repository = reader.IsDBNull(5) ? null : reader.GetString(5);
+            var cwd = reader.IsDBNull(6) ? null : reader.GetString(6);
+            var context = ClassifyFileActivity(filePath, repository, cwd);
+            var hotspot = new HotFile(filePath, sessionCount, toolName)
+            {
+                FirstSeenAt = firstSeenAt,
+                LastSeenAt = lastSeenAt,
+                ActivityKind = context.Kind,
+                Context = context.Context,
+                DisplayPath = context.DisplayPath,
+                Repository = repository,
+                WorkingDirectory = cwd,
+            };
+            if (hotspot.ActivityKind == FileActivityKind.Project)
+            {
+                projectFileCount++;
+                if (projectFiles.Count < perCategoryLimit)
+                    projectFiles.Add(hotspot);
+            }
+            else
+            {
+                artifactCount++;
+                if (artifacts.Count < perCategoryLimit)
+                    artifacts.Add(hotspot);
+            }
+        }
+
+        return new FileHotspotSummary(
+            projectFiles,
+            projectFileCount,
+            artifacts,
+            artifactCount);
+    }
+
     public async ValueTask<HotFile[]> SearchFilesAsync(string query, int limit = 100, CancellationToken ct = default)
         => await QueryFileSummariesAsync(query, limit, popular: false, ct);
 
@@ -941,6 +1077,86 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         }
         return [.. results];
     }
+
+    private (FileActivityKind Kind, string Context, string DisplayPath) ClassifyFileActivity(
+        string filePath,
+        string? repository,
+        string? cwd)
+    {
+        if (TryGetRelativePath(_temporaryPath, filePath, out var temporaryRelative))
+        {
+            var parts = SplitPath(temporaryRelative);
+            var area = parts.FirstOrDefault() ?? "temporary files";
+            var areaRoot = Path.Combine(_temporaryPath, area);
+            return (
+                FileActivityKind.Temporary,
+                $"Temporary · {area}",
+                TryGetRelativePath(areaRoot, filePath, out var areaRelative)
+                    ? areaRelative
+                    : filePath);
+        }
+
+        if (TryGetRelativePath(_sessionStatePath, filePath, out var stateRelative))
+        {
+            var sessionId = SplitPath(stateRelative).FirstOrDefault();
+            return (
+                FileActivityKind.CopilotSessionState,
+                sessionId is null
+                    ? "Copilot session state"
+                    : $"Copilot session state · {sessionId}",
+                stateRelative);
+        }
+
+        if (TryGetRelativePath(_copilotPath, filePath, out var copilotRelative))
+        {
+            return (
+                FileActivityKind.CopilotConfiguration,
+                "Copilot configuration",
+                copilotRelative);
+        }
+
+        if (!string.IsNullOrWhiteSpace(cwd)
+            && TryGetRelativePath(cwd, filePath, out var projectRelative))
+        {
+            return (
+                FileActivityKind.Project,
+                repository ?? cwd ?? "Project",
+                projectRelative);
+        }
+
+        return (FileActivityKind.Other, "Other local files", filePath);
+    }
+
+    private static bool TryGetRelativePath(
+        string root,
+        string candidate,
+        out string relativePath)
+    {
+        relativePath = "";
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(candidate))
+            return false;
+
+        var normalizedRoot = NormalizeComparablePath(root);
+        var normalizedCandidate = NormalizeComparablePath(candidate);
+        if (!normalizedCandidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase)
+            && !normalizedCandidate.StartsWith(
+                normalizedRoot + "\\",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        relativePath = normalizedCandidate.Length == normalizedRoot.Length
+            ? Path.GetFileName(normalizedCandidate)
+            : normalizedCandidate[(normalizedRoot.Length + 1)..];
+        return true;
+    }
+
+    private static string NormalizeComparablePath(string path) =>
+        path.Trim().Replace('/', '\\').TrimEnd('\\');
+
+    private static string[] SplitPath(string path) =>
+        path.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
 
     public async ValueTask<FileHistoryEntry[]> GetFileHistoryAsync(string filePath, CancellationToken ct = default)
     {
@@ -1146,6 +1362,14 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             "narnia_path_ends_with",
             FilePathEndsWith,
             isDeterministic: true);
+        connection.CreateFunction<string?, string?, string?>(
+            "narnia_file_identity",
+            CanonicalFileIdentity,
+            isDeterministic: true);
+        connection.CreateFunction<string?, string?, bool>(
+            "narnia_path_is_within",
+            FilePathIsWithin,
+            isDeterministic: true);
     }
 
     private static bool FilePathContains(string? path, string? query)
@@ -1174,6 +1398,34 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
 
     private static string? NormalizeFilePathShape(string? path) =>
         path?.Trim().Replace('\\', '/');
+
+    private static string? CanonicalFileIdentity(string? filePath, string? cwd)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return null;
+
+        var candidate = filePath.Trim();
+        try
+        {
+            if (Path.IsPathFullyQualified(candidate))
+                candidate = Path.GetFullPath(candidate);
+            else if (!string.IsNullOrWhiteSpace(cwd)
+                && Path.IsPathFullyQualified(cwd))
+            {
+                candidate = Path.GetFullPath(candidate, cwd);
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+        }
+
+        return NormalizeComparablePath(candidate);
+    }
+
+    private static bool FilePathIsWithin(string? filePath, string? root) =>
+        filePath is not null
+        && root is not null
+        && TryGetRelativePath(root, filePath, out _);
 
     private async ValueTask<SessionSummary[]> QuerySessionSummariesAsync(
         string commandText,

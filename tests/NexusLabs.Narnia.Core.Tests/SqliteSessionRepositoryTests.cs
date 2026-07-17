@@ -897,6 +897,94 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetFileHotspotsAsync_AddsProjectAndTemporaryContext()
+    {
+        var temporaryFile = Path.Combine(
+            Path.GetTempPath(),
+            "eval-run",
+            "app",
+            "IMPLEMENTATION_PLAN.md");
+        await using (var cmd = _keepAlive.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at) VALUES
+                    ('sess-1', 'C:\dev\proj-a\src\Feature.cs', 'edit', 2, '2025-02-01T10:00:00Z'),
+                    ('sess-2', @temporaryFile, 'create', 1, '2025-02-01T10:01:00Z'),
+                    ('sess-1', 'C:\shared\global.json', 'edit', 3, '2025-02-01T10:02:00Z');
+                """;
+            cmd.Parameters.AddWithValue("@temporaryFile", temporaryFile);
+            await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var summary = await _repository.GetFileHotspotsAsync(
+            20,
+            TestContext.Current.CancellationToken);
+        var results = summary.ProjectFiles.Concat(summary.Artifacts).ToArray();
+
+        var project = Assert.Single(
+            results,
+            file => file.FilePath == @"C:\dev\proj-a\src\Feature.cs");
+        Assert.Equal(FileActivityKind.Project, project.ActivityKind);
+        Assert.Equal("owner/repo-a", project.Context);
+        Assert.Equal(@"src\Feature.cs", project.DisplayPath);
+
+        var temporary = Assert.Single(
+            results,
+            file => file.FilePath == temporaryFile);
+        Assert.Equal(FileActivityKind.Temporary, temporary.ActivityKind);
+        Assert.Equal("Temporary · eval-run", temporary.Context);
+        Assert.Equal(@"app\IMPLEMENTATION_PLAN.md", temporary.DisplayPath);
+
+        var external = Assert.Single(
+            results,
+            file => file.FilePath == @"C:\shared\global.json");
+        Assert.Equal(FileActivityKind.Other, external.ActivityKind);
+    }
+
+    [Fact]
+    public async Task GetFileHotspotsAsync_UsesContextAwareCanonicalIdentity()
+    {
+        await ExecuteAsync(
+            """
+            INSERT INTO session_files (session_id, file_path, tool_name, turn_index, first_seen_at) VALUES
+                ('sess-1', 'C:\dev\proj-a\src\Shared.cs', 'edit', 2, '2025-02-01T10:00:00Z'),
+                ('sess-2', 'c:/DEV/proj-a/src/Shared.cs', 'edit', 1, '2025-02-01T10:01:00Z'),
+                ('sess-1', 'src\Relative.cs', 'edit', 3, '2025-02-01T10:02:00Z'),
+                ('sess-2', 'src\Relative.cs', 'edit', 2, '2025-02-01T10:03:00Z'),
+                ('sess-1', 'C:src\DriveRelative.cs', 'edit', 4, '2025-02-01T10:04:00Z');
+            """);
+
+        var summary = await _repository.GetFileHotspotsAsync(
+            50,
+            TestContext.Current.CancellationToken);
+        var results = summary.ProjectFiles.Concat(summary.Artifacts).ToArray();
+
+        var shared = Assert.Single(
+            results,
+            file => file.FilePath.Equals(
+                @"C:\dev\proj-a\src\Shared.cs",
+                StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(2, shared.SessionCount);
+        Assert.Equal(FileActivityKind.Project, shared.ActivityKind);
+
+        Assert.Contains(
+            results,
+            file => file.FilePath.Equals(
+                @"C:\dev\proj-a\src\Relative.cs",
+                StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            results,
+            file => file.FilePath.Equals(
+                @"C:\dev\proj-b\src\Relative.cs",
+                StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            results,
+            file => file.FilePath.Equals(
+                @"C:\dev\proj-a\src\DriveRelative.cs",
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task SearchFilesAsync_PathFragment_MatchesAcrossSlashDirectionAndCase()
     {
         var results = await _repository.SearchFilesAsync(
@@ -973,6 +1061,16 @@ public sealed class SqliteSessionRepositoryTests : IDisposable
 
         Assert.Single(results);
         Assert.Equal("sess-1", results[0].SessionId);
+    }
+
+    [Fact]
+    public async Task GetFileHistoryAsync_CanonicalPathMatchesRelativeRecordedPath()
+    {
+        var results = await _repository.GetFileHistoryAsync(
+            @"C:\dev\proj-a\src\Program.cs",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("sess-1", Assert.Single(results).SessionId);
     }
 
     [Fact]

@@ -348,6 +348,8 @@ span.dashboard-item-title { color: var(--text); }
 /* ── Charts ──────────────────────────────────────────────────── */
 .chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 2rem; max-height: 420px; }
 .chart-container canvas { max-height: 380px; }
+.chart-container--wide { position: relative; height: clamp(320px, 42vw, 480px); max-height: none; }
+.chart-container--wide canvas { max-height: none; }
 .chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
 .chart-row .chart-container { margin-bottom: 0; }
 
@@ -363,6 +365,11 @@ span.dashboard-item-title { color: var(--text); }
 
 /* ── Hot Files ───────────────────────────────────────────────── */
 .hot-file-path { font-family: monospace; font-size: .82rem; word-break: break-all; }
+.file-hotspot-context { font-weight: 600; overflow-wrap: anywhere; }
+.file-hotspot-path { font-family: monospace; font-size: .85rem; overflow-wrap: anywhere; }
+.file-hotspot-secondary { margin-top: .2rem; color: var(--text-subtle); font-size: .75rem; overflow-wrap: anywhere; }
+.file-hotspot-artifacts { margin-top: 1.25rem; }
+.file-hotspot-artifacts > summary { cursor: pointer; color: var(--text-muted); font-weight: 650; }
 .file-path-search { font-family: monospace; }
 .file-timeline-recorded { color: var(--text-subtle); font-size: .8rem; margin-top: .25rem; }
 

@@ -108,6 +108,16 @@ public interface ISessionRepository
     ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default);
 
     /// <summary>
+    /// Gets enriched file hotspots with project or generated-data context.
+    /// </summary>
+    /// <param name="perCategoryLimit">Maximum identities returned for each category.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Top contextual hotspots and complete category counts.</returns>
+    ValueTask<FileHotspotSummary> GetFileHotspotsAsync(
+        int perCategoryLimit = 25,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Searches recorded file paths using case-insensitive, separator-normalized substring matching.
     /// </summary>
     /// <param name="query">Path fragment to search for. An empty value returns recently recorded paths.</param>

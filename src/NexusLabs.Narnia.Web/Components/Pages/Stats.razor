@@ -80,7 +80,7 @@ else
     {
         <h2>Growth Over Time</h2>
         <p>Cumulative raw Copilot session records, turns, file touches, and checkpoints. Use the legend to show or hide a series.</p>
-        <div class="chart-container">
+        <div class="chart-container chart-container--wide">
             <canvas id="stats-growth-chart"></canvas>
         </div>
         <script type="application/json" data-chart-id="stats-growth-chart">
@@ -122,7 +122,7 @@ else
                     <a href="@ActivityDateUrl(PeakActivity.Date)">@PeakActivity.Date.ToString("yyyy-MM-dd")</a>
                 </span>
             </div>
-            <div class="chart-container">
+            <div class="chart-container chart-container--wide">
                 <canvas id="stats-activity-chart"></canvas>
             </div>
             <script type="application/json"
@@ -192,42 +192,34 @@ else
         </script>
     }
 
-    @if (_hotFiles is not null)
+    @if (_projectHotspots is not null && _artifactHotspots is not null)
     {
-        <h2>Most Touched Files</h2>
-        <p>Recorded file paths ranked by the number of distinct Copilot sessions that touched them.</p>
-        @if (_hotFiles.Length == 0)
+        <h2>File Hotspots</h2>
+        <p>
+            Exact recorded paths ranked by distinct Copilot sessions, with repository or local
+            context preserved.
+        </p>
+
+        <h3>Project Files (@HotspotCountLabel(_projectHotspots.Length, _projectHotspotCount))</h3>
+        @if (_projectHotspots.Length == 0)
         {
-            <p>No file data has been recorded yet.</p>
+            <p>No project file hotspots have been recorded yet.</p>
         }
         else
         {
-            <div class="chart-container">
-                <canvas id="stats-hot-files-chart"></canvas>
-            </div>
-            <script type="application/json" data-chart-id="stats-hot-files-chart">
-                @((MarkupString)BuildHotFilesChartJson(_hotFiles))
-            </script>
+            <FileHotspotTable Items="_projectHotspots" TableId="stats-project-hotspots" />
+        }
 
-            <table class="sessions-table" data-resizable-table="stats-hot-files">
-                <thead>
-                    <tr>
-                        <th>File</th>
-                        <th>Sessions</th>
-                        <th>Latest Tool</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var file in _hotFiles)
-                    {
-                        <tr>
-                            <td><a href="/files?path=@Uri.EscapeDataString(file.FilePath)" class="hot-file-path">@file.FilePath</a></td>
-                            <td>@file.SessionCount</td>
-                            <td>@(file.LastToolName ?? "—")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+        @if (_artifactHotspots.Length > 0)
+        {
+            <details class="file-hotspot-artifacts">
+                <summary>Generated and local artifacts (@HotspotCountLabel(_artifactHotspots.Length, _artifactHotspotCount))</summary>
+                <p class="search-hint">
+                    Temporary runs, Copilot session-state files, configuration, and other local
+                    artifacts remain available for auditing but do not dominate the project view.
+                </p>
+                <FileHotspotTable Items="_artifactHotspots" TableId="stats-artifact-hotspots" />
+            </details>
         }
     }
 
@@ -254,7 +246,7 @@ else
     @if (_repoStats is { Length: > 0 })
     {
         <h2>Raw Sessions by Remote Repository</h2>
-        <div class="chart-container">
+        <div class="chart-container chart-container--wide">
             <canvas id="stats-repo-chart"></canvas>
         </div>
         <script type="application/json" data-chart-id="stats-repo-chart">
@@ -272,7 +264,10 @@ else
     private ActivityDay[]? _recentActivity;
     private SessionActivitySource[] _activitySources = [];
     private DateOnly? _selectedActivityDate;
-    private HotFile[]? _hotFiles;
+    private HotFile[]? _projectHotspots;
+    private HotFile[]? _artifactHotspots;
+    private int _projectHotspotCount;
+    private int _artifactHotspotCount;
 
     /// <summary>Gets or sets the recent-activity window selected through the query string.</summary>
     [SupplyParameterFromQuery(Name = "days")]
@@ -293,7 +288,7 @@ else
         var insightsTask = Repository.GetSessionInsightsAsync().AsTask();
         var patternsTask = Repository.GetActivityPatternsAsync().AsTask();
         var growthTask = Repository.GetActivityTimelineAsync(3650).AsTask();
-        var hotFilesTask = Repository.GetHotFilesAsync(25).AsTask();
+        var hotFilesTask = Repository.GetFileHotspotsAsync(25).AsTask();
         await Task.WhenAll(statsTask, repoStatsTask, insightsTask, patternsTask, growthTask, hotFilesTask);
 
         _repoStats = await repoStatsTask;
@@ -301,7 +296,11 @@ else
         _insights = await insightsTask;
         _patterns = await patternsTask;
         _growth = await growthTask;
-        _hotFiles = await hotFilesTask;
+        var hotFiles = await hotFilesTask;
+        _projectHotspots = [.. hotFiles.ProjectFiles];
+        _artifactHotspots = [.. hotFiles.Artifacts];
+        _projectHotspotCount = hotFiles.ProjectFileCount;
+        _artifactHotspotCount = hotFiles.ArtifactCount;
 
         var cutoff = DateOnly.FromDateTime(DateTime.Now.Date.AddDays(-SelectedDays));
         _recentActivity =
@@ -340,6 +339,7 @@ else
             options = new
             {
                 responsive = true,
+                maintainAspectRatio = false,
                 plugins = new { legend = new { display = false } },
                 scales = new { y = new { beginAtZero = true, ticks = new { stepSize = 1 } } }
             }
@@ -377,6 +377,7 @@ else
             options = new
             {
                 responsive = true,
+                maintainAspectRatio = false,
                 interaction = new { mode = "index", intersect = false },
                 plugins = new { legend = new { display = true, position = "bottom" } },
                 scales = new
@@ -429,6 +430,7 @@ else
             options = new
             {
                 responsive = true,
+                maintainAspectRatio = false,
                 plugins = new { legend = new { display = false } },
                 scales = new
                 {
@@ -479,6 +481,9 @@ else
         _ => "Unknown",
     };
 
+    private static string HotspotCountLabel(int shown, int total) =>
+        shown == total ? total.ToString() : $"top {shown} of {total}";
+
     private static string BuildFileOpsChartJson(SessionInsights insights) =>
         JsonSerializer.Serialize(new
         {
@@ -520,37 +525,6 @@ else
                 plugins = new { legend = new { position = "bottom" }, title = new { display = true, text = "Session Origin" } }
             }
         });
-
-    private static string BuildHotFilesChartJson(HotFile[] data)
-    {
-        var top = data.Take(15).ToArray();
-        return JsonSerializer.Serialize(new
-        {
-            type = "bar",
-            data = new
-            {
-                labels = top.Select(file => System.IO.Path.GetFileName(file.FilePath)).ToArray(),
-                datasets = new[]
-                {
-                    new
-                    {
-                        label = "Sessions",
-                        data = top.Select(file => file.SessionCount).ToArray(),
-                        backgroundColor = "rgba(16,185,129,0.7)",
-                        borderColor = "rgba(16,185,129,1)",
-                        borderWidth = 1,
-                    },
-                },
-            },
-            options = new
-            {
-                indexAxis = "y",
-                responsive = true,
-                plugins = new { legend = new { display = false } },
-                scales = new { x = new { beginAtZero = true, ticks = new { stepSize = 1 } } },
-            },
-        });
-    }
 
     private static string BuildDayOfWeekChartJson(IReadOnlyList<DayOfWeekActivity> data) =>
         JsonSerializer.Serialize(new

@@ -161,6 +161,12 @@ public sealed class OverridingSessionRepository(
     public ValueTask<HotFile[]> GetHotFilesAsync(int limit = 20, CancellationToken ct = default) =>
         inner.GetHotFilesAsync(limit, ct);
 
+    /// <inheritdoc />
+    public ValueTask<FileHotspotSummary> GetFileHotspotsAsync(
+        int perCategoryLimit = 25,
+        CancellationToken ct = default) =>
+        inner.GetFileHotspotsAsync(perCategoryLimit, ct);
+
     public ValueTask<HotFile[]> SearchFilesAsync(string query, int limit = 100, CancellationToken ct = default) =>
         inner.SearchFilesAsync(query, limit, ct);
 

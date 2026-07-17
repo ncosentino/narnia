@@ -1,0 +1,53 @@
+@using NexusLabs.Narnia.Core.Models
+
+<table class="sessions-table" data-resizable-table="@TableId">
+    <thead>
+        <tr>
+            <th>Context</th>
+            <th>File</th>
+            <th>Sessions</th>
+            <th>Last Touched</th>
+            <th>Latest Tool</th>
+            <th>History</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var file in Items)
+        {
+            <tr>
+                <td>
+                    <div class="file-hotspot-context">@file.Context</div>
+                </td>
+                <td>
+                    <a class="file-hotspot-path" href="@HistoryUrl(file.FilePath)">
+                        @(file.DisplayPath ?? file.FilePath)
+                    </a>
+                    @if (!string.Equals(file.DisplayPath, file.FilePath, StringComparison.Ordinal))
+                    {
+                        <div class="file-hotspot-secondary">@file.FilePath</div>
+                    }
+                </td>
+                <td>@file.SessionCount</td>
+                <td>@FormatTime(file.LastSeenAt)</td>
+                <td>@(file.LastToolName ?? "—")</td>
+                <td><a href="@HistoryUrl(file.FilePath)">View sessions →</a></td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    /// <summary>Gets or sets the contextual hotspot rows to display.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<HotFile> Items { get; set; } = [];
+
+    /// <summary>Gets or sets the stable resizable-table identifier.</summary>
+    [Parameter, EditorRequired]
+    public string TableId { get; set; } = "";
+
+    private static string HistoryUrl(string filePath) =>
+        $"/files?path={Uri.EscapeDataString(filePath)}";
+
+    private static string FormatTime(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—";
+}
