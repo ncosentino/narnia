@@ -18,8 +18,8 @@
     <input type="search"
            name="q"
            value="@Query"
-           placeholder="Search session content..."
-           aria-label="Search session content" />
+           placeholder="Search names, aliases, and session content..."
+           aria-label="Search session names, aliases, and content" />
     @if (HasRepositoryFilter)
     {
         <input type="hidden" name="repository" value="@RepositoryFilter" />
@@ -97,7 +97,8 @@
 @if (HasContentSearch)
 {
     <p class="search-hint">
-        Content search scans summaries, conversations, checkpoints, and workspace artifacts.
+        Search checks Copilot session names and Narnia aliases before conversations, checkpoints,
+        and workspace artifacts.
         Repository, working-directory, and creation-date constraints are applied as structured
         filters instead of keyword search.
     </p>
@@ -121,7 +122,7 @@
             <tr>
                 <th class="col-select" data-no-resize><input type="checkbox" title="Select all" onclick="narniaToggleAll(this)" /></th>
                 <th class="col-favorite"><a class="sort-link" href="@SortUrl(SessionSortColumn.Favorite)" aria-label="@SortAriaLabel("Favorite", SessionSortColumn.Favorite)">Favorite@(SortIndicator(SessionSortColumn.Favorite))</a></th>
-                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Summary)" aria-label="@SortAriaLabel("Summary", SessionSortColumn.Summary)">Summary@(SortIndicator(SessionSortColumn.Summary))</a></th>
+                <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Summary)" aria-label="@SortAriaLabel("Name", SessionSortColumn.Summary)">Name@(SortIndicator(SessionSortColumn.Summary))</a></th>
                 <th>Status</th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Repository)" aria-label="@SortAriaLabel("Remote Repository", SessionSortColumn.Repository)">Remote Repository@(SortIndicator(SessionSortColumn.Repository))</a></th>
                 <th><a class="sort-link" href="@SortUrl(SessionSortColumn.Directory)" aria-label="@SortAriaLabel("Working Directory", SessionSortColumn.Directory)">Working Directory@(SortIndicator(SessionSortColumn.Directory))</a></th>
@@ -140,7 +141,7 @@
                     <td class="col-select"><input type="checkbox" class="session-check" value="@s.Id" onclick="narniaUpdateBulkBar()" /></td>
                     <td class="col-favorite"><FavoriteButton SessionId="@s.Id" IsFavorite="@s.IsFavorite" /></td>
                     <td>
-                        <a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a>
+                        <a href="/sessions/@s.Id">@(s.Summary ?? "(unnamed session)")</a>
                         @if (isArchived)
                         {
                             <span class="badge-archived">archived</span>
@@ -193,13 +194,13 @@ else if (_sessions is not null)
 @if (_searchResults is not null && _searchResults.Length > 0)
 {
     <h2>Match Context</h2>
-    <p class="search-hint">The strongest content match for each result shown on this page.</p>
+    <p class="search-hint">The strongest name, alias, or content match for each result shown on this page.</p>
     @foreach (var r in _searchResults)
     {
         _sessionsById.TryGetValue(r.SessionId, out var session);
         <div class="search-result">
             <div class="search-result-header">
-                <a href="/sessions/@r.SessionId">@(session?.Summary ?? "(no summary)")</a>
+                <a href="/sessions/@r.SessionId">@(session?.Summary ?? "(unnamed session)")</a>
                 <span class="source-type">@FormatSourceType(r.SourceType)</span>
             </div>
             @if (session is not null)

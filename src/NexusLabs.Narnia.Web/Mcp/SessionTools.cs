@@ -37,9 +37,9 @@ internal sealed class SessionTools
     }
 
     [McpServerTool(Name = "search_sessions")]
-    [Description("Full-text search across visible session content including summaries, conversation turns, checkpoints, and workspace artifacts. Archived sessions are excluded. This does not filter repository or working-directory metadata; use the exact list tools for those fields.")]
+    [Description("Search visible sessions by Copilot name, Narnia alias, conversation turns, checkpoints, and workspace artifacts. Name and alias matches rank before indexed content. Archived sessions are excluded. This does not filter repository or working-directory metadata; use the exact list tools for those fields.")]
     public async Task<string> SearchSessionsAsync(
-        [Description("Content search query, e.g. 'dependency injection' or the prefix query 'auth*'.")] string query,
+        [Description("Session name, Narnia alias, or content query, e.g. 'dependency injection' or the prefix query 'auth*'.")] string query,
         [Description("Maximum number of results to return. Default 10.")] int limit = 10,
         CancellationToken cancellationToken = default)
     {
@@ -144,7 +144,7 @@ internal sealed class SessionTools
     }
 
     [McpServerTool(Name = "get_session_workspace")]
-    [Description("Get workspace metadata for a session: the git root directory and a list of session artifact files (e.g. plan.md, context files) stored in the session's files/ directory.")]
+    [Description("Get read-only Copilot workspace metadata for a session: its Copilot-managed name, whether the user named it, git root, and session artifact files.")]
     public Task<string> GetSessionWorkspaceAsync(
         [Description("The session GUID.")] string sessionId,
         CancellationToken cancellationToken = default)

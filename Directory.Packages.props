@@ -3,30 +3,28 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
-
   <!-- Pin the transitive SQLite native bundle to the 3.x line. Microsoft.Data.Sqlite 10.0.x and
        dbup-sqlite still resolve the 2.x line, whose last release (SQLitePCLRaw.lib.e_sqlite3 2.1.11)
        carries GHSA-2m69-gcr7-jv3q. The 3.x bundle repackages the native library and is unaffected. -->
   <ItemGroup Label="SQLite native">
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
   </ItemGroup>
-
+  <ItemGroup Label="Serialization">
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
   <ItemGroup Label="Microsoft">
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.3" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
     <PackageVersion Include="System.IO.Abstractions" Version="21.0.29" />
     <PackageVersion Include="System.Management" Version="10.0.9" />
   </ItemGroup>
-
   <ItemGroup Label="DbUp">
     <PackageVersion Include="dbup-sqlite" Version="6.0.4" />
   </ItemGroup>
-
   <ItemGroup Label="MCP">
     <PackageVersion Include="ModelContextProtocol" Version="1.4.0" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
   </ItemGroup>
-
   <ItemGroup Label="Testing">
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />

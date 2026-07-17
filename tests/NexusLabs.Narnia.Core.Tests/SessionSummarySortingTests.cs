@@ -20,6 +20,7 @@ public sealed class SessionSummarySortingTests
 
     [Theory]
     [InlineData("favorite", SessionSortColumn.Favorite)]
+    [InlineData("name", SessionSortColumn.Summary)]
     [InlineData("summary", SessionSortColumn.Summary)]
     [InlineData("Summary", SessionSortColumn.Summary)]
     [InlineData("repository", SessionSortColumn.Repository)]

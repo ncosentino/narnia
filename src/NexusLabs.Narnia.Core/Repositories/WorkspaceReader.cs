@@ -1,30 +1,42 @@
 using System.IO.Abstractions;
 using NexusLabs.Narnia.Core.Configuration;
 using NexusLabs.Narnia.Core.Models;
+using YamlDotNet.Core;
+using YamlDotNet.RepresentationModel;
 
 namespace NexusLabs.Narnia.Core.Repositories;
 
+/// <summary>Reads Copilot workspace metadata and artifacts through read-only filesystem access.</summary>
 public sealed class WorkspaceReader(NarniaOptions options, IFileSystem fileSystem) : IWorkspaceReader
 {
+    /// <inheritdoc />
     public WorkspaceInfo ReadWorkspace(string sessionId)
     {
         var sessionDir = fileSystem.Path.Combine(options.SessionStatePath, sessionId);
 
         string? gitRoot = null;
+        string? name = null;
+        var isUserNamed = false;
         var workspacePath = fileSystem.Path.Combine(sessionDir, "workspace.yaml");
         if (fileSystem.File.Exists(workspacePath))
         {
-            foreach (var line in fileSystem.File.ReadAllLines(workspacePath))
+            try
             {
-                var colonIndex = line.IndexOf(':');
-                if (colonIndex < 1) continue;
-                var key = line[..colonIndex].Trim();
-                var value = line[(colonIndex + 1)..].Trim();
-                if (key == "git_root")
+                var yaml = new YamlStream();
+                using var reader = new StringReader(fileSystem.File.ReadAllText(workspacePath));
+                yaml.Load(reader);
+                if (yaml.Documents.FirstOrDefault()?.RootNode is YamlMappingNode root)
                 {
-                    gitRoot = value;
-                    break;
+                    gitRoot = ReadScalar(root, "git_root");
+                    name = ReadScalar(root, "name");
+                    isUserNamed = string.Equals(
+                        ReadScalar(root, "user_named"),
+                        "true",
+                        StringComparison.OrdinalIgnoreCase);
                 }
+            }
+            catch (YamlException)
+            {
             }
         }
 
@@ -34,6 +46,16 @@ public sealed class WorkspaceReader(NarniaOptions options, IFileSystem fileSyste
                 .Select(f => fileSystem.Path.GetFileName(f))]
             : [];
 
-        return new WorkspaceInfo(sessionId, gitRoot, artifacts);
+        return new WorkspaceInfo(sessionId, gitRoot, artifacts)
+        {
+            Name = name,
+            IsUserNamed = isUserNamed,
+        };
     }
+
+    private static string? ReadScalar(YamlMappingNode root, string key) =>
+        root.Children.TryGetValue(new YamlScalarNode(key), out var value)
+        && value is YamlScalarNode scalar
+            ? scalar.Value
+            : null;
 }

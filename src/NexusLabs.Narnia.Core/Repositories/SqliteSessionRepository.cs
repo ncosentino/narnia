@@ -60,6 +60,13 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         GROUP BY s.id
         """;
 
+    private const string SessionNamesSql =
+        """
+        SELECT id, summary, updated_at
+        FROM sessions
+        ORDER BY updated_at DESC, id
+        """;
+
     private static readonly string GetTurnsSql =
         """
         SELECT id, session_id, turn_index, user_message, assistant_response, timestamp
@@ -548,6 +555,28 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             return null;
 
         return ReadSession(reader);
+    }
+
+    internal async ValueTask<IReadOnlyList<SessionNameRecord>> GetSessionNamesAsync(
+        CancellationToken ct = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = SessionNamesSql;
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var results = new List<SessionNameRecord>();
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new SessionNameRecord(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                ParseDateTimeOffset(reader.IsDBNull(2) ? null : reader.GetString(2))));
+        }
+
+        return results;
     }
 
     public async ValueTask<Turn[]> GetTurnsAsync(string sessionId, int offset = 0, int limit = 50, CancellationToken ct = default)

@@ -58,7 +58,7 @@ else if (_collection is not null)
                                onclick="narniaToggleAllCollectionMembers(this)" />
                     </th>
                     <th class="col-favorite">Favorite</th>
-                    <th>Summary</th>
+                    <th>Name</th>
                     <th>Remote Repository</th>
                     <th>Working Directory</th>
                     <th>Updated</th>
@@ -91,7 +91,7 @@ else if (_collection is not null)
                             }
                             else
                             {
-                                <a href="/sessions/@session.Id">@(session.Summary ?? "(no summary)")</a>
+                                <a href="/sessions/@session.Id">@(session.Summary ?? "(unnamed session)")</a>
                                 @if (isArchived)
                                 {
                                     <span class="badge-archived">archived</span>

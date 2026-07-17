@@ -35,7 +35,7 @@ else if (_matches is not null)
             <tr>
                 <th class="col-favorite">Favorite</th>
                 <th>Match</th>
-                <th>Summary</th>
+                <th>Name</th>
                 <th>Remote Repository</th>
                 <th>Branch</th>
                 <th>Turns</th>
@@ -58,7 +58,7 @@ else if (_matches is not null)
                             <span class="badge-health badge-neutral" title="This value appears in the session's text but wasn't explicitly recorded as a ref.">mentioned</span>
                         }
                     </td>
-                    <td><a href="/sessions/@s.Id">@(s.Summary ?? "(no summary)")</a></td>
+                    <td><a href="/sessions/@s.Id">@(s.Summary ?? "(unnamed session)")</a></td>
                     <td><SessionFilterLink FilterName="repository" Value="@s.Repository" /></td>
                     <td>@(s.Branch ?? "—")</td>
                     <td>@s.TurnCount</td>
