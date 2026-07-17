@@ -5,6 +5,7 @@
 @inject ISessionRepository Repository
 @inject SqliteSessionRepository RawRepository
 @inject ISessionOverridesRepository OverridesRepository
+@inject IWorkCollectionsRepository CollectionsRepository
 @inject IWorkspaceReader WorkspaceReader
 @inject INarniaSettingsRepository SettingsRepo
 
@@ -64,6 +65,21 @@ else if (_session is not null)
         <dt>Updated</dt><dd>@_session.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
         <dt>Turns</dt><dd>@_session.TurnCount</dd>
         <dt>Checkpoints</dt><dd>@_session.CheckpointCount</dd>
+        <dt>Collections</dt>
+        <dd class="collection-memberships" id="session-collections">
+            @foreach (var collection in _collections)
+            {
+                <a class="collection-chip" href="/collections/@collection.Id">@collection.Name</a>
+            }
+            @if (_collections.Count == 0)
+            {
+                <span>None</span>
+            }
+            <button class="btn-bulk-collection"
+                    onclick="narniaAddSessionToCollection('@_session.Id', this)">
+                Add to Collection
+            </button>
+        </dd>
     </dl>
 
     <details class="overrides-panel">
@@ -227,6 +243,7 @@ else if (_session is not null)
     private WorkspaceInfo? _workspace;
     private Checkpoint[]? _checkpoints;
     private Turn[]? _turns;
+    private IReadOnlyList<WorkCollection> _collections = [];
     private bool _loaded;
     private bool HasMetadataOverrides =>
         _override is not null
@@ -247,6 +264,7 @@ else if (_session is not null)
             _rawSession = await RawRepository.GetByIdAsync(SessionId);
             _override = await OverridesRepository.GetOverrideAsync(SessionId);
             _workspace = WorkspaceReader.ReadWorkspace(SessionId);
+            _collections = await CollectionsRepository.GetBySessionIdAsync(SessionId);
             _checkpoints = await Repository.GetCheckpointsAsync(SessionId);
             _turns = await Repository.GetTurnsAsync(SessionId, 0, 100);
         }

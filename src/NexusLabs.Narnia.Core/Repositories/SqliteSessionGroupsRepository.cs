@@ -122,20 +122,10 @@ public sealed class SqliteSessionGroupsRepository(NarniaOptions options) : ISess
         await tx.CommitAsync(ct);
     }
 
-    // Collapses duplicate session ids to their first occurrence and assigns sequential order.
     private static List<SessionGroupMember> ToMembers(IReadOnlyList<string> sessionIds)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var members = new List<SessionGroupMember>(sessionIds.Count);
-        foreach (var sessionId in sessionIds)
-        {
-            if (string.IsNullOrWhiteSpace(sessionId) || !seen.Add(sessionId))
-                continue;
-            members.Add(new SessionGroupMember(sessionId, members.Count));
-        }
-
-        return members;
-    }
+        => SessionIdCollection.Normalize(sessionIds)
+            .Select((sessionId, index) => new SessionGroupMember(sessionId, index))
+            .ToList();
 
     private static async ValueTask InsertMembersAsync(
         SqliteConnection conn,
