@@ -32,8 +32,8 @@ else
 {
     @foreach (var group in _groups)
     {
-        <div class="group-card">
-            <div class="page-actions group-head">
+        <div class="session-group-card">
+            <div class="page-actions session-group-head">
                 <h2>@group.Name <span class="window-meta">@group.Members.Count session@(group.Members.Count == 1 ? "" : "s")</span></h2>
                 <div class="closed-controls">
                     <label class="closed-control" title="Off: each session opens in its own window. On: the whole session group opens as tabs in one window."><input type="checkbox" id="session-group-one-window-@group.Id" /> Open as tabs in one window</label>
