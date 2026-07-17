@@ -117,6 +117,14 @@ else if (_collection is not null)
              id="collection-member-action-bar"
              style="display:none;">
             <span id="collection-member-count">0 selected</span>
+            <button class="btn-bulk-launch"
+                    onclick="narniaLaunchSelectedCollectionSessions(this)">
+                🚀 Launch Selected
+            </button>
+            <button class="btn-bulk-group"
+                    onclick="narniaSaveSelectedCollectionSessionsAsSessionGroup(this)">
+                💾 Save as Session Group
+            </button>
             <button class="btn-bulk-archive"
                     onclick="narniaRemoveSelectedCollectionSessions('@_collection.Id', this)">
                 Remove from Collection
