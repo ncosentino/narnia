@@ -27,7 +27,7 @@ public sealed class NavigationTests
             "Sessions",
             "Favorites",
             "Windows",
-            "Groups",
+            "Session Groups",
             "Schedules",
             "Stats",
             "Remote Repositories",

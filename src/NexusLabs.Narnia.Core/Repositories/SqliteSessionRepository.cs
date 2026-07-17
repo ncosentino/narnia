@@ -490,6 +490,50 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
             ct);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyDictionary<string, Session>> GetByIdsAsync(
+        IReadOnlyCollection<string> sessionIds,
+        CancellationToken ct = default)
+    {
+        var ids = sessionIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (ids.Length == 0)
+            return new Dictionary<string, Session>(StringComparer.Ordinal);
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        var sessions = new Dictionary<string, Session>(ids.Length, StringComparer.Ordinal);
+        foreach (var batch in ids.Chunk(500))
+        {
+            await using var cmd = connection.CreateCommand();
+            var parameterNames = new string[batch.Length];
+            for (var i = 0; i < batch.Length; i++)
+            {
+                parameterNames[i] = $"@sessionId{i}";
+                cmd.Parameters.AddWithValue(parameterNames[i], batch[i]);
+            }
+
+            cmd.CommandText =
+                $"""
+                {SessionSummarySelectSql}
+                WHERE s.id IN ({string.Join(", ", parameterNames)})
+                GROUP BY s.id
+                """;
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var session = ReadSession(reader);
+                sessions[session.Id] = session;
+            }
+        }
+
+        return sessions;
+    }
+
     public async ValueTask<Session?> GetByIdAsync(string sessionId, CancellationToken ct = default)
     {
         await using var connection = new SqliteConnection(_connectionString);

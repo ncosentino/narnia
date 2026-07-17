@@ -217,6 +217,27 @@ public sealed class OverridingSessionRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetByIdsAsync_MergesOverridesForEveryReturnedSession()
+    {
+        _savedOverrides["sess-1"] = MakeOverride(
+            "sess-1",
+            repository: "custom/repo") with
+        {
+            DisplayName = "Custom session",
+            IsFavorite = true,
+        };
+
+        var sessions = await _repository.GetByIdsAsync(
+            ["sess-1", "sess-2"],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("Custom session", sessions["sess-1"].Summary);
+        Assert.Equal("custom/repo", sessions["sess-1"].Repository);
+        Assert.True(sessions["sess-1"].IsFavorite);
+        Assert.Equal("Fix the tests", sessions["sess-2"].Summary);
+    }
+
+    [Fact]
     public async Task GetFileHistoryAsync_FavoriteOverride_MergesFavoriteAndDisplayName()
     {
         _savedOverrides["sess-1"] = MakeOverride("sess-1") with

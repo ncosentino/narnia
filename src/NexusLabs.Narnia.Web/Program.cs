@@ -571,146 +571,163 @@ app.MapDelete("/api/windows/{id}", async (
 });
 
 // ── Session groups API ──────────────────────────────────────────────────────
-app.MapGet("/api/groups", async (
-    ISessionGroupsRepository groupsRepo,
-    ISessionRepository sessionRepo,
-    CancellationToken ct) =>
-{
-    var groups = await groupsRepo.GetAllAsync(ct);
+MapSessionGroupsApi("/api/session-groups");
+MapSessionGroupsApi("/api/groups");
 
-    var projected = new List<object>(groups.Count);
-    foreach (var group in groups)
+void MapSessionGroupsApi(string routePrefix)
+{
+    app.MapGet(routePrefix, async (
+        ISessionGroupsRepository groupsRepo,
+        ISessionRepository sessionRepo,
+        CancellationToken ct) =>
     {
-        var members = new List<object>(group.Members.Count);
-        foreach (var member in group.Members)
+        var groups = await groupsRepo.GetAllAsync(ct);
+        var sessionIds = groups
+            .SelectMany(group => group.Members)
+            .Select(member => member.SessionId)
+            .ToArray();
+        var sessionsById = await sessionRepo.GetByIdsAsync(sessionIds, ct);
+
+        var projected = new List<object>(groups.Count);
+        foreach (var group in groups)
         {
-            var session = await sessionRepo.GetByIdAsync(member.SessionId, ct);
-            members.Add(new
+            var members = new List<object>(group.Members.Count);
+            foreach (var member in group.Members)
             {
-                sessionId = member.SessionId,
-                order = member.MemberOrder,
-                summary = session?.Summary,
-                repository = session?.Repository,
-                branch = session?.Branch,
+                sessionsById.TryGetValue(member.SessionId, out var session);
+                members.Add(new
+                {
+                    sessionId = member.SessionId,
+                    order = member.MemberOrder,
+                    summary = session?.Summary,
+                    repository = session?.Repository,
+                    branch = session?.Branch,
+                });
+            }
+
+            projected.Add(new
+            {
+                id = group.Id,
+                name = group.Name,
+                createdAt = group.CreatedAt,
+                updatedAt = group.UpdatedAt,
+                members,
             });
         }
 
-        projected.Add(new
-        {
-            id = group.Id,
-            name = group.Name,
-            createdAt = group.CreatedAt,
-            updatedAt = group.UpdatedAt,
-            members,
-        });
-    }
-
-    return Results.Ok(new { groups = projected });
-});
-
-app.MapPost("/api/groups", async (
-    GroupRequest request,
-    ISessionGroupsRepository groupsRepo,
-    CancellationToken ct) =>
-{
-    var name = request.Name?.Trim();
-    if (string.IsNullOrWhiteSpace(name))
-        return Results.BadRequest("A group name is required.");
-    if (request.SessionIds is not { Length: > 0 })
-        return Results.BadRequest("Select at least one session for the group.");
-
-    var group = await groupsRepo.CreateAsync(name, request.SessionIds, DateTimeOffset.UtcNow, ct);
-    return Results.Ok(new { id = group.Id, name = group.Name, count = group.Members.Count });
-});
-
-app.MapPost("/api/groups/{id}/rename", async (
-    string id,
-    GroupRenameRequest request,
-    ISessionGroupsRepository groupsRepo,
-    CancellationToken ct) =>
-{
-    var name = request.Name?.Trim();
-    if (string.IsNullOrWhiteSpace(name))
-        return Results.BadRequest("A group name is required.");
-
-    var group = await groupsRepo.GetByIdAsync(id, ct);
-    if (group is null)
-        return Results.NotFound("Group not found");
-
-    await groupsRepo.RenameAsync(id, name, DateTimeOffset.UtcNow, ct);
-    return Results.Ok(new { id, name });
-});
-
-app.MapPost("/api/groups/{id}/members", async (
-    string id,
-    GroupMembersRequest request,
-    ISessionGroupsRepository groupsRepo,
-    CancellationToken ct) =>
-{
-    if (request.SessionIds is not { Length: > 0 })
-        return Results.BadRequest("Select at least one session for the group.");
-
-    var group = await groupsRepo.GetByIdAsync(id, ct);
-    if (group is null)
-        return Results.NotFound("Group not found");
-
-    await groupsRepo.SetMembersAsync(id, request.SessionIds, DateTimeOffset.UtcNow, ct);
-    return Results.Ok(new { id, count = request.SessionIds.Length });
-});
-
-app.MapDelete("/api/groups/{id}", async (
-    string id,
-    ISessionGroupsRepository groupsRepo,
-    CancellationToken ct) =>
-{
-    await groupsRepo.DeleteAsync(id, ct);
-    return Results.NoContent();
-});
-
-app.MapPost("/api/groups/{id}/reopen", async (
-    string id,
-    GroupReopenRequest request,
-    ISessionGroupsRepository groupsRepo,
-    ISessionRepository sessionRepo,
-    ISessionOverridesRepository overridesRepo,
-    IWorkspaceReader workspaceReader,
-    INarniaSettingsRepository settingsRepo,
-    ITerminalLauncher launcher,
-    CancellationToken ct) =>
-{
-    var group = await groupsRepo.GetByIdAsync(id, ct);
-    if (group is null)
-        return Results.NotFound("Group not found");
-    if (group.Members.Count == 0)
-        return Results.BadRequest("Group has no sessions to reopen.");
-
-    var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
-    if (string.IsNullOrWhiteSpace(shellPath))
-        return Results.BadRequest("No shell configured. Go to Settings to configure one.");
-    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
-    var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
-
-    var launchTabs = new List<TerminalLaunchTab>(group.Members.Count);
-    foreach (var member in group.Members.OrderBy(m => m.MemberOrder))
-    {
-        launchTabs.Add(await BuildLaunchTabAsync(
-            member.SessionId, null, sessionRepo, overridesRepo, workspaceReader, ct));
-    }
-
-    // SeparateWindows opens each session in its own window; otherwise the whole group opens as
-    // tabs in a single window. Reusing the unified launcher keeps this identical to every other
-    // launch path.
-    var mode = request.SeparateWindows
-        ? TerminalWindowMode.SeparateWindows
-        : TerminalWindowMode.SingleWindow;
-    var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode, copilotCommand);
-
-    return Results.Ok(new
-    {
-        reopened = outcome.LaunchedSessionIds.Count,
-        failed = outcome.Failures.Select(f => new { sessionId = f.SessionId, reason = f.Reason }).ToList(),
+        return Results.Ok(new { groups = projected });
     });
-});
+
+    app.MapPost(routePrefix, async (
+        SessionGroupCreateRequest request,
+        ISessionGroupsRepository groupsRepo,
+        CancellationToken ct) =>
+    {
+        var name = request.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return Results.BadRequest("A session group name is required.");
+        if (request.SessionIds is not { Length: > 0 })
+            return Results.BadRequest("Select at least one session for the session group.");
+
+        var group = await groupsRepo.CreateAsync(name, request.SessionIds, DateTimeOffset.UtcNow, ct);
+        return Results.Ok(new { id = group.Id, name = group.Name, count = group.Members.Count });
+    });
+
+    app.MapPost($"{routePrefix}/{{id}}/rename", async (
+        string id,
+        SessionGroupRenameRequest request,
+        ISessionGroupsRepository groupsRepo,
+        CancellationToken ct) =>
+    {
+        var name = request.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return Results.BadRequest("A session group name is required.");
+
+        var group = await groupsRepo.GetByIdAsync(id, ct);
+        if (group is null)
+            return Results.NotFound("Session group not found");
+
+        await groupsRepo.RenameAsync(id, name, DateTimeOffset.UtcNow, ct);
+        return Results.Ok(new { id, name });
+    });
+
+    app.MapPost($"{routePrefix}/{{id}}/members", async (
+        string id,
+        SessionGroupMembersRequest request,
+        ISessionGroupsRepository groupsRepo,
+        CancellationToken ct) =>
+    {
+        if (request.SessionIds is not { Length: > 0 })
+            return Results.BadRequest("Select at least one session for the session group.");
+
+        var group = await groupsRepo.GetByIdAsync(id, ct);
+        if (group is null)
+            return Results.NotFound("Session group not found");
+
+        await groupsRepo.SetMembersAsync(id, request.SessionIds, DateTimeOffset.UtcNow, ct);
+        return Results.Ok(new { id, count = request.SessionIds.Length });
+    });
+
+    app.MapDelete($"{routePrefix}/{{id}}", async (
+        string id,
+        ISessionGroupsRepository groupsRepo,
+        CancellationToken ct) =>
+    {
+        await groupsRepo.DeleteAsync(id, ct);
+        return Results.NoContent();
+    });
+
+    app.MapPost($"{routePrefix}/{{id}}/reopen", async (
+        string id,
+        SessionGroupReopenRequest request,
+        ISessionGroupsRepository groupsRepo,
+        ISessionRepository sessionRepo,
+        ISessionOverridesRepository overridesRepo,
+        IWorkspaceReader workspaceReader,
+        INarniaSettingsRepository settingsRepo,
+        ITerminalLauncher launcher,
+        CancellationToken ct) =>
+    {
+        var group = await groupsRepo.GetByIdAsync(id, ct);
+        if (group is null)
+            return Results.NotFound("Session group not found");
+        if (group.Members.Count == 0)
+            return Results.BadRequest("Session group has no sessions to reopen.");
+
+        var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
+        if (string.IsNullOrWhiteSpace(shellPath))
+            return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+        var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+        var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
+
+        var launchTabs = new List<TerminalLaunchTab>(group.Members.Count);
+        foreach (var member in group.Members.OrderBy(member => member.MemberOrder))
+        {
+            launchTabs.Add(await BuildLaunchTabAsync(
+                member.SessionId,
+                null,
+                sessionRepo,
+                overridesRepo,
+                workspaceReader,
+                ct));
+        }
+
+        var mode = request.SeparateWindows
+            ? TerminalWindowMode.SeparateWindows
+            : TerminalWindowMode.SingleWindow;
+        var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode, copilotCommand);
+
+        return Results.Ok(new
+        {
+            reopened = outcome.LaunchedSessionIds.Count,
+            failed = outcome.Failures.Select(failure => new
+            {
+                sessionId = failure.SessionId,
+                reason = failure.Reason,
+            }).ToList(),
+        });
+    });
+}
 
 // ── Scheduled jobs registry API ─────────────────────────────────────────────
 app.MapGet("/api/schedules", async (
@@ -1018,10 +1035,10 @@ internal sealed record BulkReopenRequest(string[] Ids, bool SeparateWindows = fa
 
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);
 
-internal sealed record GroupRequest(string? Name, string[] SessionIds);
-internal sealed record GroupRenameRequest(string? Name);
-internal sealed record GroupMembersRequest(string[] SessionIds);
-internal sealed record GroupReopenRequest(bool SeparateWindows = false);
+internal sealed record SessionGroupCreateRequest(string? Name, string[] SessionIds);
+internal sealed record SessionGroupRenameRequest(string? Name);
+internal sealed record SessionGroupMembersRequest(string[] SessionIds);
+internal sealed record SessionGroupReopenRequest(bool SeparateWindows = false);
 
 internal sealed record ScheduleCreateRequest(
     string Name,

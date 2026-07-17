@@ -6,7 +6,7 @@ using NexusLabs.Narnia.Core.Repositories;
 
 namespace NexusLabs.Narnia.Web.Tests;
 
-public sealed class GroupsEndpointsTests
+public sealed class SessionGroupsEndpointsTests
 {
     private static readonly DateTimeOffset Now = new(2026, 6, 22, 12, 0, 0, TimeSpan.Zero);
 
@@ -15,14 +15,16 @@ public sealed class GroupsEndpointsTests
     private const string Session1 = "11111111-1111-4111-8111-111111111111";
     private const string Session2 = "22222222-2222-4222-8222-222222222222";
 
-    [Fact]
-    public async Task CreateGroup_PersistsNamedGroupInOrder()
+    [Theory]
+    [InlineData("/api/session-groups")]
+    [InlineData("/api/groups")]
+    public async Task CreateSessionGroup_CanonicalAndLegacyRoutesPersistNamedGroupInOrder(string route)
     {
         using var factory = new NarniaWebAppFactory();
         var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
-            "/api/groups", new { name = "  Morning set  ", sessionIds = new[] { Session2, Session1 } }, Ct);
+            route, new { name = "  Morning set  ", sessionIds = new[] { Session2, Session1 } }, Ct);
 
         response.EnsureSuccessStatusCode();
         var groups = await factory.GroupsRepository.GetAllAsync(Ct);
@@ -32,41 +34,56 @@ public sealed class GroupsEndpointsTests
     }
 
     [Fact]
-    public async Task CreateGroup_EmptyName_Returns400()
+    public async Task CreateSessionGroup_EmptyName_Returns400()
     {
         using var factory = new NarniaWebAppFactory();
         var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
-            "/api/groups", new { name = "   ", sessionIds = new[] { Session1 } }, Ct);
+            "/api/session-groups", new { name = "   ", sessionIds = new[] { Session1 } }, Ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty(await factory.GroupsRepository.GetAllAsync(Ct));
     }
 
     [Fact]
-    public async Task CreateGroup_NoSessions_Returns400()
+    public async Task CreateSessionGroup_NoSessions_Returns400()
     {
         using var factory = new NarniaWebAppFactory();
         var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
-            "/api/groups", new { name = "Empty", sessionIds = Array.Empty<string>() }, Ct);
+            "/api/session-groups", new { name = "Empty", sessionIds = Array.Empty<string>() }, Ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task GetGroups_ReturnsGroups_WithSessionEnrichment()
+    public async Task GetSessionGroups_ReturnsGroupsWithBatchSessionEnrichment()
     {
         using var factory = new NarniaWebAppFactory();
+        var session = new Session(
+            Session1,
+            @"C:\dev\x",
+            "owner/repo",
+            "main",
+            "My session",
+            null,
+            Now,
+            Now);
         factory.SessionRepository
-            .Setup(r => r.GetByIdAsync(Session1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Session(Session1, @"C:\dev\x", "owner/repo", "main", "My session", null, Now, Now));
+            .Setup(repository => repository.GetByIdsAsync(
+                It.Is<IReadOnlyCollection<string>>(sessionIds =>
+                    sessionIds.SequenceEqual(new[] { Session1 })),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, Session>(StringComparer.Ordinal)
+            {
+                [Session1] = session,
+            });
         await factory.GroupsRepository.CreateAsync("Group A", [Session1], Now, Ct);
 
         var client = factory.CreateClient();
-        var response = await client.GetFromJsonAsync<GroupsResponse>("/api/groups", Ct);
+        var response = await client.GetFromJsonAsync<SessionGroupsResponse>("/api/session-groups", Ct);
 
         Assert.NotNull(response);
         var group = Assert.Single(response!.Groups);
@@ -77,13 +94,16 @@ public sealed class GroupsEndpointsTests
     }
 
     [Fact]
-    public async Task RenameGroup_ChangesName()
+    public async Task RenameSessionGroup_ChangesName()
     {
         using var factory = new NarniaWebAppFactory();
         var created = await factory.GroupsRepository.CreateAsync("Old", [Session1], Now, Ct);
 
         var client = factory.CreateClient();
-        var response = await client.PostAsJsonAsync($"/api/groups/{created.Id}/rename", new { name = "New" }, Ct);
+        var response = await client.PostAsJsonAsync(
+            $"/api/session-groups/{created.Id}/rename",
+            new { name = "New" },
+            Ct);
 
         response.EnsureSuccessStatusCode();
         var fetched = await factory.GroupsRepository.GetByIdAsync(created.Id, Ct);
@@ -91,13 +111,13 @@ public sealed class GroupsEndpointsTests
     }
 
     [Fact]
-    public async Task RenameGroup_Missing_Returns404()
+    public async Task RenameSessionGroup_Missing_Returns404()
     {
         using var factory = new NarniaWebAppFactory();
         var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
-            $"/api/groups/{Guid.NewGuid()}/rename", new { name = "Nope" }, Ct);
+            $"/api/session-groups/{Guid.NewGuid()}/rename", new { name = "Nope" }, Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -110,7 +130,9 @@ public sealed class GroupsEndpointsTests
 
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync(
-            $"/api/groups/{created.Id}/members", new { sessionIds = new[] { Session2, Session1 } }, Ct);
+            $"/api/session-groups/{created.Id}/members",
+            new { sessionIds = new[] { Session2, Session1 } },
+            Ct);
 
         response.EnsureSuccessStatusCode();
         var fetched = await factory.GroupsRepository.GetByIdAsync(created.Id, Ct);
@@ -118,20 +140,20 @@ public sealed class GroupsEndpointsTests
     }
 
     [Fact]
-    public async Task DeleteGroup_RemovesIt()
+    public async Task DeleteSessionGroup_RemovesIt()
     {
         using var factory = new NarniaWebAppFactory();
         var created = await factory.GroupsRepository.CreateAsync("Doomed", [Session1], Now, Ct);
 
         var client = factory.CreateClient();
-        var response = await client.DeleteAsync($"/api/groups/{created.Id}", Ct);
+        var response = await client.DeleteAsync($"/api/session-groups/{created.Id}", Ct);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Null(await factory.GroupsRepository.GetByIdAsync(created.Id, Ct));
     }
 
     [Fact]
-    public async Task ReopenGroup_LaunchesEachSessionViaFallback()
+    public async Task ReopenSessionGroup_LaunchesEachSessionViaFallback()
     {
         using var factory = new NarniaWebAppFactory();
         await factory.Services.GetRequiredService<INarniaSettingsRepository>()
@@ -140,7 +162,9 @@ public sealed class GroupsEndpointsTests
 
         var client = factory.CreateClient();
         var response = await client.PostAsJsonAsync(
-            $"/api/groups/{created.Id}/reopen", new { separateWindows = true }, Ct);
+            $"/api/session-groups/{created.Id}/reopen",
+            new { separateWindows = true },
+            Ct);
 
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<GroupReopenResponse>(Ct);
@@ -152,13 +176,15 @@ public sealed class GroupsEndpointsTests
     }
 
     [Fact]
-    public async Task ReopenGroup_Missing_Returns404()
+    public async Task ReopenSessionGroup_Missing_Returns404()
     {
         using var factory = new NarniaWebAppFactory();
         var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
-            $"/api/groups/{Guid.NewGuid()}/reopen", new { separateWindows = false }, Ct);
+            $"/api/session-groups/{Guid.NewGuid()}/reopen",
+            new { separateWindows = false },
+            Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         factory.ProcessLauncher.Verify(
@@ -166,9 +192,9 @@ public sealed class GroupsEndpointsTests
             Times.Never);
     }
 
-    private sealed record GroupsResponse(List<GroupDto> Groups);
+    private sealed record SessionGroupsResponse(List<SessionGroupDto> Groups);
 
-    private sealed record GroupDto(string Id, string Name, List<MemberDto> Members);
+    private sealed record SessionGroupDto(string Id, string Name, List<MemberDto> Members);
 
     private sealed record MemberDto(string SessionId, string? Summary, string? Repository);
 

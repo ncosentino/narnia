@@ -38,6 +38,17 @@ public interface ISessionRepository
     /// <param name="ct">Cancellation token for the operation.</param>
     /// <returns>Matching session summaries ordered by most recent update.</returns>
     ValueTask<SessionSummary[]> ListByCwdAsync(string cwd, bool includeArchived = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the recorded sessions with the requested identifiers.
+    /// </summary>
+    /// <param name="sessionIds">Session identifiers to retrieve. Blank and duplicate identifiers are ignored.</param>
+    /// <param name="ct">Cancellation token for the operation.</param>
+    /// <returns>Existing sessions keyed by their identifiers. Unknown identifiers are omitted.</returns>
+    ValueTask<IReadOnlyDictionary<string, Session>> GetByIdsAsync(
+        IReadOnlyCollection<string> sessionIds,
+        CancellationToken ct = default);
+
     ValueTask<Session?> GetByIdAsync(string sessionId, CancellationToken ct = default);
     ValueTask<Turn[]> GetTurnsAsync(string sessionId, int offset = 0, int limit = 50, CancellationToken ct = default);
     ValueTask<Checkpoint[]> GetCheckpointsAsync(string sessionId, CancellationToken ct = default);

@@ -715,11 +715,11 @@ span.dashboard-item-title { color: var(--text); }
 .closed-check { cursor: pointer; }
 .open-check { cursor: pointer; }
 #btn-reopen-selected:disabled { opacity: .5; cursor: not-allowed; }
-#btn-save-open-group:disabled { opacity: .5; cursor: not-allowed; }
+#btn-save-open-session-group:disabled { opacity: .5; cursor: not-allowed; }
 
-.group-card { margin-bottom: 1.5rem; }
-.group-head { align-items: center; }
-.group-head h2 { margin: 0; }
+.session-group-card { margin-bottom: 1.5rem; }
+.session-group-head { align-items: center; }
+.session-group-head h2 { margin: 0; }
 
 /* Scheduled jobs */
 .schedule-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: 1.5rem; }
