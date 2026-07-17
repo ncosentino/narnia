@@ -1,0 +1,65 @@
+@page "/collections"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject IWorkCollectionsRepository CollectionsRepository
+
+<PageTitle>Collections — Narnia</PageTitle>
+
+<div class="page-actions">
+    <h1>🗂️ Collections</h1>
+    <div class="closed-controls">
+        <button class="btn-bulk-collection" onclick="narniaCreateCollection(this)">＋ New Collection</button>
+        <a href="/collections" class="btn-refresh">↻ Refresh</a>
+    </div>
+</div>
+
+<p class="settings-hint">
+    Collections organize related work across sessions and repositories without controlling how
+    those sessions launch. A session can belong to multiple collections. Select sessions on the
+    <a href="/sessions">Sessions</a> page and choose <em>Add to Collection</em>.
+</p>
+
+@if (_collections.Count == 0)
+{
+    <p>No collections yet. Create an empty collection here or create one from selected sessions.</p>
+}
+else
+{
+    <div class="collections-grid">
+        @foreach (var collection in _collections)
+        {
+            <article class="collection-card">
+                <div class="collection-card-head">
+                    <h2><a href="/collections/@collection.Id">@collection.Name</a></h2>
+                    <span class="window-meta">
+                        @collection.Members.Count session@(collection.Members.Count == 1 ? "" : "s")
+                    </span>
+                </div>
+                <p class="collection-meta">
+                    Updated @collection.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                </p>
+                <div class="collection-actions">
+                    <a class="btn-refresh" href="/collections/@collection.Id">View sessions</a>
+                    <button class="btn-refresh"
+                            data-name="@collection.Name"
+                            onclick="narniaRenameCollection('@collection.Id', this)">
+                        ✏️ Rename
+                    </button>
+                    <button class="btn-bulk-archive"
+                            onclick="narniaDeleteCollection('@collection.Id')">
+                        🗑 Delete
+                    </button>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<WorkCollection> _collections = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _collections = await CollectionsRepository.GetAllAsync();
+    }
+}

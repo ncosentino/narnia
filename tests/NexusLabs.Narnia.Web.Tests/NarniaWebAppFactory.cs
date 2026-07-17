@@ -83,6 +83,10 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     public ISessionGroupsRepository GroupsRepository =>
         Services.GetRequiredService<ISessionGroupsRepository>();
 
+    /// <summary>The real (temp-database-backed) work collections repository, for seeding.</summary>
+    public IWorkCollectionsRepository WorkCollectionsRepository =>
+        Services.GetRequiredService<IWorkCollectionsRepository>();
+
     /// <summary>The real (temp-database-backed) scheduled job registry, for seeding.</summary>
     public IScheduledJobRegistry ScheduledJobRegistry =>
         Services.GetRequiredService<IScheduledJobRegistry>();

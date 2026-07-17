@@ -54,6 +54,8 @@ builder.Services.AddSingleton<SqliteTerminalWindowsRepository>();
 builder.Services.AddSingleton<ITerminalWindowsRepository>(sp => sp.GetRequiredService<SqliteTerminalWindowsRepository>());
 builder.Services.AddSingleton<SqliteSessionGroupsRepository>();
 builder.Services.AddSingleton<ISessionGroupsRepository>(sp => sp.GetRequiredService<SqliteSessionGroupsRepository>());
+builder.Services.AddSingleton<SqliteWorkCollectionsRepository>();
+builder.Services.AddSingleton<IWorkCollectionsRepository>(sp => sp.GetRequiredService<SqliteWorkCollectionsRepository>());
 builder.Services.AddSingleton<SqliteScheduledJobRegistry>();
 builder.Services.AddSingleton<IScheduledJobRegistry>(sp => sp.GetRequiredService<SqliteScheduledJobRegistry>());
 builder.Services.AddSingleton<IScheduledJobWorkspace, ScheduledJobWorkspace>();
@@ -573,6 +575,7 @@ app.MapDelete("/api/windows/{id}", async (
 // ── Session groups API ──────────────────────────────────────────────────────
 MapSessionGroupsApi("/api/session-groups");
 MapSessionGroupsApi("/api/groups");
+app.MapWorkCollectionsEndpoints();
 
 void MapSessionGroupsApi(string routePrefix)
 {

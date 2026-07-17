@@ -582,6 +582,18 @@ span.dashboard-item-title { color: var(--text); }
 }
 .btn-bulk-group:hover { background: #7a68b0; }
 .btn-bulk-group:disabled { opacity: .6; cursor: not-allowed; }
+.btn-bulk-collection {
+    background: var(--accent);
+    color: var(--on-accent);
+    border: none;
+    border-radius: 5px;
+    padding: .4rem 1rem;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-bulk-collection:hover { background: var(--accent-hover); }
+.btn-bulk-collection:disabled { opacity: .6; cursor: not-allowed; }
 .btn-archive {
     background: none;
     border: 1px solid var(--border);
@@ -720,6 +732,67 @@ span.dashboard-item-title { color: var(--text); }
 .session-group-card { margin-bottom: 1.5rem; }
 .session-group-head { align-items: center; }
 .session-group-head h2 { margin: 0; }
+
+.collections-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+}
+.collection-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+}
+.collection-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .75rem;
+}
+.collection-card-head h2 { margin: 0; }
+.collection-card-head a { color: var(--link); text-decoration: none; }
+.collection-card-head a:hover { text-decoration: underline; }
+.collection-meta {
+    color: var(--text-subtle);
+    font-size: .8rem;
+    margin: .35rem 0 .8rem;
+}
+.collection-actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+}
+.collection-detail-head { align-items: flex-start; }
+.collection-detail-head h1 { margin-bottom: .2rem; }
+.collection-memberships {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
+.collection-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: .15rem .5rem;
+    border-radius: 999px;
+    background: var(--tag-bg);
+    color: var(--tag-text);
+    font-size: .8rem;
+    text-decoration: none;
+}
+.collection-chip:hover { text-decoration: underline; }
+.badge-missing {
+    display: inline-block;
+    margin-left: .35rem;
+    padding: .1rem .4rem;
+    border-radius: 4px;
+    background: var(--surface-muted);
+    color: var(--text-subtle);
+    font-size: .7rem;
+    text-transform: uppercase;
+}
 
 /* Scheduled jobs */
 .schedule-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: 1.5rem; }

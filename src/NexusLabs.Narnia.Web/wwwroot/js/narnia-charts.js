@@ -227,11 +227,16 @@ function narniaUpdateBulkBar() {
     }
 }
 
-async function narniaArchiveBulk() {
+function narniaSelectedSessionIds() {
     var checks = document.querySelectorAll('.session-check:checked');
-    if (checks.length === 0) return;
     var ids = [];
     for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    return ids;
+}
+
+async function narniaArchiveBulk() {
+    var ids = narniaSelectedSessionIds();
+    if (ids.length === 0) return;
 
     if (!confirm('Archive ' + ids.length + ' session(s)?')) return;
 
@@ -257,10 +262,8 @@ async function narniaArchiveBulk() {
 }
 
 async function narniaLaunchBulk() {
-    var checks = document.querySelectorAll('.session-check:checked');
-    if (checks.length === 0) return;
-    var ids = [];
-    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    var ids = narniaSelectedSessionIds();
+    if (ids.length === 0) return;
 
     var btn = document.querySelector('.btn-bulk-launch');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Launching…'; }
@@ -462,9 +465,7 @@ async function narniaCreateSessionGroup(sessionIds, btn) {
 }
 
 function narniaSaveSessionsAsSessionGroup(btn) {
-    var checks = document.querySelectorAll('.session-check:checked');
-    var ids = [];
-    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    var ids = narniaSelectedSessionIds();
     if (ids.length === 0) return;
     narniaCreateSessionGroup(ids, btn);
 }
@@ -566,6 +567,198 @@ async function narniaDeleteSessionGroup(id) {
         }
     } catch (e) {
         alert('Error deleting Session Group: ' + e.message);
+    }
+}
+
+// ── Work collections ─────────────────────────────────────────────────────────
+async function narniaCollectionError(resp) {
+    var body = await resp.json().catch(function () { return null; });
+    if (typeof body === 'string' && body !== '') return body;
+    if (body && body.message) return body.message;
+    return 'HTTP ' + resp.status;
+}
+
+async function narniaCreateCollection(btn) {
+    var name = prompt('Name this Collection:', '');
+    if (name === null) return;
+    name = name.trim();
+    if (name === '') { alert('A Collection name is required.'); return; }
+
+    var originalText = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
+    try {
+        var resp = await fetch('/api/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, sessionIds: [] }),
+        });
+        if (!resp.ok) throw new Error(await narniaCollectionError(resp));
+        location.reload();
+    } catch (e) {
+        alert('Failed to create Collection: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
+}
+
+async function narniaAddSessionsToCollection(sessionIds, btn) {
+    if (!sessionIds || sessionIds.length === 0) return false;
+
+    var originalText = btn ? btn.textContent : null;
+    try {
+        var listResp = await fetch('/api/collections');
+        if (!listResp.ok) throw new Error(await narniaCollectionError(listResp));
+        var listData = await listResp.json();
+        var collections = listData.collections || [];
+        var choices = collections.map(function (collection, index) {
+            return '#' + (index + 1) + ' ' + collection.name + ' (' + collection.memberCount + ')';
+        });
+        var promptText = collections.length === 0
+            ? 'No Collections exist yet. Enter a name to create one with these ' + sessionIds.length + ' session(s):'
+            : 'Add ' + sessionIds.length + ' session(s) to a Collection.\n\n'
+                + choices.join('\n')
+                + '\n\nEnter a #number, an existing Collection name, or a new name:';
+        var answer = prompt(promptText, '');
+        if (answer === null) return false;
+        answer = answer.trim();
+        if (answer === '') { alert('Choose or name a Collection.'); return false; }
+
+        var normalizedAnswer = answer.toLowerCase();
+        var collection = collections.find(function (candidate) {
+            return candidate.name.toLowerCase() === normalizedAnswer;
+        }) || null;
+        if (!collection && /^#\d+$/.test(answer)) {
+            var index = Number(answer.substring(1)) - 1;
+            if (index < 0 || index >= collections.length) {
+                alert('That Collection number does not exist.');
+                return false;
+            }
+            collection = collections[index];
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Saving…'; }
+        var resp;
+        if (collection) {
+            resp = await fetch('/api/collections/' + encodeURIComponent(collection.id) + '/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionIds: sessionIds }),
+            });
+        } else {
+            resp = await fetch('/api/collections', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: answer, sessionIds: sessionIds }),
+            });
+        }
+
+        if (!resp.ok) throw new Error(await narniaCollectionError(resp));
+        if (btn) {
+            btn.textContent = collection
+                ? '✅ Added to ' + collection.name
+                : '✅ Created ' + answer;
+            setTimeout(function () {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }, 2500);
+        }
+        return true;
+    } catch (e) {
+        alert('Failed to update Collection: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = originalText; }
+        return false;
+    }
+}
+
+function narniaAddSelectedSessionsToCollection(btn) {
+    narniaAddSessionsToCollection(narniaSelectedSessionIds(), btn);
+}
+
+async function narniaAddSessionToCollection(sessionId, btn) {
+    if (await narniaAddSessionsToCollection([sessionId], btn)) location.reload();
+}
+
+async function narniaRenameCollection(id, btn) {
+    var current = btn ? (btn.getAttribute('data-name') || '') : '';
+    var name = prompt('Rename Collection:', current);
+    if (name === null) return;
+    name = name.trim();
+    if (name === '') { alert('A Collection name is required.'); return; }
+
+    try {
+        var resp = await fetch('/api/collections/' + encodeURIComponent(id) + '/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name }),
+        });
+        if (!resp.ok) throw new Error(await narniaCollectionError(resp));
+        location.reload();
+    } catch (e) {
+        alert('Failed to rename Collection: ' + e.message);
+    }
+}
+
+async function narniaDeleteCollection(id) {
+    if (!confirm('Delete this Collection? The sessions themselves are not affected.')) return;
+
+    try {
+        var resp = await fetch('/api/collections/' + encodeURIComponent(id), { method: 'DELETE' });
+        if (!resp.ok) throw new Error(await narniaCollectionError(resp));
+        location.href = '/collections';
+    } catch (e) {
+        alert('Failed to delete Collection: ' + e.message);
+    }
+}
+
+function narniaSelectedCollectionSessionIds() {
+    var checks = document.querySelectorAll('.collection-session-check:checked');
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    return ids;
+}
+
+function narniaUpdateCollectionMemberBar() {
+    var selected = narniaSelectedCollectionSessionIds();
+    var all = document.querySelectorAll('.collection-session-check');
+    var bar = document.getElementById('collection-member-action-bar');
+    var count = document.getElementById('collection-member-count');
+    if (bar) bar.style.display = selected.length > 0 ? '' : 'none';
+    if (count) count.textContent = selected.length + ' selected';
+
+    var master = document.getElementById('collection-member-check-all');
+    if (master) {
+        master.checked = selected.length > 0 && selected.length === all.length;
+        master.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+}
+
+function narniaToggleAllCollectionMembers(master) {
+    var checks = document.querySelectorAll('.collection-session-check');
+    for (var i = 0; i < checks.length; i++) checks[i].checked = master.checked;
+    narniaUpdateCollectionMemberBar();
+}
+
+async function narniaRemoveSelectedCollectionSessions(collectionId, btn) {
+    var sessionIds = narniaSelectedCollectionSessionIds();
+    if (sessionIds.length === 0) return;
+    if (!confirm('Remove ' + sessionIds.length + ' session(s) from this Collection?')) return;
+
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Removing…';
+    try {
+        var resp = await fetch(
+            '/api/collections/' + encodeURIComponent(collectionId) + '/sessions/remove',
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionIds: sessionIds }),
+            });
+        if (!resp.ok) throw new Error(await narniaCollectionError(resp));
+        location.reload();
+    } catch (e) {
+        alert('Failed to remove sessions: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = originalText;
     }
 }
 

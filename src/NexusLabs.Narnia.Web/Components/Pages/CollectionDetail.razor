@@ -1,0 +1,176 @@
+@page "/collections/{CollectionId}"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject IWorkCollectionsRepository CollectionsRepository
+@inject ISessionRepository SessionRepository
+@inject ISessionOverridesRepository OverridesRepository
+
+<PageTitle>@(_collection?.Name ?? "Collection") — Narnia</PageTitle>
+
+@if (_collection is null && _loaded)
+{
+    <h1>Collection not found</h1>
+    <p>No collection with ID <code>@CollectionId</code> was found.</p>
+    <a href="/collections">← Back to collections</a>
+}
+else if (_collection is not null)
+{
+    <a href="/collections">← Collections</a>
+
+    <div class="page-actions collection-detail-head">
+        <div>
+            <h1>🗂️ @_collection.Name</h1>
+            <p class="collection-meta">
+                @_collection.Members.Count session@(_collection.Members.Count == 1 ? "" : "s")
+                · updated @_collection.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+            </p>
+        </div>
+        <div class="closed-controls">
+            <a class="btn-refresh" href="/sessions">Browse Sessions</a>
+            <button class="btn-refresh"
+                    data-name="@_collection.Name"
+                    onclick="narniaRenameCollection('@_collection.Id', this)">
+                ✏️ Rename
+            </button>
+            <button class="btn-bulk-archive"
+                    onclick="narniaDeleteCollection('@_collection.Id')">
+                🗑 Delete
+            </button>
+        </div>
+    </div>
+
+    @if (_collection.Members.Count == 0)
+    {
+        <p>
+            This collection is empty. Select sessions on the <a href="/sessions">Sessions</a>
+            page and choose <em>Add to Collection</em>.
+        </p>
+    }
+    else
+    {
+        <table class="sessions-table" data-resizable-table="collection-sessions">
+            <thead>
+                <tr>
+                    <th class="col-select" data-no-resize>
+                        <input type="checkbox"
+                               id="collection-member-check-all"
+                               title="Select all"
+                               onclick="narniaToggleAllCollectionMembers(this)" />
+                    </th>
+                    <th class="col-favorite">Favorite</th>
+                    <th>Summary</th>
+                    <th>Remote Repository</th>
+                    <th>Working Directory</th>
+                    <th>Updated</th>
+                    <th>Added</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var member in OrderedMembers())
+                {
+                    var session = Lookup(member.SessionId);
+                    var isArchived = _archivedIds.Contains(member.SessionId);
+                    <tr class="@(isArchived ? "session-archived" : "")">
+                        <td class="col-select">
+                            <input type="checkbox"
+                                   class="collection-session-check"
+                                   value="@member.SessionId"
+                                   onclick="narniaUpdateCollectionMemberBar()" />
+                        </td>
+                        <td class="col-favorite">
+                            @if (session is not null)
+                            {
+                                <FavoriteButton SessionId="@session.Id" IsFavorite="@session.IsFavorite" />
+                            }
+                        </td>
+                        <td>
+                            @if (session is null)
+                            {
+                                <code>@Short(member.SessionId)</code>
+                                <span class="badge-missing">unavailable</span>
+                            }
+                            else
+                            {
+                                <a href="/sessions/@session.Id">@(session.Summary ?? "(no summary)")</a>
+                                @if (isArchived)
+                                {
+                                    <span class="badge-archived">archived</span>
+                                }
+                            }
+                        </td>
+                        <td>
+                            <SessionFilterLink FilterName="repository" Value="@session?.Repository" />
+                        </td>
+                        <td>
+                            <SessionFilterLink FilterName="cwd" Value="@session?.Cwd" CssClass="cwd" />
+                        </td>
+                        <td>
+                            @(session?.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")
+                        </td>
+                        <td>@member.AddedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="bulk-action-bar"
+             id="collection-member-action-bar"
+             style="display:none;">
+            <span id="collection-member-count">0 selected</span>
+            <button class="btn-bulk-archive"
+                    onclick="narniaRemoveSelectedCollectionSessions('@_collection.Id', this)">
+                Remove from Collection
+            </button>
+        </div>
+    }
+}
+
+@code {
+    /// <summary>Gets or sets the collection identifier from the route.</summary>
+    [Parameter]
+    public string CollectionId { get; set; } = "";
+
+    private WorkCollection? _collection;
+    private IReadOnlyDictionary<string, Session> _sessions =
+        new Dictionary<string, Session>(StringComparer.Ordinal);
+    private IReadOnlySet<string> _archivedIds = new HashSet<string>(StringComparer.Ordinal);
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _collection = await CollectionsRepository.GetByIdAsync(CollectionId);
+        if (_collection is not null)
+        {
+            var sessionIds = _collection.Members
+                .Select(member => member.SessionId)
+                .ToArray();
+            var sessionsTask = SessionRepository.GetByIdsAsync(sessionIds).AsTask();
+            var archivedTask = OverridesRepository.GetArchivedSessionIdsAsync().AsTask();
+            await Task.WhenAll(sessionsTask, archivedTask);
+            _sessions = await sessionsTask;
+            _archivedIds = await archivedTask;
+        }
+
+        _loaded = true;
+    }
+
+    private IEnumerable<WorkCollectionMember> OrderedMembers()
+    {
+        if (_collection is null)
+            return [];
+
+        return _collection.Members
+            .OrderByDescending(member => Lookup(member.SessionId)?.UpdatedAt ?? member.AddedAt)
+            .ThenBy(member => member.SessionId, StringComparer.Ordinal);
+    }
+
+    private Session? Lookup(string sessionId) =>
+        _sessions.TryGetValue(sessionId, out var session)
+            ? session
+            : null;
+
+    private static string Short(string sessionId) =>
+        sessionId.Length > 8
+            ? sessionId[..8]
+            : sessionId;
+}

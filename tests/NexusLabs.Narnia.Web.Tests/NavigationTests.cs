@@ -26,6 +26,7 @@ public sealed class NavigationTests
             "Narnia",
             "Sessions",
             "Favorites",
+            "Collections",
             "Windows",
             "Session Groups",
             "Schedules",
