@@ -261,11 +261,10 @@ async function narniaArchiveBulk() {
     }
 }
 
-async function narniaLaunchBulk() {
-    var ids = narniaSelectedSessionIds();
+async function narniaLaunchSessions(ids, btn) {
     if (ids.length === 0) return;
 
-    var btn = document.querySelector('.btn-bulk-launch');
+    var originalText = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Launching…'; }
     try {
         var resp = await fetch('/api/launch-bulk', {
@@ -280,17 +279,27 @@ async function narniaLaunchBulk() {
                 msg += '\n⚠️ Failed: ' + data.failed.map(function (f) { return f.sessionId.substring(0, 8) + ': ' + f.reason; }).join(', ');
             }
             if (btn) { btn.textContent = '✅ Launched!'; }
-            setTimeout(function () { if (btn) { btn.textContent = '🚀 Launch Selected'; btn.disabled = false; } }, 3000);
+            setTimeout(function () {
+                if (btn) {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }
+            }, 3000);
             if (data.failed && data.failed.length > 0) alert(msg);
         } else {
             var errData = await resp.json().catch(function () { return null; });
             alert('Bulk launch failed: ' + (errData || 'HTTP ' + resp.status));
-            if (btn) { btn.textContent = '🚀 Launch Selected'; btn.disabled = false; }
+            if (btn) { btn.textContent = originalText; btn.disabled = false; }
         }
     } catch (e) {
         alert('Error launching: ' + e.message);
-        if (btn) { btn.textContent = '🚀 Launch Selected'; btn.disabled = false; }
+        if (btn) { btn.textContent = originalText; btn.disabled = false; }
     }
+}
+
+function narniaLaunchBulk() {
+    var btn = document.querySelector('#bulk-action-bar .btn-bulk-launch');
+    narniaLaunchSessions(narniaSelectedSessionIds(), btn);
 }
 
 // ── Theme (dark/light) ───────────────────────────────────────────────────────
@@ -714,6 +723,16 @@ function narniaSelectedCollectionSessionIds() {
     var ids = [];
     for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
     return ids;
+}
+
+function narniaLaunchSelectedCollectionSessions(btn) {
+    narniaLaunchSessions(narniaSelectedCollectionSessionIds(), btn);
+}
+
+function narniaSaveSelectedCollectionSessionsAsSessionGroup(btn) {
+    var sessionIds = narniaSelectedCollectionSessionIds();
+    if (sessionIds.length === 0) return;
+    narniaCreateSessionGroup(sessionIds, btn);
 }
 
 function narniaUpdateCollectionMemberBar() {

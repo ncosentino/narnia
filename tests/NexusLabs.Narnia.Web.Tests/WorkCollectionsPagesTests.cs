@@ -58,5 +58,11 @@ public sealed class WorkCollectionsPagesTests
             .GetStringAsync($"/collections/{collection.Id}", Ct);
 
         Assert.Contains($"""href="/sessions/{SessionId}">BrandGhost session</a>""", html);
+        Assert.Contains(
+            "onclick=\"narniaLaunchSelectedCollectionSessions(this)\"",
+            html);
+        Assert.Contains(
+            "onclick=\"narniaSaveSelectedCollectionSessionsAsSessionGroup(this)\"",
+            html);
     }
 }
