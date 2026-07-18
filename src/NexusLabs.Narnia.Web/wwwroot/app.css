@@ -308,6 +308,8 @@ a { color: var(--link); }
 
 /* ── Home dashboard ───────────────────────────────────────────── */
 .dashboard-heading h1 { margin: 0; }
+.dashboard-heading-title { display: flex; align-items: center; gap: .55rem; }
+.dashboard-heading-title img { width: 2rem; height: 2rem; object-fit: contain; }
 .dashboard-heading p { margin: .3rem 0 0; color: var(--text-subtle); }
 .dashboard-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 1.5rem; }
 .dashboard-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 1rem; margin-bottom: 1.5rem; }

@@ -68,6 +68,9 @@ public sealed class HomeDashboardTests
         var client = factory.CreateClient();
         var html = await client.GetStringAsync("/", Ct);
 
+        Assert.Contains("class=\"dashboard-heading-title\"", html, StringComparison.Ordinal);
+        Assert.Contains("src=\"/narnia-logo.png\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("🗡️", html, StringComparison.Ordinal);
         Assert.Contains("action=\"/sessions\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"q\"", html, StringComparison.Ordinal);
         Assert.Contains("href=\"/windows\"", html, StringComparison.Ordinal);
