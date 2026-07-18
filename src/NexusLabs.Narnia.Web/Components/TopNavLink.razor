@@ -1,5 +1,12 @@
 <a href="@Href" class="@CssClass" target="@Target" rel="@Relationship">
-    <span class="nav-icon" aria-hidden="true">@Icon</span>
+    @if (!string.IsNullOrWhiteSpace(IconImageSource))
+    {
+        <img class="nav-icon nav-icon-image" src="@IconImageSource" alt="" aria-hidden="true" />
+    }
+    else
+    {
+        <span class="nav-icon" aria-hidden="true">@Icon</span>
+    }
     <span>@Label</span>
 </a>
 
@@ -8,9 +15,13 @@
     [Parameter, EditorRequired]
     public string Href { get; set; } = "";
 
-    /// <summary>Gets or sets the decorative icon shown before the label.</summary>
-    [Parameter, EditorRequired]
+    /// <summary>Gets or sets the decorative text icon shown when no image source is supplied.</summary>
+    [Parameter]
     public string Icon { get; set; } = "";
+
+    /// <summary>Gets or sets an optional decorative image shown instead of the text icon.</summary>
+    [Parameter]
+    public string? IconImageSource { get; set; }
 
     /// <summary>Gets or sets the visible navigation label.</summary>
     [Parameter, EditorRequired]

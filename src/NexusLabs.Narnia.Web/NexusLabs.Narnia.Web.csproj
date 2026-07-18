@@ -12,6 +12,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Publish the canonical documentation artwork as runtime static assets without
+         committing a second copy of either binary. -->
+    <Content Include="..\..\docs\assets\favicon.png;..\..\docs\assets\narnia-logo.png">
+      <Link>wwwroot\%(Filename)%(Extension)</Link>
+      <TargetPath>wwwroot\%(Filename)%(Extension)</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Lets Web.Tests directly unit-test internal MCP tool classes (e.g. ScheduleTools) with
          mocked services, instead of only exercising them through a full MCP protocol round-trip. -->
     <InternalsVisibleTo Include="NexusLabs.Narnia.Web.Tests" />
