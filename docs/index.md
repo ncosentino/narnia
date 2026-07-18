@@ -4,6 +4,10 @@ description: Narnia is an MCP server and Blazor web UI for browsing GitHub Copil
 
 # Narnia
 
+<p align="center">
+  <img src="assets/narnia-logo.png" alt="Narnia logo" width="384">
+</p>
+
 Narnia is a single ASP.NET Core app — both an MCP server and a local web UI — for browsing your [GitHub Copilot CLI](https://githubnext.com/projects/copilot-in-the-cli) session history. It solves a real pain point: when Windows forces a restart (or any machine restarts), all active Copilot sessions disappear. Narnia lets you search, inspect, and resume sessions without losing context.
 
 Use the star control in any session view to favorite important sessions. Favorite state is shared across the UI, can be filtered or sorted on the Sessions page, and has a dedicated **Favorites** page.
