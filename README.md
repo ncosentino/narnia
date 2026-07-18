@@ -3,6 +3,10 @@
 [![CI](https://github.com/ncosentino/narnia/actions/workflows/ci.yml/badge.svg)](https://github.com/ncosentino/narnia/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ncosentino/narnia?include_prereleases&style=flat-square)](https://github.com/ncosentino/narnia/releases)
 
+<p align="center">
+  <img src="docs/assets/narnia-logo.png" alt="Narnia logo" width="384">
+</p>
+
 **Narnia** is a single ASP.NET Core app — both an MCP server and a Blazor web UI — for browsing and searching [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) session history, recovering lost terminal windows, and managing scheduled Copilot jobs.
 
 If you use Copilot CLI heavily, you know the pain: a Windows update reboots your machine and every active session terminal is gone. Narnia makes it easy to find and resume sessions — either by asking a new Copilot session to search for you (via MCP), or by browsing a local web interface.
