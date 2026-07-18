@@ -48,6 +48,7 @@ public sealed class SessionsPageTests
         Assert.DoesNotContain("Interactive session", html, StringComparison.Ordinal);
         Assert.Contains($"Sessions on {date:yyyy-MM-dd}", html, StringComparison.Ordinal);
         Assert.Contains("Recorded source:", html, StringComparison.Ordinal);
+        Assert.Contains(">Name<", html, StringComparison.Ordinal);
     }
 
     private static SessionSummary Summary(

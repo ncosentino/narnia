@@ -8,7 +8,7 @@ public enum SessionSortColumn
     /// <summary>Sort by favorite state.</summary>
     Favorite,
 
-    /// <summary>Sort by the displayed session summary.</summary>
+    /// <summary>Sort by the displayed session name.</summary>
     Summary,
 
     /// <summary>Sort by the effective remote repository.</summary>
@@ -52,6 +52,7 @@ public static class SessionSummarySorting
     public static SessionSortColumn? ParseColumn(string? value) => value?.ToLowerInvariant() switch
     {
         "favorite" => SessionSortColumn.Favorite,
+        "name" => SessionSortColumn.Summary,
         "summary" => SessionSortColumn.Summary,
         "repository" => SessionSortColumn.Repository,
         "directory" => SessionSortColumn.Directory,

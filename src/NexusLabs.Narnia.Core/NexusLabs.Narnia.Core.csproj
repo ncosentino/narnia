@@ -9,6 +9,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="System.IO.Abstractions" />
     <PackageReference Include="dbup-sqlite" />
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
   <ItemGroup>

@@ -411,6 +411,126 @@ public sealed class OverridingSessionRepositoryTests : IDisposable
         Assert.Equal("sess-2", Assert.Single(results).SessionId);
     }
 
+    [Fact]
+    public async Task SearchAsync_CopilotSessionName_ReturnsNameMatchWithoutIndexedContent()
+    {
+        var results = await _search.SearchAsync(
+            "Raw summary",
+            10,
+            TestContext.Current.CancellationToken);
+
+        var result = Assert.Single(results);
+        Assert.Equal("sess-1", result.SessionId);
+        Assert.Equal("session_name", result.SourceType);
+        Assert.Equal("Raw summary", result.Content);
+    }
+
+    [Fact]
+    public async Task SearchAsync_NarniaAlias_ReturnsAliasMatch()
+    {
+        _savedOverrides["sess-1"] = MakeOverride("sess-1") with
+        {
+            DisplayName = "BrandGhost control plane",
+        };
+
+        var results = await _search.SearchAsync(
+            "brandghost",
+            10,
+            TestContext.Current.CancellationToken);
+
+        var result = Assert.Single(results);
+        Assert.Equal("sess-1", result.SessionId);
+        Assert.Equal("narnia_alias", result.SourceType);
+        Assert.Equal("BrandGhost control plane", result.Content);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ExactAliasRanksAheadOfIndexedContent()
+    {
+        _savedOverrides["sess-1"] = MakeOverride("sess-1") with
+        {
+            DisplayName = "priority",
+        };
+
+        var results = await _search.SearchAsync(
+            "priority",
+            1,
+            TestContext.Current.CancellationToken);
+
+        var result = Assert.Single(results);
+        Assert.Equal("sess-1", result.SessionId);
+        Assert.Equal("narnia_alias", result.SourceType);
+        Assert.Equal(0, result.Score);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ScoresFollowMergedResultOrder()
+    {
+        _savedOverrides["sess-1"] = MakeOverride("sess-1") with
+        {
+            DisplayName = "priority",
+        };
+
+        var results = await _search.SearchAsync(
+            "priority",
+            2,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([0d, 1d], results.Select(result => result.Score));
+    }
+
+    [Fact]
+    public async Task SearchAsync_MaximumLimit_DoesNotOverflowContentLimit()
+    {
+        var results = await _search.SearchAsync(
+            "priority",
+            int.MaxValue,
+            TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(results);
+    }
+
+    [Fact]
+    public async Task SearchAsync_CopilotNameRemainsSearchableWhenAliasExists()
+    {
+        _savedOverrides["sess-1"] = MakeOverride("sess-1") with
+        {
+            DisplayName = "Narnia alias",
+        };
+
+        var results = await _search.SearchAsync(
+            "Raw sum*",
+            10,
+            TestContext.Current.CancellationToken);
+
+        var result = Assert.Single(results);
+        Assert.Equal("sess-1", result.SessionId);
+        Assert.Equal("session_name", result.SourceType);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ArchivedNameMatch_RespectsVisibility()
+    {
+        _savedOverrides["sess-1"] = MakeOverride("sess-1") with
+        {
+            DisplayName = "Hidden alias",
+            IsArchived = true,
+        };
+
+        var hidden = await _search.SearchAsync(
+            "Hidden alias",
+            10,
+            TestContext.Current.CancellationToken);
+        var visible = await _search.SearchAsync(
+            "Hidden alias",
+            10,
+            includeArchived: true,
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(hidden);
+        Assert.Equal("sess-1", Assert.Single(visible).SessionId);
+    }
+
     private static SessionOverride MakeOverride(
         string sessionId,
         string? repository = null,

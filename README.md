@@ -94,7 +94,7 @@ This is exactly what this repo's own [`.mcp.json`](.mcp.json) contains, so a Cop
 | Tool | Description |
 |------|-------------|
 | `list_recent_sessions` | Most recently updated sessions |
-| `search_sessions` | FTS5 full-text search across summaries, turns, and checkpoints |
+| `search_sessions` | Search Copilot session names, Narnia aliases, turns, checkpoints, and workspace artifacts |
 | `get_session_details` | Full session metadata and statistics |
 | `get_session_checkpoints` | All checkpoints with structured content |
 | `get_session_turns` | Conversation turns (paginated) |

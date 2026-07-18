@@ -25,6 +25,8 @@ public sealed class WorkspaceReaderTests
 
         Assert.Equal(SessionId, result.SessionId);
         Assert.Null(result.GitRoot);
+        Assert.Null(result.Name);
+        Assert.False(result.IsUserNamed);
         Assert.Empty(result.ArtifactFiles);
     }
 
@@ -59,7 +61,12 @@ public sealed class WorkspaceReaderTests
     [Fact]
     public void ReadWorkspace_WorkspaceYamlMultipleKeys_ParsesGitRootCorrectly()
     {
-        var content = "cwd: C:\\dev\\project\ngit_root: C:\\dev\\project\nbranch: main\n";
+        var content =
+            "cwd: C:\\dev\\project\n" +
+            "git_root: C:\\dev\\project\n" +
+            "branch: main\n" +
+            "name: Improve session naming\n" +
+            "user_named: true\n";
         var fs = new MockFileSystem(new Dictionary<string, MockFileData>
         {
             [$@"{SessionDir}\workspace.yaml"] = new MockFileData(content),
@@ -69,6 +76,72 @@ public sealed class WorkspaceReaderTests
         var result = reader.ReadWorkspace(SessionId);
 
         Assert.Equal(@"C:\dev\project", result.GitRoot);
+        Assert.Equal("Improve session naming", result.Name);
+        Assert.True(result.IsUserNamed);
+    }
+
+    [Fact]
+    public void ReadWorkspace_GeneratedName_RecordsNameProvenance()
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [$@"{SessionDir}\workspace.yaml"] = new MockFileData(
+                "name: Generated session name\nuser_named: false\n"),
+        });
+        var reader = new WorkspaceReader(CreateOptions(), fs);
+
+        var result = reader.ReadWorkspace(SessionId);
+
+        Assert.Equal("Generated session name", result.Name);
+        Assert.False(result.IsUserNamed);
+    }
+
+    [Fact]
+    public void ReadWorkspace_QuotedName_ParsesYamlScalar()
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [$@"{SessionDir}\workspace.yaml"] = new MockFileData(
+                "name: \"Improve: session naming\"\nuser_named: true\n"),
+        });
+        var reader = new WorkspaceReader(CreateOptions(), fs);
+
+        var result = reader.ReadWorkspace(SessionId);
+
+        Assert.Equal("Improve: session naming", result.Name);
+        Assert.True(result.IsUserNamed);
+    }
+
+    [Fact]
+    public void ReadWorkspace_BlockScalarName_ParsesCompleteName()
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [$@"{SessionDir}\workspace.yaml"] = new MockFileData(
+                "name: |-\n  Multi-line\n  session name\nuser_named: true\n"),
+        });
+        var reader = new WorkspaceReader(CreateOptions(), fs);
+
+        var result = reader.ReadWorkspace(SessionId);
+
+        Assert.Equal("Multi-line\nsession name", result.Name);
+        Assert.True(result.IsUserNamed);
+    }
+
+    [Fact]
+    public void ReadWorkspace_EscapedName_ParsesEscapes()
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [$@"{SessionDir}\workspace.yaml"] = new MockFileData(
+                "name: \"Line one\\nline two\"\nuser_named: true\n"),
+        });
+        var reader = new WorkspaceReader(CreateOptions(), fs);
+
+        var result = reader.ReadWorkspace(SessionId);
+
+        Assert.Equal("Line one\nline two", result.Name);
+        Assert.True(result.IsUserNamed);
     }
 
     [Fact]
