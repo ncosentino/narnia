@@ -24,13 +24,13 @@ public sealed class SessionStorageServiceTests
                 25,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
-        var sessionRepository = new Mock<ISessionRepository>();
-        sessionRepository
-            .Setup(repository => repository.ListAllAsync(true, It.IsAny<CancellationToken>()))
+        var metadataSource = new Mock<ISessionStorageMetadataSource>();
+        metadataSource
+            .Setup(repository => repository.ListAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(
             [
-                Summary("indexed", favorite: true),
-                Summary("history-only", favorite: false),
+                Metadata("indexed"),
+                Metadata("history-only"),
             ]);
         var overrides = new Mock<ISessionOverridesRepository>();
         overrides
@@ -79,7 +79,7 @@ public sealed class SessionStorageServiceTests
             .Returns(new HashSet<string>(["indexed"], StringComparer.OrdinalIgnoreCase));
         var service = new SessionStorageService(
             storageRepository.Object,
-            sessionRepository.Object,
+            metadataSource.Object,
             overrides.Object,
             groups.Object,
             collections.Object,
@@ -99,20 +99,14 @@ public sealed class SessionStorageServiceTests
         Assert.Equal(150, dashboard.Overview.Categories.TotalBytes);
     }
 
-    private static SessionSummary Summary(string id, bool favorite) =>
+    private static SessionStorageMetadata Metadata(string id) =>
         new(
             id,
             @"C:\repo",
             "owner/repo",
-            "main",
             id,
             DateTimeOffset.UtcNow.AddDays(-2),
-            DateTimeOffset.UtcNow.AddDays(-1),
-            1,
-            0)
-        {
-            IsFavorite = favorite,
-        };
+            DateTimeOffset.UtcNow.AddDays(-1));
 
     private static SessionStorageRecord Storage(string id, long bytes) =>
         new()

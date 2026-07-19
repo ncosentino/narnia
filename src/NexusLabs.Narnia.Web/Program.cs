@@ -38,6 +38,8 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IFileSystem, FileSystem>();
 builder.Services.AddSingleton<SqliteSessionRepository>();
+builder.Services.AddSingleton<ISessionStorageMetadataSource>(
+    sp => sp.GetRequiredService<SqliteSessionRepository>());
 builder.Services.AddSingleton<SqliteSessionOverridesRepository>();
 builder.Services.AddSingleton<ISessionOverridesRepository>(sp => sp.GetRequiredService<SqliteSessionOverridesRepository>());
 builder.Services.AddSingleton<OverridingSessionRepository>();

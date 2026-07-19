@@ -4,7 +4,8 @@ using NexusLabs.Narnia.Core.Models;
 
 namespace NexusLabs.Narnia.Core.Repositories;
 
-public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRepository, ISessionSearch
+public sealed class SqliteSessionRepository(NarniaOptions options)
+    : ISessionRepository, ISessionSearch, ISessionStorageMetadataSource
 {
     private readonly string _connectionString = options.ConnectionString
         ?? $"Data Source={options.DatabasePath};Mode=ReadOnly";
@@ -577,6 +578,33 @@ public sealed class SqliteSessionRepository(NarniaOptions options) : ISessionRep
         }
 
         return results;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<SessionStorageMetadata>> ListAsync(CancellationToken ct)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, cwd, repository, summary, created_at, updated_at
+            FROM sessions
+            ORDER BY updated_at DESC, id
+            """;
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var sessions = new List<SessionStorageMetadata>();
+        while (await reader.ReadAsync(ct))
+        {
+            sessions.Add(new SessionStorageMetadata(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                DateTimeOffset.Parse(reader.GetString(4)),
+                DateTimeOffset.Parse(reader.GetString(5))));
+        }
+        return sessions;
     }
 
     public async ValueTask<Turn[]> GetTurnsAsync(string sessionId, int offset = 0, int limit = 50, CancellationToken ct = default)

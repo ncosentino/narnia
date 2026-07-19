@@ -23,6 +23,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock session repository used for tab metadata enrichment.</summary>
     public Mock<ISessionRepository> SessionRepository { get; } = new();
 
+    /// <summary>Mock lightweight storage-page metadata source.</summary>
+    public Mock<ISessionStorageMetadataSource> StorageMetadataSource { get; } = new();
+
     /// <summary>Mock command builder; by default reports no Windows Terminal so reopen never spawns.</summary>
     public Mock<ITerminalCommandBuilder> CommandBuilder { get; } = new();
 
@@ -92,6 +95,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         SessionActivityReader
             .Setup(reader => reader.GetActiveSessionIds())
             .Returns(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        StorageMetadataSource
+            .Setup(source => source.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
         GitArtifactInspector
             .Setup(inspector => inspector.InspectAsync(
                 It.IsAny<string>(),
@@ -153,6 +159,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<ISessionRepository>();
             services.AddSingleton(SessionRepository.Object);
+
+            services.RemoveAll<ISessionStorageMetadataSource>();
+            services.AddSingleton(StorageMetadataSource.Object);
 
             services.RemoveAll<ITerminalCommandBuilder>();
             services.AddSingleton(CommandBuilder.Object);

@@ -6,7 +6,7 @@ namespace NexusLabs.Narnia.Core.Services;
 /// <summary>Merges cached local storage with indexed and Narnia-owned session metadata.</summary>
 public sealed class SessionStorageService(
     ISessionStorageRepository storageRepository,
-    ISessionRepository sessionRepository,
+    ISessionStorageMetadataSource metadataSource,
     ISessionOverridesRepository overridesRepository,
     ISessionGroupsRepository groupsRepository,
     IWorkCollectionsRepository collectionsRepository,
@@ -16,7 +16,7 @@ public sealed class SessionStorageService(
     public async ValueTask<SessionStorageDashboard> GetDashboardAsync(CancellationToken ct)
     {
         var storageTask = storageRepository.GetCurrentAsync(ct).AsTask();
-        var sessionsTask = sessionRepository.ListAllAsync(true, ct).AsTask();
+        var sessionsTask = metadataSource.ListAsync(ct).AsTask();
         var overridesTask = overridesRepository.GetAllOverridesAsync(ct).AsTask();
         var groupsTask = groupsRepository.GetAllAsync(ct).AsTask();
         var collectionsTask = collectionsRepository.GetAllAsync(ct).AsTask();
@@ -46,7 +46,7 @@ public sealed class SessionStorageService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var activeSessionIds = activityReader.GetActiveSessionIds();
         var sessionsById = sessions.ToDictionary(
-            session => session.Id,
+            session => session.SessionId,
             StringComparer.OrdinalIgnoreCase);
         var storageById = storage.ToDictionary(
             record => record.SessionId,
@@ -69,7 +69,7 @@ public sealed class SessionStorageService(
                 !string.IsNullOrWhiteSpace(savedOverride?.DisplayName) ||
                 !string.IsNullOrWhiteSpace(savedOverride?.Notes);
             var protections = BuildProtectionReasons(
-                session?.IsFavorite == true || savedOverride?.IsFavorite == true,
+                savedOverride?.IsFavorite == true,
                 record?.IsUserNamed == true,
                 hasNarniaMetadata,
                 inGroup,
@@ -78,8 +78,8 @@ public sealed class SessionStorageService(
             items.Add(new SessionStorageItem
             {
                 SessionId = sessionId,
-                Summary = session?.Summary,
-                Repository = session?.Repository,
+                Summary = savedOverride?.DisplayName ?? session?.Summary,
+                Repository = savedOverride?.Repository ?? session?.Repository,
                 CreatedAt = session?.CreatedAt,
                 UpdatedAt = session?.UpdatedAt,
                 DataState = session is null
@@ -89,7 +89,7 @@ public sealed class SessionStorageService(
                         : SessionStorageDataState.IndexedWithLocalState,
                 Storage = record,
                 IsActive = activeSessionIds.Contains(sessionId),
-                IsFavorite = session?.IsFavorite == true || savedOverride?.IsFavorite == true,
+                IsFavorite = savedOverride?.IsFavorite == true,
                 IsArchived = savedOverride?.IsArchived == true,
                 HasNarniaMetadata = hasNarniaMetadata,
                 IsInSessionGroup = inGroup,

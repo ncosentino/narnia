@@ -19,11 +19,9 @@ public sealed class StorageEndpointsTests
             now,
             now.AddMinutes(1),
             Ct);
-        factory.SessionRepository
-            .Setup(repository => repository.ListAllAsync(
-                true,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Summary(now)]);
+        factory.StorageMetadataSource
+            .Setup(repository => repository.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Metadata(now)]);
 
         var html = await factory.CreateClient().GetStringAsync("/storage?view=all", Ct);
 
@@ -129,17 +127,14 @@ public sealed class StorageEndpointsTests
             ContainsReparsePoint = false,
         };
 
-    private static SessionSummary Summary(DateTimeOffset now) =>
+    private static SessionStorageMetadata Metadata(DateTimeOffset now) =>
         new(
             SessionId,
             @"C:\repo",
             "owner/repo",
-            "main",
             "Storage session",
             now.AddDays(-100),
-            now.AddDays(-90),
-            1,
-            0);
+            now.AddDays(-90));
 
     private sealed record PreviewResponse(
         int AllowedCount,
