@@ -7,4 +7,10 @@ public interface ICopilotSessionLockReader
     /// <param name="copilotProcessId">Verified live Copilot runtime process identifier.</param>
     /// <returns>Every session directory associated with the process, including subagent sessions.</returns>
     IReadOnlyList<string> GetSessionIds(int copilotProcessId);
+
+    /// <summary>Reads matching locks for several verified Copilot processes in one filesystem pass.</summary>
+    /// <param name="copilotProcessIds">Verified live Copilot runtime process identifiers.</param>
+    /// <returns>Session identifiers grouped by process identifier.</returns>
+    IReadOnlyDictionary<int, IReadOnlyList<string>> GetSessionIdsByProcess(
+        IReadOnlyCollection<int> copilotProcessIds);
 }

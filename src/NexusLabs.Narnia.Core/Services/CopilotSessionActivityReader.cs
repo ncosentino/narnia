@@ -11,8 +11,9 @@ public sealed class CopilotSessionActivityReader(
     public IReadOnlySet<string> GetActiveSessionIds()
     {
         var sessionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var processId in processProvider.GetProcessIds())
-            sessionIds.UnionWith(lockReader.GetSessionIds(processId));
+        var processIds = processProvider.GetProcessIds();
+        foreach (var matches in lockReader.GetSessionIdsByProcess(processIds).Values)
+            sessionIds.UnionWith(matches);
         return sessionIds;
     }
 }
