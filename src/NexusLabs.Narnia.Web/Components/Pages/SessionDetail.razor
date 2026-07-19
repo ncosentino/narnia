@@ -1,6 +1,7 @@
 @page "/sessions/{SessionId}"
 @using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Repositories
+@using NexusLabs.Narnia.Core.Services
 @using System.Text.Json
 @inject ISessionRepository Repository
 @inject SqliteSessionRepository RawRepository
@@ -8,6 +9,7 @@
 @inject IWorkCollectionsRepository CollectionsRepository
 @inject IWorkspaceReader WorkspaceReader
 @inject INarniaSettingsRepository SettingsRepo
+@inject ISessionStorageRepository StorageRepository
 
 <PageTitle>@(_session?.Summary ?? SessionId) — Narnia</PageTitle>
 
@@ -83,6 +85,26 @@ else if (_session is not null)
         }
         <dt>Created</dt><dd>@_session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
         <dt>Updated</dt><dd>@_session.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
+        <dt>Local Storage</dt>
+        <dd>
+            @if (_storage is null)
+            {
+                <a href="/storage?q=@Uri.EscapeDataString(_session.Id)">Not measured</a>
+            }
+            else
+            {
+                <a href="/storage?q=@Uri.EscapeDataString(_session.Id)">@FormatBytes(_storage.TotalBytes)</a>
+                <span>
+                    · @_storage.FileCount.ToString("N0") files
+                    · @FormatBytes(_storage.EventsBytes) events
+                    · @FormatBytes(_storage.ArtifactsBytes) artifacts
+                </span>
+                @if (!_storage.IsComplete)
+                {
+                    <span class="storage-danger"> · incomplete scan</span>
+                }
+            }
+        </dd>
         <dt>Turns</dt><dd>@_session.TurnCount</dd>
         <dt>Checkpoints</dt><dd>@_session.CheckpointCount</dd>
         <dt>Collections</dt>
@@ -269,6 +291,7 @@ else if (_session is not null)
     private Session? _rawSession;
     private SessionOverride? _override;
     private WorkspaceInfo? _workspace;
+    private SessionStorageRecord? _storage;
     private Checkpoint[]? _checkpoints;
     private Turn[]? _turns;
     private IReadOnlyList<WorkCollection> _collections = [];
@@ -284,17 +307,22 @@ else if (_session is not null)
             || !string.IsNullOrWhiteSpace(_override.Notes)
             || !string.IsNullOrWhiteSpace(_override.LocalPath)
             || !string.IsNullOrWhiteSpace(_override.TerminalTitle));
-    private string _copilotCommand = "copilot";
+    private string _copilotCommand = CopilotSettingKeys.DefaultCommand;
 
     protected override async Task OnInitializedAsync()
     {
-        _copilotCommand = await SettingsRepo.GetAsync("copilot_command") ?? "copilot";
+        _copilotCommand =
+            await SettingsRepo.GetAsync(CopilotSettingKeys.Command) ??
+            CopilotSettingKeys.DefaultCommand;
         _session = await Repository.GetByIdAsync(SessionId);
         if (_session is not null)
         {
             _rawSession = await RawRepository.GetByIdAsync(SessionId);
             _override = await OverridesRepository.GetOverrideAsync(SessionId);
             _workspace = WorkspaceReader.ReadWorkspace(SessionId);
+            _storage = await StorageRepository.GetBySessionIdAsync(
+                SessionId,
+                CancellationToken.None);
             _collections = await CollectionsRepository.GetBySessionIdAsync(SessionId);
             _checkpoints = await Repository.GetCheckpointsAsync(SessionId);
             _turns = await Repository.GetTurnsAsync(SessionId, 0, 100);
@@ -370,5 +398,18 @@ else if (_session is not null)
     private static string NormalizePath(string path)
     {
         return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        var value = (double)Math.Max(0, bytes);
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.##} {units[unit]}";
     }
 }

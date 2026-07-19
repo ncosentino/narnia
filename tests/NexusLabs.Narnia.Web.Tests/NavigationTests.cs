@@ -35,7 +35,7 @@ public sealed class NavigationTests
             "Stats",
             "Remote Repositories",
             "Tags",
-            "Files",
+            "Storage",
             "Commits",
             "Settings",
             "Docs",

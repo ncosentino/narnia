@@ -67,7 +67,8 @@
             The command used to invoke Copilot. Leave as <code>copilot</code> unless your machine
             requires a wrapper (e.g. Microsoft's "Agency" tooling requires
             <code>agency copilot</code> instead of a bare <code>copilot</code>). Applies to reopening
-            windows, launch/resume buttons, and newly created or edited scheduled jobs.
+            windows, launch/resume buttons, local session cleanup through Copilot SDK, and newly
+            created or edited scheduled jobs.
         </span>
     </div>
 
@@ -161,7 +162,9 @@
     protected override async Task OnInitializedAsync()
     {
         _shellPath = await SettingsRepo.GetAsync("shell_path") ?? "";
-        _copilotCommand = await SettingsRepo.GetAsync("copilot_command") ?? "copilot";
+        _copilotCommand =
+            await SettingsRepo.GetAsync(CopilotSettingKeys.Command) ??
+            CopilotSettingKeys.DefaultCommand;
         _theme = await SettingsRepo.GetAsync("theme") == "light" ? "light" : "dark";
 
         _snapEnabled = await SettingsRepo.GetAsync(SnapshotterSettingKeys.Enabled) != "false";

@@ -41,6 +41,21 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock job workspace so tests never write generated scripts to the real filesystem.</summary>
     public Mock<IScheduledJobWorkspace> ScheduledJobWorkspace { get; } = new();
 
+    /// <summary>Mock active-session reader so tests never inspect real Copilot processes or locks.</summary>
+    public Mock<ICopilotSessionActivityReader> SessionActivityReader { get; } = new();
+
+    /// <summary>Mock Git safety inspector so cleanup tests never execute Git against real paths.</summary>
+    public Mock<IGitArtifactInspector> GitArtifactInspector { get; } = new();
+
+    /// <summary>Mock Copilot SDK boundary so tests never launch a real Copilot runtime.</summary>
+    public Mock<ICopilotSessionManager> CopilotSessionManager { get; } = new();
+
+    /// <summary>Mock scan coordinator so endpoint tests never queue a real filesystem scan.</summary>
+    public Mock<ISessionStorageScanCoordinator> StorageScanCoordinator { get; } = new();
+
+    /// <summary>Mock cleanup orchestrator for HTTP contract tests.</summary>
+    public Mock<ISessionCleanupService> SessionCleanupService { get; } = new();
+
     public NarniaWebAppFactory()
     {
         // Defaults live here (not in ConfigureTestServices, which runs at host-build time and would
@@ -73,6 +88,39 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
             .Returns((string id) => $@"C:\narnia\schedules\{id}\logs");
         ScheduledJobWorkspace.Setup(w => w.WriteScriptAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string id, string _, CancellationToken _) => $@"C:\narnia\schedules\{id}\run.ps1");
+
+        SessionActivityReader
+            .Setup(reader => reader.GetActiveSessionIds())
+            .Returns(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        GitArtifactInspector
+            .Setup(inspector => inspector.InspectAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GitArtifactInspection(true, []));
+        CopilotSessionManager
+            .Setup(manager => manager.DeleteSessionsAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) =>
+                ids.Select(id => new CopilotSessionDeletionResult(id, true, null)).ToArray());
+        StorageScanCoordinator
+            .Setup(coordinator => coordinator.GetProgress())
+            .Returns(new SessionStorageScanProgress("idle", null, null, 0, 0, null));
+        StorageScanCoordinator
+            .Setup(coordinator => coordinator.RequestScan())
+            .Returns(true);
+        SessionCleanupService
+            .Setup(service => service.PreviewAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SessionCleanupPreview([], 0, 0, 0, 0, 0));
+        SessionCleanupService
+            .Setup(service => service.DeleteAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SessionCleanupBatchResult([]));
     }
 
     /// <summary>The real (temp-database-backed) terminal windows repository, for seeding.</summary>
@@ -90,6 +138,10 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>The real (temp-database-backed) scheduled job registry, for seeding.</summary>
     public IScheduledJobRegistry ScheduledJobRegistry =>
         Services.GetRequiredService<IScheduledJobRegistry>();
+
+    /// <summary>The real temp-database-backed session storage repository.</summary>
+    public ISessionStorageRepository StorageRepository =>
+        Services.GetRequiredService<ISessionStorageRepository>();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -119,6 +171,21 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<IScheduledJobWorkspace>();
             services.AddSingleton(ScheduledJobWorkspace.Object);
+
+            services.RemoveAll<ICopilotSessionActivityReader>();
+            services.AddSingleton(SessionActivityReader.Object);
+
+            services.RemoveAll<IGitArtifactInspector>();
+            services.AddSingleton(GitArtifactInspector.Object);
+
+            services.RemoveAll<ICopilotSessionManager>();
+            services.AddSingleton(CopilotSessionManager.Object);
+
+            services.RemoveAll<ISessionStorageScanCoordinator>();
+            services.AddSingleton(StorageScanCoordinator.Object);
+
+            services.RemoveAll<ISessionCleanupService>();
+            services.AddSingleton(SessionCleanupService.Object);
         });
     }
 

@@ -3,9 +3,11 @@
   <PropertyGroup>
     <!-- Blazor SSR does not yet support NativeAOT or full trimming (as of .NET 10).
          The MCP server uses NativeAOT; the Web app uses standard JIT publish. -->
+    <CopilotSkipCliDownload>true</CopilotSkipCliDownload>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="GitHub.Copilot.SDK" ExcludeAssets="native" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <PackageReference Include="System.Management" />
     <ProjectReference Include="..\NexusLabs.Narnia.Core\NexusLabs.Narnia.Core.csproj" />

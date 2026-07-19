@@ -48,6 +48,7 @@ nav:
   - Getting Started: getting-started.md
   - Setup by Tool: setup-by-tool.md
   - Configuration: configuration.md
+  - Session Storage: session-storage.md
   - Terminal Window Recovery: terminal-windows.md
   - MCP Tools:
     - Overview: tools/index.md
@@ -59,6 +60,10 @@ nav:
     - get_session_workspace: tools/get-session-workspace.md
     - list_sessions_by_repository: tools/list-sessions-by-repository.md
     - list_sessions_by_cwd: tools/list-sessions-by-cwd.md
+    - get_session_storage_overview: tools/get-session-storage-overview.md
+    - scan_session_storage: tools/scan-session-storage.md
+    - preview_local_session_cleanup: tools/preview-local-session-cleanup.md
+    - delete_local_sessions: tools/delete-local-sessions.md
     - list_schedules: tools/list-schedules.md
     - get_schedule: tools/get-schedule.md
     - get_schedule_log: tools/get-schedule-log.md

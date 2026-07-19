@@ -1,0 +1,680 @@
+@page "/storage"
+@using System.Text.Json
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Services
+@inject ISessionStorageService StorageService
+@inject ISessionStorageScanCoordinator ScanCoordinator
+
+<PageTitle>Session Storage — Narnia</PageTitle>
+
+<div class="page-actions">
+    <div>
+        <h1>Session Storage</h1>
+        <p class="storage-subtitle">
+            Understand local Copilot session growth, find stale or oversized sessions, and safely
+            reclaim disk space through Copilot's supported deletion interface.
+        </p>
+    </div>
+    <button type="button" class="btn-refresh" onclick="narniaRequestStorageScan(this)">↻ Scan now</button>
+</div>
+
+@if (_dashboard is null)
+{
+    <p>Loading cached storage measurements...</p>
+}
+else
+{
+    <div class="storage-scan-state" id="storage-scan-state" data-status="@_scanProgress.Status">
+        <strong>Scanner:</strong> @ScanStatusText
+        @if (_dashboard.LastScan is not null)
+        {
+            <span> · last persisted scan @FormatTime(_dashboard.LastScan.CompletedAt)</span>
+        }
+        @if (_dashboard.LastScan?.Error is not null)
+        {
+            <span class="storage-danger"> · @_dashboard.LastScan.Error</span>
+        }
+    </div>
+
+    <div class="dashboard-summary storage-summary">
+        <a class="dashboard-summary-card" href="#storage-sessions">
+            <span class="dashboard-summary-value">@FormatBytes(_dashboard.Overview.Categories.TotalBytes)</span>
+            <span class="dashboard-summary-label">Local session storage</span>
+            <span class="dashboard-summary-detail">@_dashboard.Overview.LocalStateCount.ToString("N0") measured directories</span>
+        </a>
+        <a class="dashboard-summary-card" href="@CandidateUrl">
+            <span class="dashboard-summary-value">@FormatBytes(_candidateBytes)</span>
+            <span class="dashboard-summary-label">Potentially reclaimable</span>
+            <span class="dashboard-summary-detail">@_candidateCount.ToString("N0") sessions under current age/size rules</span>
+        </a>
+        <a class="dashboard-summary-card" href="/storage?view=growing">
+            <span class="dashboard-summary-value">@FormatBytes(_positiveGrowthBytes)</span>
+            <span class="dashboard-summary-label">Growth since prior scan</span>
+            <span class="dashboard-summary-detail">@_growingCount.ToString("N0") growing sessions</span>
+        </a>
+        <a class="dashboard-summary-card" href="/storage?view=issues">
+            <span class="dashboard-summary-value">@IssueCount</span>
+            <span class="dashboard-summary-label">Storage issues</span>
+            <span class="dashboard-summary-detail">Incomplete, risky, or unindexed local state</span>
+        </a>
+        <a class="dashboard-summary-card" href="/storage?view=history-only">
+            <span class="dashboard-summary-value">@_dashboard.Overview.IndexedOnlyCount.ToString("N0")</span>
+            <span class="dashboard-summary-label">History-only sessions</span>
+            <span class="dashboard-summary-detail">Indexed history with no local state footprint</span>
+        </a>
+        <a class="dashboard-summary-card" href="/storage?view=all">
+            <span class="dashboard-summary-value">@_dashboard.Overview.ActiveCount</span>
+            <span class="dashboard-summary-label">Active sessions</span>
+            <span class="dashboard-summary-detail">Always blocked from cleanup</span>
+        </a>
+    </div>
+
+    @if (_dashboard.Overview.Categories.TotalBytes > 0)
+    {
+        <div class="chart-row storage-chart-row">
+            <div class="chart-container">
+                <canvas id="storage-category-chart"></canvas>
+            </div>
+            <script type="application/json" data-chart-id="storage-category-chart">
+                @((MarkupString)BuildCategoryChartJson(_dashboard.Overview.Categories))
+            </script>
+
+            <div class="chart-container">
+                <canvas id="storage-age-size-chart"></canvas>
+            </div>
+            <script type="application/json" data-chart-id="storage-age-size-chart">
+                @((MarkupString)BuildAgeSizeChartJson(_dashboard.Sessions))
+            </script>
+        </div>
+    }
+
+    @if (_dashboard.History.Count > 1)
+    {
+        <h2>Storage Growth</h2>
+        <div class="chart-container storage-history-chart">
+            <canvas id="storage-history-chart"></canvas>
+        </div>
+        <script type="application/json" data-chart-id="storage-history-chart">
+            @((MarkupString)BuildHistoryChartJson(_dashboard.History))
+        </script>
+    }
+
+    <div class="storage-toolbar-links">
+        <a href="/files">Recorded file activity →</a>
+        <span>
+            The legacy Files view tracks paths Copilot touched; it does not measure local storage.
+        </span>
+    </div>
+
+    <form method="get" action="/storage" class="storage-filter-form">
+        <label>
+            View
+            <select name="view">
+                <option value="candidates" selected="@(EffectiveView == "candidates")">Cleanup candidates</option>
+                <option value="all" selected="@(EffectiveView == "all")">All local storage</option>
+                <option value="growing" selected="@(EffectiveView == "growing")">Growing sessions</option>
+                <option value="issues" selected="@(EffectiveView == "issues")">Storage issues</option>
+                <option value="history-only" selected="@(EffectiveView == "history-only")">History only</option>
+            </select>
+        </label>
+        <label>
+            Inactive days
+            <input type="number" name="ageDays" min="1" max="3650" value="@EffectiveAgeDays" />
+        </label>
+        <label>
+            Minimum MiB
+            <input type="number" name="minMb" min="0" max="1048576" value="@EffectiveMinimumMiB" />
+        </label>
+        <label class="storage-query">
+            Search
+            <input type="search" name="q" value="@Query" placeholder="Name, repository, or session ID" />
+        </label>
+        <label>
+            Sort
+            <select name="sort">
+                <option value="size" selected="@(EffectiveSort == "size")">Largest size</option>
+                <option value="growth" selected="@(EffectiveSort == "growth")">Largest growth</option>
+                <option value="activity" selected="@(EffectiveSort == "activity")">Oldest activity</option>
+            </select>
+        </label>
+        <label class="show-archived-label">
+            <input type="checkbox" name="showProtected" value="true" checked="@ShowProtected" />
+            Include protected
+        </label>
+        <button type="submit">Apply</button>
+    </form>
+
+    <section id="storage-sessions">
+        <div class="page-actions">
+            <div>
+                <h2>@ViewHeading</h2>
+                <p class="search-hint">
+                    Showing @_visibleItems.Count.ToString("N0") of @_filteredCount.ToString("N0") matching sessions.
+                    Sizes are logical bytes; reparse targets are never followed.
+                </p>
+            </div>
+        </div>
+
+        @if (_visibleItems.Count == 0)
+        {
+            <p>No sessions match the current storage filters.</p>
+        }
+        else
+        {
+            <div class="storage-table-scroll">
+            <table class="sessions-table storage-table" data-resizable-table="storage">
+                <thead>
+                    <tr>
+                        <th class="col-select" data-no-resize>
+                            <input type="checkbox"
+                                   title="Select every cleanup-eligible visible session"
+                                   onclick="narniaToggleAllStorage(this)" />
+                        </th>
+                        <th>Session</th>
+                        <th>Status</th>
+                        <th>Remote Repository</th>
+                        <th>Size</th>
+                        <th>Growth</th>
+                        <th>Storage Mix</th>
+                        <th>Last Activity</th>
+                        <th>Largest File</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _visibleItems)
+                    {
+                        <tr class="@(item.IsArchived ? "session-archived" : "")">
+                            <td class="col-select">
+                                <input type="checkbox"
+                                       class="storage-check"
+                                       value="@item.SessionId"
+                                       disabled="@(!CanSelect(item))"
+                                       onclick="narniaStorageSelectionChanged()" />
+                            </td>
+                            <td>
+                                @if (item.DataState == SessionStorageDataState.LocalStateOnly)
+                                {
+                                    <code>@ShortId(item.SessionId)</code>
+                                }
+                                else
+                                {
+                                    <a href="/sessions/@item.SessionId">@(item.Summary ?? ShortId(item.SessionId))</a>
+                                }
+                                <div class="storage-session-id">@item.SessionId</div>
+                            </td>
+                            <td>
+                                @foreach (var badge in StatusBadges(item))
+                                {
+                                    <span class="storage-badge @badge.CssClass">@badge.Label</span>
+                                }
+                            </td>
+                            <td>@(item.Repository ?? "—")</td>
+                            <td class="storage-size">@FormatBytes(item.Storage?.TotalBytes ?? 0)</td>
+                            <td class="@GrowthClass(item.Storage?.GrowthBytes ?? 0)">
+                                @FormatSignedBytes(item.Storage?.GrowthBytes ?? 0)
+                            </td>
+                            <td>@StorageMix(item.Storage)</td>
+                            <td>@ActivityLabel(item)</td>
+                            <td>
+                                @if (item.Storage?.LargestFilePath is not null)
+                                {
+                                    <span class="storage-largest-file" title="@item.Storage.LargestFilePath">
+                                        @FormatBytes(item.Storage.LargestFileBytes)
+                                        · @item.Storage.LargestFilePath
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+
+            <div class="bulk-action-bar storage-cleanup-bar" id="storage-cleanup-bar" style="display:none;">
+                <span id="storage-selected-count">0 selected</span>
+                <label>
+                    <input type="checkbox" id="storage-override-protections" />
+                    Explicitly include protected selections
+                </label>
+                <button type="button" class="btn-storage-delete" onclick="narniaPreviewStorageCleanup(this)">
+                    Preview local deletion
+                </button>
+            </div>
+        }
+    </section>
+
+    @if (_dashboard.CleanupHistory.Count > 0)
+    {
+        <details class="storage-cleanup-history">
+            <summary>Recent local cleanup audit (@_dashboard.CleanupHistory.Count)</summary>
+            <div class="storage-table-scroll">
+                <table class="sessions-table">
+                    <thead>
+                        <tr>
+                            <th>Completed</th>
+                            <th>Session</th>
+                            <th>Result</th>
+                            <th>Estimated Size</th>
+                            <th>Detail</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var entry in _dashboard.CleanupHistory)
+                        {
+                            <tr>
+                                <td>@FormatTime(entry.CompletedAt)</td>
+                                <td><code>@ShortId(entry.SessionId)</code></td>
+                                <td>@entry.Result</td>
+                                <td>@FormatBytes(entry.EstimatedBytes)</td>
+                                <td>@(entry.Error ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    }
+}
+
+@code {
+    /// <summary>Gets or sets the storage view filter.</summary>
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? View { get; set; }
+
+    /// <summary>Gets or sets the inactivity threshold for cleanup candidates.</summary>
+    [SupplyParameterFromQuery(Name = "ageDays")]
+    public int AgeDays { get; set; } = 90;
+
+    /// <summary>Gets or sets the minimum logical size in mebibytes.</summary>
+    [SupplyParameterFromQuery(Name = "minMb")]
+    public int MinimumMiB { get; set; } = 1;
+
+    /// <summary>Gets or sets a session name, repository, or identifier search.</summary>
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? Query { get; set; }
+
+    /// <summary>Gets or sets the row sort.</summary>
+    [SupplyParameterFromQuery(Name = "sort")]
+    public string? Sort { get; set; }
+
+    /// <summary>Gets or sets whether default cleanup protections are included in candidates.</summary>
+    [SupplyParameterFromQuery(Name = "showProtected")]
+    public bool ShowProtected { get; set; }
+
+    private const int VisibleLimit = 250;
+    private SessionStorageDashboard? _dashboard;
+    private SessionStorageScanProgress _scanProgress =
+        new("idle", null, null, 0, 0, null);
+    private List<SessionStorageItem> _visibleItems = [];
+    private int _filteredCount;
+    private int _candidateCount;
+    private long _candidateBytes;
+    private int _growingCount;
+    private long _positiveGrowthBytes;
+
+    private string EffectiveView => View is "all" or "growing" or "issues" or "history-only"
+        ? View
+        : "candidates";
+    private string EffectiveSort => Sort is "growth" or "activity" ? Sort : "size";
+    private int EffectiveAgeDays => Math.Clamp(AgeDays <= 0 ? 90 : AgeDays, 1, 3650);
+    private int EffectiveMinimumMiB => Math.Clamp(MinimumMiB, 0, 1_048_576);
+    private long MinimumBytes => EffectiveMinimumMiB * 1024L * 1024L;
+    private string CandidateUrl =>
+        $"/storage?view=candidates&ageDays={EffectiveAgeDays}&minMb={EffectiveMinimumMiB}";
+    private int IssueCount => _dashboard?.Sessions.Count(item =>
+        item.DataState == SessionStorageDataState.LocalStateOnly ||
+        item.Storage is { IsComplete: false } ||
+        item.Storage is { ContainsGitRepository: true } ||
+        item.Storage is { ContainsLinkedWorktree: true } ||
+        item.Storage is { ContainsReparsePoint: true }) ?? 0;
+    private string ViewHeading => EffectiveView switch
+    {
+        "all" => "All Local Session Storage",
+        "growing" => "Growing Sessions",
+        "issues" => "Storage Issues",
+        "history-only" => "History-Only Sessions",
+        _ => "Cleanup Candidates",
+    };
+    private string ScanStatusText => _scanProgress.Status switch
+    {
+        "running" =>
+            $"scanning {_scanProgress.ScannedSessions:N0} of {_scanProgress.TotalSessions:N0} sessions",
+        "failed" => $"failed · {_scanProgress.Error}",
+        "completed" => $"completed {FormatTime(_scanProgress.CompletedAt)}",
+        _ => "idle",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dashboard = await StorageService.GetDashboardAsync(CancellationToken.None);
+        _scanProgress = ScanCoordinator.GetProgress();
+        var candidates = _dashboard.Sessions
+            .Where(IsCleanupCandidate)
+            .ToArray();
+        _candidateCount = candidates.Length;
+        _candidateBytes = candidates.Sum(item => item.Storage?.TotalBytes ?? 0);
+        var growing = _dashboard.Sessions
+            .Where(item => (item.Storage?.GrowthBytes ?? 0) > 0)
+            .ToArray();
+        _growingCount = growing.Length;
+        _positiveGrowthBytes = growing.Sum(item => item.Storage!.GrowthBytes);
+
+        var filtered = ApplyView(_dashboard.Sessions)
+            .Where(MatchesQuery)
+            .ToArray();
+        _filteredCount = filtered.Length;
+        _visibleItems = ApplySort(filtered).Take(VisibleLimit).ToList();
+    }
+
+    private IEnumerable<SessionStorageItem> ApplyView(
+        IEnumerable<SessionStorageItem> items) =>
+        EffectiveView switch
+        {
+            "all" => items.Where(item => item.Storage is not null),
+            "growing" => items.Where(item => (item.Storage?.GrowthBytes ?? 0) > 0),
+            "issues" => items.Where(item =>
+                item.DataState == SessionStorageDataState.LocalStateOnly ||
+                item.Storage is { IsComplete: false } ||
+                item.Storage is { ContainsGitRepository: true } ||
+                item.Storage is { ContainsLinkedWorktree: true } ||
+                item.Storage is { ContainsReparsePoint: true }),
+            "history-only" => items.Where(item =>
+                item.DataState == SessionStorageDataState.IndexedOnly),
+            _ => items.Where(IsCleanupCandidate),
+        };
+
+    private IEnumerable<SessionStorageItem> ApplySort(
+        IEnumerable<SessionStorageItem> items) =>
+        EffectiveSort switch
+        {
+            "growth" => items
+                .OrderByDescending(item => item.Storage?.GrowthBytes ?? 0)
+                .ThenByDescending(item => item.Storage?.TotalBytes ?? 0),
+            "activity" => items
+                .OrderBy(item => ActivityAt(item) ?? DateTimeOffset.MinValue)
+                .ThenByDescending(item => item.Storage?.TotalBytes ?? 0),
+            _ => items
+                .OrderByDescending(item => item.Storage?.TotalBytes ?? 0)
+                .ThenBy(item => item.SessionId, StringComparer.OrdinalIgnoreCase),
+        };
+
+    private bool IsCleanupCandidate(SessionStorageItem item)
+    {
+        if (item.DataState != SessionStorageDataState.IndexedWithLocalState ||
+            item.Storage is not { IsComplete: true } storage ||
+            storage.TotalBytes < MinimumBytes ||
+            item.IsActive ||
+            storage.ContainsLinkedWorktree ||
+            storage.ContainsReparsePoint ||
+            (!ShowProtected && item.IsProtected))
+        {
+            return false;
+        }
+
+        var activity = ActivityAt(item);
+        return activity is not null &&
+               activity <= DateTimeOffset.Now.AddDays(-EffectiveAgeDays);
+    }
+
+    private bool MatchesQuery(SessionStorageItem item)
+    {
+        if (string.IsNullOrWhiteSpace(Query))
+            return true;
+        var query = Query.Trim();
+        return item.SessionId.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               (item.Summary?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (item.Repository?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private static bool CanSelect(SessionStorageItem item) =>
+        item.DataState == SessionStorageDataState.IndexedWithLocalState &&
+        item.Storage is
+        {
+            IsComplete: true,
+            ContainsLinkedWorktree: false,
+            ContainsReparsePoint: false,
+        } &&
+        !item.IsActive;
+
+    private static DateTimeOffset? ActivityAt(SessionStorageItem item) =>
+        item.UpdatedAt ?? item.Storage?.LastWriteAt;
+
+    private static string ActivityLabel(SessionStorageItem item)
+    {
+        var activity = ActivityAt(item);
+        if (activity is null)
+            return "Unknown";
+        var age = Math.Max(0, (DateTimeOffset.Now - activity.Value).Days);
+        return $"{FormatTime(activity)} · {age:N0}d ago";
+    }
+
+    private static IReadOnlyList<(string Label, string CssClass)> StatusBadges(
+        SessionStorageItem item)
+    {
+        var badges = new List<(string, string)>();
+        if (item.IsActive)
+            badges.Add(("active", "storage-badge--active"));
+        if (item.IsProtected)
+            badges.Add(("protected", "storage-badge--protected"));
+        if (item.IsArchived)
+            badges.Add(("archived", ""));
+        if (item.DataState == SessionStorageDataState.LocalStateOnly)
+            badges.Add(("unindexed local state", "storage-badge--warning"));
+        if (item.DataState == SessionStorageDataState.IndexedOnly)
+            badges.Add(("history only", ""));
+        if (item.Storage is { IsComplete: false })
+            badges.Add(("incomplete scan", "storage-badge--danger"));
+        if (item.Storage is { ContainsGitRepository: true })
+            badges.Add(("Git repository", "storage-badge--warning"));
+        if (item.Storage is { ContainsLinkedWorktree: true })
+            badges.Add(("linked worktree", "storage-badge--danger"));
+        if (item.Storage is { ContainsReparsePoint: true })
+            badges.Add(("reparse point", "storage-badge--danger"));
+        if (badges.Count == 0)
+            badges.Add(("local", ""));
+        return badges;
+    }
+
+    private static string StorageMix(SessionStorageRecord? storage)
+    {
+        if (storage is null || storage.TotalBytes == 0)
+            return "—";
+        var categories = new[]
+        {
+            ("events", storage.EventsBytes),
+            ("artifacts", storage.ArtifactsBytes),
+            ("rewind", storage.RewindBytes),
+            ("checkpoints", storage.CheckpointsBytes),
+            ("database", storage.SessionDatabaseBytes),
+            ("other", storage.OtherBytes),
+        };
+        return string.Join(
+            " · ",
+            categories
+                .Where(category => category.Item2 > 0)
+                .OrderByDescending(category => category.Item2)
+                .Take(3)
+                .Select(category => $"{category.Item1} {FormatPercent(category.Item2, storage.TotalBytes)}"));
+    }
+
+    private static string FormatPercent(long part, long total) =>
+        total == 0 ? "0%" : $"{part * 100d / total:0.#}%";
+
+    private static string GrowthClass(long growth) =>
+        growth > 0 ? "storage-growth-positive" :
+        growth < 0 ? "storage-growth-negative" :
+        "";
+
+    private static string FormatSignedBytes(long bytes) =>
+        bytes == 0 ? "—" : $"{(bytes > 0 ? "+" : "−")}{FormatBytes(Math.Abs(bytes))}";
+
+    private static string ShortId(string sessionId) =>
+        sessionId.Length <= 8 ? sessionId : sessionId[..8];
+
+    private static string FormatTime(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "unknown";
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        var value = (double)Math.Max(0, bytes);
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.##} {units[unit]}";
+    }
+
+    private static string BuildCategoryChartJson(SessionStorageCategoryTotals totals) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "doughnut",
+            data = new
+            {
+                labels = new[] { "Events", "Artifacts", "Rewind", "Checkpoints", "Session DB", "Other" },
+                datasets = new[]
+                {
+                    new
+                    {
+                        label = "Logical bytes",
+                        data = new[]
+                        {
+                            totals.EventsBytes,
+                            totals.ArtifactsBytes,
+                            totals.RewindBytes,
+                            totals.CheckpointsBytes,
+                            totals.SessionDatabaseBytes,
+                            totals.OtherBytes,
+                        },
+                        backgroundColor = new[]
+                        {
+                            "#8b5cf6", "#10b981", "#f59e0b",
+                            "#3b82f6", "#ec4899", "#64748b",
+                        },
+                    },
+                },
+            },
+            options = new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new
+                {
+                    title = new { display = true, text = "Storage by category" },
+                    legend = new { position = "bottom" },
+                },
+            },
+        });
+
+    private static string BuildHistoryChartJson(
+        IReadOnlyList<SessionStorageDailySnapshot> history) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "line",
+            data = new
+            {
+                labels = history.Select(snapshot => snapshot.SnapshotDate.ToString("yyyy-MM-dd")),
+                datasets = new[]
+                {
+                    new
+                    {
+                        label = "Total GiB",
+                        data = history.Select(snapshot =>
+                            Math.Round(snapshot.Categories.TotalBytes / 1024d / 1024d / 1024d, 3)),
+                        borderColor = "#8b5cf6",
+                        backgroundColor = "rgba(139,92,246,.18)",
+                        fill = true,
+                        tension = .2,
+                    },
+                },
+            },
+            options = new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new { legend = new { display = false } },
+                scales = new
+                {
+                    y = new
+                    {
+                        beginAtZero = true,
+                        title = new { display = true, text = "GiB" },
+                    },
+                },
+            },
+        });
+
+    private static string BuildAgeSizeChartJson(
+        IReadOnlyList<SessionStorageItem> sessions)
+    {
+        var now = DateTimeOffset.Now;
+        var points = sessions
+            .Where(item => item.Storage is { TotalBytes: > 0 } && ActivityAt(item) is not null)
+            .OrderByDescending(item => item.Storage!.TotalBytes)
+            .Take(100)
+            .Select(item =>
+            {
+                var sizeMiB = item.Storage!.TotalBytes / 1024d / 1024d;
+                return new
+                {
+                    Item = item,
+                    X = Math.Max(0, (now - ActivityAt(item)!.Value).TotalDays),
+                    Y = sizeMiB,
+                    R = Math.Clamp(Math.Sqrt(sizeMiB) * 1.5, 4, 20),
+                };
+            })
+            .ToArray();
+        return JsonSerializer.Serialize(new
+        {
+            type = "bubble",
+            narniaPointLabels = points.Select(point =>
+                point.Item.Summary ?? ShortId(point.Item.SessionId)),
+            data = new
+            {
+                datasets = new[]
+                {
+                    new
+                    {
+                        label = "Sessions",
+                        data = points.Select(point => new
+                        {
+                            x = Math.Round(point.X, 1),
+                            y = Math.Round(point.Y, 2),
+                            r = Math.Round(point.R, 1),
+                        }),
+                        backgroundColor = "rgba(139,92,246,.55)",
+                        borderColor = "#8b5cf6",
+                    },
+                },
+            },
+            options = new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new
+                {
+                    title = new { display = true, text = "Largest sessions: age × size" },
+                    legend = new { display = false },
+                },
+                scales = new
+                {
+                    x = new
+                    {
+                        title = new { display = true, text = "Days since activity" },
+                    },
+                    y = new
+                    {
+                        beginAtZero = true,
+                        title = new { display = true, text = "MiB" },
+                    },
+                },
+            },
+        });
+    }
+}

@@ -17,7 +17,7 @@ public sealed class CopilotSessionLockResolverTests
     public void ResolveSessionId_NoSessionStateDirectory_ReturnsNull()
     {
         var fs = new MockFileSystem();
-        var resolver = new CopilotSessionLockResolver(CreateOptions(), fs);
+        var resolver = CreateResolver(fs);
 
         Assert.Null(resolver.ResolveSessionId(1234));
     }
@@ -29,7 +29,7 @@ public sealed class CopilotSessionLockResolverTests
         {
             [$@"{SessionStatePath}\some-session\inuse.999.lock"] = new MockFileData("999"),
         });
-        var resolver = new CopilotSessionLockResolver(CreateOptions(), fs);
+        var resolver = CreateResolver(fs);
 
         Assert.Null(resolver.ResolveSessionId(1234));
     }
@@ -42,7 +42,7 @@ public sealed class CopilotSessionLockResolverTests
         {
             [$@"{SessionStatePath}\{sessionId}\inuse.64768.lock"] = new MockFileData("64768"),
         });
-        var resolver = new CopilotSessionLockResolver(CreateOptions(), fs);
+        var resolver = CreateResolver(fs);
 
         Assert.Equal(sessionId, resolver.ResolveSessionId(64768));
     }
@@ -62,7 +62,7 @@ public sealed class CopilotSessionLockResolverTests
         });
         fs.Directory.SetCreationTimeUtc($@"{SessionStatePath}\{mainSessionId}", new DateTime(2026, 7, 2, 3, 47, 1, DateTimeKind.Utc));
         fs.Directory.SetCreationTimeUtc($@"{SessionStatePath}\{subTaskSessionId}", new DateTime(2026, 7, 3, 6, 47, 12, DateTimeKind.Utc));
-        var resolver = new CopilotSessionLockResolver(CreateOptions(), fs);
+        var resolver = CreateResolver(fs);
 
         Assert.Equal(mainSessionId, resolver.ResolveSessionId(67424));
     }
@@ -77,9 +77,18 @@ public sealed class CopilotSessionLockResolverTests
             [$@"{SessionStatePath}\{sessionA}\inuse.100.lock"] = new MockFileData("100"),
             [$@"{SessionStatePath}\{sessionB}\inuse.200.lock"] = new MockFileData("200"),
         });
-        var resolver = new CopilotSessionLockResolver(CreateOptions(), fs);
+        var resolver = CreateResolver(fs);
 
         Assert.Equal(sessionA, resolver.ResolveSessionId(100));
         Assert.Equal(sessionB, resolver.ResolveSessionId(200));
+    }
+
+    private static CopilotSessionLockResolver CreateResolver(MockFileSystem fileSystem)
+    {
+        var options = CreateOptions();
+        return new CopilotSessionLockResolver(
+            options,
+            fileSystem,
+            new CopilotSessionLockReader(options, fileSystem));
     }
 }

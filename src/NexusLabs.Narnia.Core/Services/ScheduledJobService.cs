@@ -19,8 +19,6 @@ public sealed class ScheduledJobService(
 {
     private const string NarniaFolder = @"\Narnia\";
     private const int MaxLogChars = 100_000;
-    private const string DefaultCopilotCommand = "copilot";
-
     /// <inheritdoc />
     public bool RegistrarSupported => registrar.IsSupported;
 
@@ -70,7 +68,9 @@ public sealed class ScheduledJobService(
 
         var jobId = Guid.NewGuid().ToString();
         var cadence = BuildCadence(input);
-        var copilotCommand = await settingsRepository.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+        var copilotCommand =
+            await settingsRepository.GetAsync(CopilotSettingKeys.Command, ct) ??
+            CopilotSettingKeys.DefaultCommand;
         var (script, launcher, registration) = BuildOwnedJob(jobId, input, cadence, copilotCommand);
 
         // Copy-paste mode: catalog nothing, just hand back the generated wrapper + registration command.
@@ -113,7 +113,9 @@ public sealed class ScheduledJobService(
             return ScheduledJobMutationResult.Failure("Editing tasks is not supported on this platform.");
 
         var cadence = BuildCadence(input);
-        var copilotCommand = await settingsRepository.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+        var copilotCommand =
+            await settingsRepository.GetAsync(CopilotSettingKeys.Command, ct) ??
+            CopilotSettingKeys.DefaultCommand;
         var (script, launcher, registration) = BuildOwnedJob(id, input, cadence, copilotCommand);
 
         await workspace.WriteScriptAsync(id, script, ct);

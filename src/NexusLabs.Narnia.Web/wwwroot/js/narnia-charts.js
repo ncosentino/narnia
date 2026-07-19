@@ -19,6 +19,21 @@ function narniaCopyText(elementId, btn) {
             if (!canvas) return;
             try {
                 var config = JSON.parse(el.textContent);
+                var pointLabels = config.narniaPointLabels;
+                if (pointLabels) {
+                    delete config.narniaPointLabels;
+                    config.options = config.options || {};
+                    config.options.plugins = config.options.plugins || {};
+                    config.options.plugins.tooltip = config.options.plugins.tooltip || {};
+                    config.options.plugins.tooltip.callbacks =
+                        config.options.plugins.tooltip.callbacks || {};
+                    config.options.plugins.tooltip.callbacks.label = function (context) {
+                        var label = pointLabels[context.dataIndex] || 'Session';
+                        return label + ': ' +
+                            context.parsed.x.toFixed(1) + ' days, ' +
+                            context.parsed.y.toFixed(2) + ' MiB';
+                    };
+                }
                 var hrefTemplate = el.getAttribute('data-chart-href-template');
                 if (hrefTemplate) {
                     config.options = config.options || {};
@@ -300,6 +315,161 @@ async function narniaLaunchSessions(ids, btn) {
 function narniaLaunchBulk() {
     var btn = document.querySelector('#bulk-action-bar .btn-bulk-launch');
     narniaLaunchSessions(narniaSelectedSessionIds(), btn);
+}
+
+// ── Session storage ──────────────────────────────────────────────────────────
+function narniaSelectedStorageSessionIds() {
+    var checks = document.querySelectorAll('.storage-check:checked');
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    return ids;
+}
+
+function narniaStorageSelectionChanged() {
+    var all = document.querySelectorAll('.storage-check:not(:disabled)');
+    var selected = narniaSelectedStorageSessionIds();
+    var bar = document.getElementById('storage-cleanup-bar');
+    var count = document.getElementById('storage-selected-count');
+    if (bar) bar.style.display = selected.length > 0 ? '' : 'none';
+    if (count) count.textContent = selected.length + ' selected';
+    var master = document.querySelector('.storage-table thead input[type=checkbox]');
+    if (master) {
+        master.checked = selected.length > 0 && selected.length === all.length;
+        master.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+}
+
+function narniaToggleAllStorage(master) {
+    var checks = document.querySelectorAll('.storage-check:not(:disabled)');
+    for (var i = 0; i < checks.length; i++) checks[i].checked = master.checked;
+    narniaStorageSelectionChanged();
+}
+
+function narniaFormatStorageBytes(bytes) {
+    var units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    var value = Math.max(0, Number(bytes) || 0);
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit++;
+    }
+    return (unit === 0 ? value.toFixed(0) : value.toFixed(2)) + ' ' + units[unit];
+}
+
+async function narniaRequestStorageScan(btn) {
+    var originalText = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting scan…'; }
+    try {
+        var response = await fetch('/api/storage/scan', { method: 'POST' });
+        if (!response.ok && response.status !== 409) {
+            throw new Error('HTTP ' + response.status);
+        }
+        await narniaPollStorageScan(btn, originalText);
+    } catch (e) {
+        alert('Storage scan failed to start: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
+}
+
+async function narniaPollStorageScan(btn, originalText) {
+    var state = document.getElementById('storage-scan-state');
+    for (var attempt = 0; attempt < 1200; attempt++) {
+        var response = await fetch('/api/storage/status');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var status = await response.json();
+        if (state) {
+            var text = status.status === 'running'
+                ? 'Scanner: scanning ' + status.scannedSessions + ' of ' + status.totalSessions + ' sessions'
+                : 'Scanner: ' + status.status;
+            state.textContent = text;
+            state.dataset.status = status.status;
+        }
+        if (status.status === 'completed' || status.status === 'failed') {
+            window.location.reload();
+            return;
+        }
+        await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+    }
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    alert('The storage scan is still running. Refresh the page later to see its progress.');
+}
+
+async function narniaPreviewStorageCleanup(btn) {
+    var ids = narniaSelectedStorageSessionIds();
+    if (ids.length === 0) return;
+    var overrideElement = document.getElementById('storage-override-protections');
+    var overrideProtections = !!(overrideElement && overrideElement.checked);
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Validating…';
+    try {
+        var request = {
+            sessionIds: ids,
+            overrideProtections: overrideProtections,
+            confirmLocalDeletion: false
+        };
+        var previewResponse = await fetch('/api/storage/cleanup-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request)
+        });
+        if (!previewResponse.ok) throw new Error('HTTP ' + previewResponse.status);
+        var preview = await previewResponse.json();
+        if (preview.allowedCount === 0) {
+            var blocked = preview.decisions
+                .filter(function (decision) { return decision.disposition !== 'allowed'; })
+                .slice(0, 8)
+                .map(function (decision) {
+                    return decision.sessionId.substring(0, 8) + ': ' +
+                        (decision.reasons.join('; ') || decision.disposition);
+                });
+            alert('No selected sessions passed cleanup validation.\n\n' + blocked.join('\n'));
+            return;
+        }
+
+        var message =
+            'Permanently delete local Copilot data for ' + preview.allowedCount +
+            ' session(s), approximately ' + narniaFormatStorageBytes(preview.allowedBytes) + '?\n\n' +
+            'Synced GitHub copies and Narnia aliases, Collections, and Session Group references remain.\n' +
+            'This cannot be undone.';
+        if (preview.protectedCount > 0) {
+            message += '\n\n' + preview.protectedCount +
+                ' protected session(s) are excluded. Enable the explicit protection override to include them.';
+        }
+        if (preview.blockedCount > 0) {
+            message += '\n' + preview.blockedCount +
+                ' session(s) are hard-blocked by safety checks.';
+        }
+        if (!confirm(message)) return;
+
+        btn.textContent = '⏳ Deleting locally…';
+        request.confirmLocalDeletion = true;
+        var deleteResponse = await fetch('/api/storage/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request)
+        });
+        if (!deleteResponse.ok) throw new Error('HTTP ' + deleteResponse.status);
+        var result = await deleteResponse.json();
+        var failures = result.results.filter(function (item) { return !item.deleted; });
+        var summary =
+            'Deleted ' + result.deletedCount + ' session(s), approximately ' +
+            narniaFormatStorageBytes(result.deletedBytes) + '.';
+        if (failures.length > 0) {
+            summary += '\n\n' + failures.length + ' session(s) were not deleted:\n' +
+                failures.slice(0, 8).map(function (item) {
+                    return item.sessionId.substring(0, 8) + ': ' +
+                        (item.error || item.reasons.join('; ') || 'blocked');
+                }).join('\n');
+        }
+        alert(summary);
+        window.location.reload();
+    } catch (e) {
+        alert('Session cleanup failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
 }
 
 // ── Theme (dark/light) ───────────────────────────────────────────────────────

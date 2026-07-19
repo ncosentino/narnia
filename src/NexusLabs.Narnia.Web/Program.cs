@@ -35,6 +35,7 @@ var options = new NarniaOptions();
 builder.Configuration.GetSection(NarniaOptions.SectionName).Bind(options);
 
 builder.Services.AddSingleton(options);
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IFileSystem, FileSystem>();
 builder.Services.AddSingleton<SqliteSessionRepository>();
 builder.Services.AddSingleton<SqliteSessionOverridesRepository>();
@@ -47,9 +48,27 @@ builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
 builder.Services.AddSingleton<SettingsDatabaseRelocator>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<IWorkspaceReader, WorkspaceReader>();
+builder.Services.AddSingleton<ICopilotSessionLockReader, CopilotSessionLockReader>();
 builder.Services.AddSingleton<ICopilotSessionLockResolver, CopilotSessionLockResolver>();
+builder.Services.AddSingleton<ICopilotProcessProvider, CopilotProcessProvider>();
+builder.Services.AddSingleton<ICopilotSessionActivityReader, CopilotSessionActivityReader>();
 builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
 builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredService<SqliteNarniaSettingsRepository>());
+builder.Services.AddSingleton<SqliteSessionStorageRepository>();
+builder.Services.AddSingleton<ISessionStorageRepository>(sp => sp.GetRequiredService<SqliteSessionStorageRepository>());
+builder.Services.AddSingleton<ISessionStorageScanner, SessionStorageScanner>();
+builder.Services.AddSingleton<ISessionStorageService, SessionStorageService>();
+builder.Services.AddSingleton<IGitArtifactInspector, GitArtifactInspector>();
+builder.Services.AddSingleton<ICopilotSessionManager, CopilotSdkSessionManager>();
+builder.Services.AddSingleton<ISessionCleanupService, SessionCleanupService>();
+builder.Services.AddSingleton<SessionStorageScanCoordinator>();
+builder.Services.AddSingleton<ISessionStorageScanCoordinator>(
+    sp => sp.GetRequiredService<SessionStorageScanCoordinator>());
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddHostedService(
+        sp => sp.GetRequiredService<SessionStorageScanCoordinator>());
+}
 builder.Services.AddSingleton<SqliteTerminalWindowsRepository>();
 builder.Services.AddSingleton<ITerminalWindowsRepository>(sp => sp.GetRequiredService<SqliteTerminalWindowsRepository>());
 builder.Services.AddSingleton<SqliteSessionGroupsRepository>();
@@ -104,7 +123,8 @@ builder.Services
     .AddMcpServer()
     .WithHttpTransport(httpOptions => httpOptions.Stateless = true)
     .WithTools<SessionTools>()
-    .WithTools<ScheduleTools>();
+    .WithTools<ScheduleTools>()
+    .WithTools<StorageTools>();
 
 var app = builder.Build();
 
@@ -285,11 +305,6 @@ app.MapGet("/api/settings/detect-shell", () =>
         : Results.NotFound(new { message = "No shell detected" });
 });
 
-// The command that invokes Copilot. Overridable via the "copilot_command" setting for machines
-// where a wrapper is required (e.g. Microsoft's "Agency" tooling requires "agency copilot" instead
-// of a bare "copilot").
-const string DefaultCopilotCommand = "copilot";
-
 // ── Launch API ──────────────────────────────────────────────────────────────
 app.MapPost("/api/launch", async (
     LaunchRequest request,
@@ -329,7 +344,9 @@ app.MapPost("/api/launch", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
-    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+    var copilotCommand =
+        await settingsRepo.GetAsync(CopilotSettingKeys.Command, ct) ??
+        CopilotSettingKeys.DefaultCommand;
 
     var title = ov?.TerminalTitle ?? session.Summary ?? $"Narnia: {ShortSession(request.SessionId)}";
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
@@ -360,7 +377,9 @@ app.MapPost("/api/launch-bulk", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
-    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+    var copilotCommand =
+        await settingsRepo.GetAsync(CopilotSettingKeys.Command, ct) ??
+        CopilotSettingKeys.DefaultCommand;
 
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
@@ -488,7 +507,9 @@ app.MapPost("/api/windows/{id}/reopen", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
-    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+    var copilotCommand =
+        await settingsRepo.GetAsync(CopilotSettingKeys.Command, ct) ??
+        CopilotSettingKeys.DefaultCommand;
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
     var launchTabs = await BuildReopenTabsAsync(window, sessionRepo, overridesRepo, workspaceReader, ct);
@@ -515,7 +536,9 @@ app.MapPost("/api/windows/reopen", async (
     var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
     if (string.IsNullOrWhiteSpace(shellPath))
         return Results.BadRequest("No shell configured. Go to Settings to configure one.");
-    var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+    var copilotCommand =
+        await settingsRepo.GetAsync(CopilotSettingKeys.Command, ct) ??
+        CopilotSettingKeys.DefaultCommand;
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
     var launchTabs = new List<TerminalLaunchTab>();
@@ -576,6 +599,7 @@ app.MapDelete("/api/windows/{id}", async (
 MapSessionGroupsApi("/api/session-groups");
 MapSessionGroupsApi("/api/groups");
 app.MapWorkCollectionsEndpoints();
+app.MapStorageEndpoints();
 
 void MapSessionGroupsApi(string routePrefix)
 {
@@ -700,7 +724,9 @@ void MapSessionGroupsApi(string routePrefix)
         var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
         if (string.IsNullOrWhiteSpace(shellPath))
             return Results.BadRequest("No shell configured. Go to Settings to configure one.");
-        var copilotCommand = await settingsRepo.GetAsync("copilot_command", ct) ?? DefaultCopilotCommand;
+        var copilotCommand =
+            await settingsRepo.GetAsync(CopilotSettingKeys.Command, ct) ??
+            CopilotSettingKeys.DefaultCommand;
         var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
         var launchTabs = new List<TerminalLaunchTab>(group.Members.Count);

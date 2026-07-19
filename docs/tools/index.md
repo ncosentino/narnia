@@ -1,10 +1,10 @@
 ---
-description: Reference for all sixteen Narnia MCP tools -- session history search/browse and scheduled Copilot job management. Use these from any AI assistant that supports MCP.
+description: Reference for Narnia MCP tools covering session history, local storage management, and scheduled Copilot jobs.
 ---
 
 # MCP Tools
 
-Narnia exposes sixteen MCP tools: eight for working with your local Copilot CLI session history, and eight for managing Narnia-owned scheduled Copilot jobs. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
+Narnia exposes twenty MCP tools: eight for session history, four for local session storage, and eight for Narnia-owned scheduled Copilot jobs. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
 
 ## Session History Tools
 
@@ -32,7 +32,21 @@ After a machine restart, choose the field you actually know:
 4. `get_session_details` — confirm the right session before resuming
 5. `get_session_checkpoints` — read the last checkpoint to restore context
 
-All session tools return JSON. Results are read-only — Narnia never modifies your session data.
+Session-history tools are read-only and return JSON.
+
+## Session Storage Tools
+
+Storage tools use the same cached scanner and cleanup service as the web UI.
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| [`get_session_storage_overview`](get-session-storage-overview.md) | Cached totals and largest local sessions | — |
+| [`scan_session_storage`](scan-session-storage.md) | Queue a metadata-only background scan | — |
+| [`preview_local_session_cleanup`](preview-local-session-cleanup.md) | Dry-run cleanup safety and reclaim estimates | `sessionIds`, `overrideProtections` |
+| [`delete_local_sessions`](delete-local-sessions.md) | Delete validated local data through Copilot SDK | `sessionIds`, `overrideProtections`, `confirmLocalDeletion` |
+
+Deletion is local-only, irreversible, and requires explicit confirmation. Synced GitHub copies and
+Narnia-owned metadata remain.
 
 ## Scheduled Job Tools
 
