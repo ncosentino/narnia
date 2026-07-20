@@ -14,15 +14,15 @@ Use the star control in any session view to favorite important sessions. Favorit
 
 Table columns can be resized by dragging the separator at the right edge of a header or by focusing it and using the arrow keys. Widths are stored in the browser for each table; double-click a separator or press Escape to restore that column's default width.
 
-The **Files** page searches raw paths recorded by session file activity, normalizing slash direction
-and casing for discovery. Selecting a stored path opens its exact normalized history across sessions.
+The **Storage** page measures local session-state disk usage, growth, staleness, and cleanup safety.
+The previous recorded-path search remains available as a secondary file-activity audit.
 
 The supported prebuilt release is Windows x64. Narnia's defining recovery, scheduling, autostart,
 and terminal-launch features integrate with Windows Terminal, WMI, and Windows Task Scheduler.
 
 ## MCP Tools
 
-Narnia exposes 16 tools over one shared HTTP endpoint (`/mcp`): eight for session history, eight for managing scheduled Copilot jobs.
+Narnia exposes 20 tools over one shared HTTP endpoint (`/mcp`): eight for session history, four for local session storage, and eight for managing scheduled Copilot jobs.
 
 ### Session History
 
@@ -36,6 +36,15 @@ Narnia exposes 16 tools over one shared HTTP endpoint (`/mcp`): eight for sessio
 | [`get_session_workspace`](tools/get-session-workspace.md) | Workspace metadata and session artifact files |
 | [`list_sessions_by_repository`](tools/list-sessions-by-repository.md) | Filter by exact effective remote repository |
 | [`list_sessions_by_cwd`](tools/list-sessions-by-cwd.md) | Filter by exact working directory |
+
+### Session Storage
+
+| Tool | Description |
+|------|-------------|
+| [`get_session_storage_overview`](tools/get-session-storage-overview.md) | Cached local storage totals and largest sessions |
+| [`scan_session_storage`](tools/scan-session-storage.md) | Queue a metadata-only background scan |
+| [`preview_local_session_cleanup`](tools/preview-local-session-cleanup.md) | Dry-run cleanup safety and reclaim estimates |
+| [`delete_local_sessions`](tools/delete-local-sessions.md) | Delete validated local session data through Copilot SDK |
 
 ### Scheduled Jobs
 

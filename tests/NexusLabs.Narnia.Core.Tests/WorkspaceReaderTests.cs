@@ -191,4 +191,23 @@ public sealed class WorkspaceReaderTests
         Assert.Single(result.ArtifactFiles);
         Assert.Equal("plan.md", result.ArtifactFiles[0]);
     }
+
+    [Fact]
+    public void ReadMetadata_WorkspaceYamlAndFiles_ReturnsMetadataWithoutArtifacts()
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [$@"{SessionDir}\workspace.yaml"] = new MockFileData(
+                "git_root: C:\\repos\\narnia\nname: Named session\nuser_named: true\n"),
+            [$@"{SessionDir}\files\plan.md"] = new MockFileData("plan"),
+        });
+        var reader = new WorkspaceReader(CreateOptions(), fs);
+
+        var result = reader.ReadMetadata(SessionId);
+
+        Assert.Equal(@"C:\repos\narnia", result.GitRoot);
+        Assert.Equal("Named session", result.Name);
+        Assert.True(result.IsUserNamed);
+        Assert.Empty(result.ArtifactFiles);
+    }
 }

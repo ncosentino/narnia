@@ -5,6 +5,7 @@
 @inject ISessionRepository Repository
 @inject ITerminalWindowAggregator WindowSources
 @inject IScheduledJobRegistry ScheduledJobRegistry
+@inject ISessionStorageRepository StorageRepository
 
 <PageTitle>Dashboard — Narnia</PageTitle>
 
@@ -55,6 +56,15 @@ else
             <span class="dashboard-summary-value">@_favoriteCount</span>
             <span class="dashboard-summary-label">Favorite sessions</span>
             <span class="dashboard-summary-detail">Saved for quick access</span>
+        </a>
+        <a class="dashboard-summary-card" href="/storage">
+            <span class="dashboard-summary-value">@FormatBytes(_storageBytes)</span>
+            <span class="dashboard-summary-label">Session storage</span>
+            <span class="dashboard-summary-detail">
+                @(_storageSessionCount == 0
+                    ? "Run the first storage scan"
+                    : $"{_storageSessionCount:N0} measured sessions")
+            </span>
         </a>
     </div>
 
@@ -157,6 +167,8 @@ else
     private int _turnCount;
     private int _favoriteCount;
     private int _scheduledJobCount;
+    private int _storageSessionCount;
+    private long _storageBytes;
     private bool _loaded;
 
     private int OpenTabCount => _windows.Open.Sum(window => window.Tabs.Count);
@@ -168,7 +180,13 @@ else
         var suggestionsTask = Repository.GetResumeSuggestionsAsync(-1).AsTask();
         var windowsTask = WindowSources.GetWindowsAsync(50).AsTask();
         var schedulesTask = ScheduledJobRegistry.GetAllAsync().AsTask();
-        await Task.WhenAll(sessionsTask, suggestionsTask, windowsTask, schedulesTask);
+        var storageTask = StorageRepository.GetCurrentAsync(CancellationToken.None).AsTask();
+        await Task.WhenAll(
+            sessionsTask,
+            suggestionsTask,
+            windowsTask,
+            schedulesTask,
+            storageTask);
 
         var sessions = await sessionsTask;
         var visibleSessionIds = sessions.Select(session => session.Id).ToHashSet(StringComparer.Ordinal);
@@ -177,6 +195,9 @@ else
         _favoriteCount = sessions.Count(session => session.IsFavorite);
         _windows = await windowsTask;
         _scheduledJobCount = (await schedulesTask).Count;
+        var storage = await storageTask;
+        _storageSessionCount = storage.Count;
+        _storageBytes = storage.Sum(record => record.TotalBytes);
         _resumeSuggestions =
         [
             .. (await suggestionsTask)
@@ -210,4 +231,17 @@ else
 
     private static string Plural(int count, string singular) =>
         $"{count} {singular}{(count == 1 ? "" : "s")}";
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        var value = (double)Math.Max(0, bytes);
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.##} {units[unit]}";
+    }
 }

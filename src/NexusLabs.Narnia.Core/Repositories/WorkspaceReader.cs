@@ -10,7 +10,7 @@ namespace NexusLabs.Narnia.Core.Repositories;
 public sealed class WorkspaceReader(NarniaOptions options, IFileSystem fileSystem) : IWorkspaceReader
 {
     /// <inheritdoc />
-    public WorkspaceInfo ReadWorkspace(string sessionId)
+    public WorkspaceInfo ReadMetadata(string sessionId)
     {
         var sessionDir = fileSystem.Path.Combine(options.SessionStatePath, sessionId);
 
@@ -40,17 +40,26 @@ public sealed class WorkspaceReader(NarniaOptions options, IFileSystem fileSyste
             }
         }
 
-        var filesDir = fileSystem.Path.Combine(sessionDir, "files");
-        string[] artifacts = fileSystem.Directory.Exists(filesDir)
-            ? [.. fileSystem.Directory.GetFiles(filesDir)
-                .Select(f => fileSystem.Path.GetFileName(f))]
-            : [];
-
-        return new WorkspaceInfo(sessionId, gitRoot, artifacts)
+        return new WorkspaceInfo(sessionId, gitRoot, [])
         {
             Name = name,
             IsUserNamed = isUserNamed,
         };
+    }
+
+    /// <inheritdoc />
+    public WorkspaceInfo ReadWorkspace(string sessionId)
+    {
+        var metadata = ReadMetadata(sessionId);
+        var filesDir = fileSystem.Path.Combine(
+            options.SessionStatePath,
+            sessionId,
+            "files");
+        string[] artifacts = fileSystem.Directory.Exists(filesDir)
+            ? [.. fileSystem.Directory.GetFiles(filesDir)
+                .Select(f => fileSystem.Path.GetFileName(f))]
+            : [];
+        return metadata with { ArtifactFiles = artifacts };
     }
 
     private static string? ReadScalar(YamlMappingNode root, string key) =>

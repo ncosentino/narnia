@@ -19,6 +19,21 @@ function narniaCopyText(elementId, btn) {
             if (!canvas) return;
             try {
                 var config = JSON.parse(el.textContent);
+                var pointLabels = config.narniaPointLabels;
+                if (pointLabels) {
+                    delete config.narniaPointLabels;
+                    config.options = config.options || {};
+                    config.options.plugins = config.options.plugins || {};
+                    config.options.plugins.tooltip = config.options.plugins.tooltip || {};
+                    config.options.plugins.tooltip.callbacks =
+                        config.options.plugins.tooltip.callbacks || {};
+                    config.options.plugins.tooltip.callbacks.label = function (context) {
+                        var label = pointLabels[context.dataIndex] || 'Session';
+                        return label + ': ' +
+                            context.parsed.x.toFixed(1) + ' days, ' +
+                            context.parsed.y.toFixed(2) + ' MiB';
+                    };
+                }
                 var hrefTemplate = el.getAttribute('data-chart-href-template');
                 if (hrefTemplate) {
                     config.options = config.options || {};
@@ -300,6 +315,327 @@ async function narniaLaunchSessions(ids, btn) {
 function narniaLaunchBulk() {
     var btn = document.querySelector('#bulk-action-bar .btn-bulk-launch');
     narniaLaunchSessions(narniaSelectedSessionIds(), btn);
+}
+
+// ── Session storage ──────────────────────────────────────────────────────────
+var narniaStorageCleanupPlan = null;
+var narniaStorageCleanupCompleted = false;
+
+function narniaSelectedStorageSessionIds() {
+    var checks = document.querySelectorAll('.storage-check:checked');
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) ids.push(checks[i].value);
+    return ids;
+}
+
+function narniaStorageSelectionChanged() {
+    var all = document.querySelectorAll('.storage-check:not(:disabled)');
+    var selected = document.querySelectorAll('.storage-check:checked');
+    var bar = document.getElementById('storage-cleanup-bar');
+    var count = document.getElementById('storage-selected-count');
+    var bytes = document.getElementById('storage-selected-bytes');
+    var protectedSummary = document.getElementById('storage-selected-protected');
+    var selectedBytes = 0;
+    var protectedCount = 0;
+    for (var i = 0; i < selected.length; i++) {
+        selectedBytes += Number(selected[i].dataset.bytes || 0);
+        if (selected[i].dataset.protected === 'true') protectedCount++;
+    }
+    if (bar) bar.style.display = selected.length > 0 ? '' : 'none';
+    if (count) count.textContent = selected.length + ' selected';
+    if (bytes) bytes.textContent = narniaFormatStorageBytes(selectedBytes) + ' selected';
+    if (protectedSummary) {
+        protectedSummary.hidden = protectedCount === 0;
+        protectedSummary.textContent = protectedCount === 0
+            ? ''
+            : protectedCount + ' protected — the review plan will explain each protection';
+    }
+    var master = document.querySelector('.storage-table thead input[type=checkbox]');
+    if (master) {
+        master.checked = selected.length > 0 && selected.length === all.length;
+        master.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+}
+
+function narniaToggleAllStorage(master) {
+    var checks = document.querySelectorAll('.storage-check:not(:disabled)');
+    for (var i = 0; i < checks.length; i++) checks[i].checked = master.checked;
+    narniaStorageSelectionChanged();
+}
+
+function narniaFormatStorageBytes(bytes) {
+    var units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    var value = Math.max(0, Number(bytes) || 0);
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit++;
+    }
+    return (unit === 0 ? value.toFixed(0) : value.toFixed(2)) + ' ' + units[unit];
+}
+
+async function narniaRequestStorageScan(btn) {
+    var originalText = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting scan…'; }
+    try {
+        var response = await fetch('/api/storage/scan', { method: 'POST' });
+        if (!response.ok && response.status !== 409) {
+            throw new Error('HTTP ' + response.status);
+        }
+        await narniaPollStorageScan(btn, originalText);
+    } catch (e) {
+        alert('Storage scan failed to start: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
+}
+
+async function narniaPollStorageScan(btn, originalText) {
+    var state = document.getElementById('storage-scan-state');
+    for (var attempt = 0; attempt < 1200; attempt++) {
+        var response = await fetch('/api/storage/status');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var status = await response.json();
+        if (state) {
+            var text = status.status === 'running'
+                ? 'Scanner: scanning ' + status.scannedSessions + ' of ' + status.totalSessions + ' sessions'
+                : 'Scanner: ' + status.status;
+            state.textContent = text;
+            state.dataset.status = status.status;
+        }
+        if (status.status === 'completed' || status.status === 'failed') {
+            window.location.reload();
+            return;
+        }
+        await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+    }
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    alert('The storage scan is still running. Refresh the page later to see its progress.');
+}
+
+async function narniaPreviewStorageCleanup(btn) {
+    var ids = narniaSelectedStorageSessionIds();
+    if (ids.length === 0) return;
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Validating…';
+    try {
+        var request = {
+            sessionIds: ids,
+            overrideProtections: false
+        };
+        var previewResponse = await fetch('/api/storage/cleanup-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request)
+        });
+        if (!previewResponse.ok) throw new Error('HTTP ' + previewResponse.status);
+        var preview = await previewResponse.json();
+        narniaStorageCleanupPlan = { ids: ids, preview: preview };
+        narniaStorageCleanupCompleted = false;
+        narniaRenderStorageDecisionList(
+            'storage-plan-allowed',
+            preview.decisions.filter(function (decision) {
+                return decision.disposition === 'allowed';
+            }),
+            'No selected sessions are ready.');
+        narniaRenderStorageDecisionList(
+            'storage-plan-protected',
+            preview.decisions.filter(function (decision) {
+                return decision.disposition === 'protected';
+            }),
+            'No selected sessions are protected.');
+        narniaRenderStorageDecisionList(
+            'storage-plan-blocked',
+            preview.decisions.filter(function (decision) {
+                return decision.disposition === 'blocked';
+            }),
+            'No selected sessions are blocked.');
+
+        var summary = document.getElementById('storage-plan-summary');
+        if (summary) {
+            summary.textContent =
+                ids.length + ' selected · ' +
+                preview.allowedCount + ' ready (' +
+                narniaFormatStorageBytes(preview.allowedBytes) + ') · ' +
+                preview.protectedCount + ' protected · ' +
+                preview.blockedCount + ' blocked';
+        }
+        var overridePanel = document.getElementById('storage-plan-protection-override');
+        if (overridePanel) overridePanel.hidden = preview.protectedCount === 0;
+        var includeProtected = document.getElementById('storage-plan-include-protected');
+        if (includeProtected) includeProtected.checked = false;
+        var acknowledgement = document.getElementById('storage-plan-confirm-delete');
+        if (acknowledgement) acknowledgement.checked = false;
+        var archiveDeleted = document.getElementById('storage-plan-archive');
+        if (archiveDeleted) {
+            archiveDeleted.checked = true;
+            archiveDeleted.disabled = false;
+        }
+        var resultElement = document.getElementById('storage-cleanup-result');
+        if (resultElement) {
+            resultElement.hidden = true;
+            resultElement.textContent = '';
+            resultElement.classList.remove(
+                'storage-cleanup-result--success',
+                'storage-cleanup-result--error');
+        }
+        var cancel = document.getElementById('storage-plan-cancel');
+        if (cancel) {
+            cancel.textContent = 'Cancel';
+            cancel.classList.remove('storage-close-complete');
+        }
+        var deleteButton = document.getElementById('storage-plan-delete');
+        if (deleteButton) {
+            deleteButton.hidden = false;
+            deleteButton.removeAttribute('aria-busy');
+            deleteButton.classList.remove('storage-action--working');
+        }
+        narniaStoragePlanChanged();
+        var dialog = document.getElementById('storage-cleanup-dialog');
+        if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+    } catch (e) {
+        alert('Cleanup preview failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+function narniaRenderStorageDecisionList(elementId, decisions, emptyText) {
+    var list = document.getElementById(elementId);
+    if (!list) return;
+    list.replaceChildren();
+    if (decisions.length === 0) {
+        var empty = document.createElement('li');
+        empty.className = 'storage-plan-empty';
+        empty.textContent = emptyText;
+        list.appendChild(empty);
+        return;
+    }
+
+    for (var i = 0; i < decisions.length; i++) {
+        var decision = decisions[i];
+        var item = document.createElement('li');
+        var title = document.createElement('strong');
+        title.textContent = decision.summary || decision.sessionId.substring(0, 8);
+        item.appendChild(title);
+        var detail = document.createElement('span');
+        detail.textContent =
+            narniaFormatStorageBytes(decision.estimatedBytes) +
+            (decision.reasons.length > 0 ? ' · ' + decision.reasons.join(' · ') : '');
+        item.appendChild(detail);
+        list.appendChild(item);
+    }
+}
+
+function narniaStoragePlanChanged() {
+    if (!narniaStorageCleanupPlan) return;
+    var includeProtected = document.getElementById('storage-plan-include-protected');
+    var acknowledgement = document.getElementById('storage-plan-confirm-delete');
+    var archiveDeleted = document.getElementById('storage-plan-archive');
+    var deleteButton = document.getElementById('storage-plan-delete');
+    if (narniaStorageCleanupCompleted) {
+        if (includeProtected) includeProtected.disabled = true;
+        if (acknowledgement) acknowledgement.disabled = true;
+        if (archiveDeleted) archiveDeleted.disabled = true;
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            deleteButton.hidden = true;
+        }
+        return;
+    }
+    var preview = narniaStorageCleanupPlan.preview;
+    var include = !!(includeProtected && includeProtected.checked);
+    var count = preview.allowedCount + (include ? preview.protectedCount : 0);
+    var bytes = preview.allowedBytes + (include ? preview.protectedBytes : 0);
+    if (deleteButton) {
+        deleteButton.disabled = !(acknowledgement && acknowledgement.checked) || count === 0;
+        deleteButton.textContent =
+            count === 0
+                ? 'No sessions can be deleted'
+                : 'Delete local data for ' + count + ' session(s) · ' +
+                    narniaFormatStorageBytes(bytes);
+    }
+}
+
+async function narniaExecuteStorageCleanup(btn) {
+    if (!narniaStorageCleanupPlan) return;
+    var includeProtected = document.getElementById('storage-plan-include-protected');
+    var acknowledgement = document.getElementById('storage-plan-confirm-delete');
+    var archiveDeleted = document.getElementById('storage-plan-archive');
+    if (!(acknowledgement && acknowledgement.checked)) return;
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Deleting local data…';
+    btn.setAttribute('aria-busy', 'true');
+    btn.classList.add('storage-action--working');
+    try {
+        var response = await fetch('/api/storage/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionIds: narniaStorageCleanupPlan.ids,
+                overrideProtections: !!(includeProtected && includeProtected.checked),
+                confirmLocalDeletion: true,
+                archiveDeletedSessions: !!(archiveDeleted && archiveDeleted.checked)
+            })
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var result = await response.json();
+        var issues = result.results.filter(function (item) { return !!item.error; });
+        var message =
+            'Deleted ' + result.deletedCount + ' local session(s), approximately ' +
+            narniaFormatStorageBytes(result.deletedBytes) + '.';
+        if (archiveDeleted && archiveDeleted.checked) {
+            message += ' Archived ' + result.archivedCount + ' successfully cleaned session(s) in Narnia.';
+        }
+        if (issues.length > 0) {
+            message += ' ' + issues.length +
+                ' session(s) reported a deletion or archive warning; their audit entries include the reason.';
+        }
+        var resultElement = document.getElementById('storage-cleanup-result');
+        if (resultElement) {
+            resultElement.textContent = message;
+            resultElement.hidden = false;
+            resultElement.classList.remove('storage-cleanup-result--error');
+            resultElement.classList.add('storage-cleanup-result--success');
+        }
+        narniaStorageCleanupCompleted = true;
+        if (includeProtected) includeProtected.disabled = true;
+        if (acknowledgement) acknowledgement.disabled = true;
+        if (archiveDeleted) archiveDeleted.disabled = true;
+        var cancel = document.getElementById('storage-plan-cancel');
+        if (cancel) {
+            cancel.textContent = 'Close and refresh';
+            cancel.classList.add('storage-close-complete');
+        }
+        btn.removeAttribute('aria-busy');
+        btn.classList.remove('storage-action--working');
+        btn.hidden = true;
+    } catch (e) {
+        var resultElement = document.getElementById('storage-cleanup-result');
+        if (resultElement) {
+            resultElement.textContent = 'Cleanup failed: ' + e.message;
+            resultElement.hidden = false;
+            resultElement.classList.remove('storage-cleanup-result--success');
+            resultElement.classList.add('storage-cleanup-result--error');
+        }
+        btn.removeAttribute('aria-busy');
+        btn.classList.remove('storage-action--working');
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+function narniaCloseStorageCleanupDialog() {
+    var dialog = document.getElementById('storage-cleanup-dialog');
+    if (dialog && dialog.open) dialog.close();
+    narniaStorageCleanupPlan = null;
+    if (narniaStorageCleanupCompleted) {
+        window.location.reload();
+        return;
+    }
+    narniaStorageCleanupCompleted = false;
 }
 
 // ── Theme (dark/light) ───────────────────────────────────────────────────────
