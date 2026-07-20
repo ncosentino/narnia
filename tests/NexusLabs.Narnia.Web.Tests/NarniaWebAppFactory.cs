@@ -125,6 +125,7 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
             .Setup(service => service.DeleteAsync(
                 It.IsAny<IReadOnlyCollection<string>>(),
                 It.IsAny<bool>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionCleanupBatchResult([]));
     }

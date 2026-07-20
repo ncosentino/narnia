@@ -22,7 +22,7 @@ internal static class StorageEndpoints
             : Results.Conflict(coordinator.GetProgress());
 
     private static async Task<IResult> PreviewCleanupAsync(
-        StorageCleanupRequest request,
+        StorageCleanupPreviewRequest request,
         ISessionCleanupService cleanupService,
         CancellationToken ct)
     {
@@ -37,7 +37,7 @@ internal static class StorageEndpoints
     }
 
     private static async Task<IResult> DeleteSessionsAsync(
-        StorageCleanupRequest request,
+        StorageCleanupDeleteRequest request,
         ISessionCleanupService cleanupService,
         CancellationToken ct)
     {
@@ -45,19 +45,24 @@ internal static class StorageEndpoints
             return Results.BadRequest("Select at least one session.");
         if (!request.ConfirmLocalDeletion)
             return Results.BadRequest("Local session deletion must be explicitly confirmed.");
+        if (request.ArchiveDeletedSessions is null)
+            return Results.BadRequest("Choose whether successfully deleted sessions should be archived in Narnia.");
 
         var result = await cleanupService.DeleteAsync(
             request.SessionIds,
             request.OverrideProtections,
+            request.ArchiveDeletedSessions.Value,
             ct);
         return Results.Ok(new
         {
             deletedCount = result.DeletedCount,
             deletedBytes = result.DeletedBytes,
+            archivedCount = result.ArchivedCount,
             results = result.Results.Select(item => new
             {
                 sessionId = item.SessionId,
                 deleted = item.Deleted,
+                archived = item.Archived,
                 estimatedBytes = item.EstimatedBytes,
                 reasons = item.Reasons,
                 error = item.Error,
@@ -83,8 +88,13 @@ internal static class StorageEndpoints
             }),
         };
 
-    internal sealed record StorageCleanupRequest(
+    internal sealed record StorageCleanupPreviewRequest(
+        string[] SessionIds,
+        bool OverrideProtections);
+
+    internal sealed record StorageCleanupDeleteRequest(
         string[] SessionIds,
         bool OverrideProtections,
-        bool ConfirmLocalDeletion);
+        bool ConfirmLocalDeletion,
+        bool? ArchiveDeletedSessions);
 }

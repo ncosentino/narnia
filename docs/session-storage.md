@@ -35,6 +35,11 @@ The page follows one cleanup workflow:
    file, and cleanup-safety explanation.
 4. Select sessions and review the server-generated cleanup plan before deletion.
 
+The final plan defaults **Archive successfully cleaned sessions in Narnia** to on. Only sessions
+whose local Copilot deletion succeeds are archived. They disappear from normal session views but
+remain available through **Show archived**, and their Collections, Session Groups, aliases, notes,
+and synced history remain.
+
 The cleanup-safety filter separates the review into:
 
 - **Ready — no extra checks**: no active, protection, Git, worktree, reparse, or scan issue is known

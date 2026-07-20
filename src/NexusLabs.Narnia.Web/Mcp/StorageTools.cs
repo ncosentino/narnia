@@ -57,10 +57,11 @@ internal sealed class StorageTools(
     }
 
     [McpServerTool(Name = "delete_local_sessions")]
-    [Description("Permanently deletes validated local Copilot session data through GitHub.Copilot.SDK. Synced GitHub copies and Narnia metadata remain. Always preview first.")]
+    [Description("Permanently deletes validated local Copilot session data through GitHub.Copilot.SDK and can archive successful deletions in Narnia. Synced GitHub copies and Narnia references remain. Always preview first.")]
     public async Task<string> DeleteLocalSessionsAsync(
         [Description("Copilot session IDs to delete locally.")] string[] sessionIds,
         [Description("Whether default Narnia protections may be overridden.")] bool overrideProtections,
+        [Description("Whether successfully deleted sessions should be archived in Narnia and hidden from normal views.")] bool archiveDeletedSessions,
         [Description("Must be true to acknowledge that local deletion is irreversible.")] bool confirmLocalDeletion,
         CancellationToken cancellationToken)
     {
@@ -70,6 +71,7 @@ internal sealed class StorageTools(
         var result = await cleanupService.DeleteAsync(
             sessionIds,
             overrideProtections,
+            archiveDeletedSessions,
             cancellationToken);
         return JsonSerializer.Serialize(result, McpJsonContext.Default.SessionCleanupBatchResult);
     }

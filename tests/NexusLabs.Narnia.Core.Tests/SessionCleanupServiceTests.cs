@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using Microsoft.Data.Sqlite;
 using NexusLabs.Narnia.Core.Configuration;
 using NexusLabs.Narnia.Core.Models;
 using NexusLabs.Narnia.Core.Repositories;
@@ -85,17 +86,75 @@ public sealed class SessionCleanupServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([new CopilotSessionDeletionResult(SessionId, true, null)]);
 
-        var result = await context.Service.DeleteAsync([SessionId], false, Ct);
+        var result = await context.Service.DeleteAsync([SessionId], false, true, Ct);
 
         var deleted = Assert.Single(result.Results);
         Assert.True(deleted.Deleted);
+        Assert.True(deleted.Archived);
         Assert.Equal(1024, result.DeletedBytes);
+        Assert.Equal(1, result.ArchivedCount);
+        context.OverridesRepository.Verify(repository => repository.SetArchivedAsync(
+            SessionId,
+            true,
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()));
         context.StorageRepository.Verify(repository => repository.RecordCleanupAsync(
             It.Is<IReadOnlyCollection<SessionCleanupAuditEntry>>(entries =>
-                entries.Count == 1 && entries.Single().Result == "deleted"),
+                entries.Count == 1 && entries.Single().Result == "deleted_archived"),
             It.IsAny<CancellationToken>()));
         context.StorageRepository.Verify(repository => repository.RemoveCurrentAsync(
             It.Is<IReadOnlyCollection<string>>(ids => ids.SequenceEqual(new[] { SessionId })),
+            It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ArchiveDisabled_LeavesArchiveFlagUnchanged()
+    {
+        var context = CreateContext(Item());
+        context.CopilotManager
+            .Setup(manager => manager.DeleteSessionsAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new CopilotSessionDeletionResult(SessionId, true, null)]);
+
+        var result = await context.Service.DeleteAsync([SessionId], false, false, Ct);
+
+        var deleted = Assert.Single(result.Results);
+        Assert.True(deleted.Deleted);
+        Assert.False(deleted.Archived);
+        context.OverridesRepository.Verify(repository => repository.SetArchivedAsync(
+            It.IsAny<string>(),
+            It.IsAny<bool>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ArchiveFailure_PreservesSuccessfulDeletionWithWarning()
+    {
+        var context = CreateContext(Item());
+        context.CopilotManager
+            .Setup(manager => manager.DeleteSessionsAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new CopilotSessionDeletionResult(SessionId, true, null)]);
+        context.OverridesRepository
+            .Setup(repository => repository.SetArchivedAsync(
+                SessionId,
+                true,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new SqliteException("settings database is locked", 5));
+
+        var result = await context.Service.DeleteAsync([SessionId], false, true, Ct);
+
+        var deleted = Assert.Single(result.Results);
+        Assert.True(deleted.Deleted);
+        Assert.False(deleted.Archived);
+        Assert.Contains("could not archive", deleted.Error, StringComparison.Ordinal);
+        context.StorageRepository.Verify(repository => repository.RecordCleanupAsync(
+            It.Is<IReadOnlyCollection<SessionCleanupAuditEntry>>(entries =>
+                entries.Single().Result == "deleted_archive_failed"),
             It.IsAny<CancellationToken>()));
     }
 
@@ -118,6 +177,7 @@ public sealed class SessionCleanupServiceTests
                 [],
                 null));
         var storageRepository = new Mock<ISessionStorageRepository>();
+        var overridesRepository = new Mock<ISessionOverridesRepository>();
         storageRepository
             .Setup(repository => repository.RecordCleanupAsync(
                 It.IsAny<IReadOnlyCollection<SessionCleanupAuditEntry>>(),
@@ -145,6 +205,7 @@ public sealed class SessionCleanupServiceTests
         var service = new SessionCleanupService(
             storageService.Object,
             storageRepository.Object,
+            overridesRepository.Object,
             workspaceReader.Object,
             gitInspector.Object,
             copilotManager.Object,
@@ -158,6 +219,7 @@ public sealed class SessionCleanupServiceTests
         return new CleanupTestContext(
             service,
             storageRepository,
+            overridesRepository,
             workspaceReader,
             gitInspector,
             copilotManager);
@@ -206,6 +268,7 @@ public sealed class SessionCleanupServiceTests
     private sealed record CleanupTestContext(
         SessionCleanupService Service,
         Mock<ISessionStorageRepository> StorageRepository,
+        Mock<ISessionOverridesRepository> OverridesRepository,
         Mock<IWorkspaceReader> WorkspaceReader,
         Mock<IGitArtifactInspector> GitInspector,
         Mock<ICopilotSessionManager> CopilotManager);

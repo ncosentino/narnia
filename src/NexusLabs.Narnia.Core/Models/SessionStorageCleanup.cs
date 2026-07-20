@@ -44,7 +44,7 @@ public sealed record SessionCleanupPreview(
 /// <summary>Outcome returned by the supported Copilot session deletion interface.</summary>
 /// <param name="SessionId">Copilot session identifier.</param>
 /// <param name="Deleted">Whether local deletion completed successfully.</param>
-/// <param name="Error">Deletion error when unsuccessful.</param>
+/// <param name="Error">Deletion failure or post-deletion archive warning.</param>
 public sealed record CopilotSessionDeletionResult(
     string SessionId,
     bool Deleted,
@@ -53,12 +53,14 @@ public sealed record CopilotSessionDeletionResult(
 /// <summary>Final deletion outcome for one selected session.</summary>
 /// <param name="SessionId">Copilot session identifier.</param>
 /// <param name="Deleted">Whether local deletion completed successfully.</param>
+/// <param name="Archived">Whether Narnia archived the successfully deleted session.</param>
 /// <param name="EstimatedBytes">Cached logical bytes associated with the session.</param>
 /// <param name="Reasons">Protection or safety information from final validation.</param>
 /// <param name="Error">Deletion error when unsuccessful.</param>
 public sealed record SessionCleanupResult(
     string SessionId,
     bool Deleted,
+    bool Archived,
     long EstimatedBytes,
     IReadOnlyList<string> Reasons,
     string? Error);
@@ -72,6 +74,9 @@ public sealed record SessionCleanupBatchResult(IReadOnlyList<SessionCleanupResul
 
     /// <summary>Gets the estimated logical bytes removed successfully.</summary>
     public long DeletedBytes => Results.Where(result => result.Deleted).Sum(result => result.EstimatedBytes);
+
+    /// <summary>Gets the number of successfully deleted sessions archived in Narnia.</summary>
+    public int ArchivedCount => Results.Count(result => result.Archived);
 }
 
 /// <summary>Persistent Narnia-owned audit entry for one cleanup attempt.</summary>

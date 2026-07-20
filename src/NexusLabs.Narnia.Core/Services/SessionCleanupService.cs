@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using System.IO.Abstractions;
 using NexusLabs.Narnia.Core.Configuration;
 using NexusLabs.Narnia.Core.Models;
@@ -9,6 +10,7 @@ namespace NexusLabs.Narnia.Core.Services;
 public sealed class SessionCleanupService(
     ISessionStorageService storageService,
     ISessionStorageRepository storageRepository,
+    ISessionOverridesRepository overridesRepository,
     IWorkspaceReader workspaceReader,
     IGitArtifactInspector gitInspector,
     ICopilotSessionManager copilotSessionManager,
@@ -54,6 +56,7 @@ public sealed class SessionCleanupService(
     public async ValueTask<SessionCleanupBatchResult> DeleteAsync(
         IReadOnlyCollection<string> sessionIds,
         bool overrideProtections,
+        bool archiveDeletedSessions,
         CancellationToken ct)
     {
         var requestedAt = timeProvider.GetUtcNow();
@@ -77,6 +80,7 @@ public sealed class SessionCleanupService(
         foreach (var decision in preview.Decisions)
         {
             var deleted = false;
+            var archived = false;
             string? error = null;
             var resultName = decision.Disposition switch
             {
@@ -98,12 +102,34 @@ public sealed class SessionCleanupService(
 
                 resultName = deleted ? "deleted" : "failed";
                 if (deleted)
+                {
                     deletedIds.Add(decision.SessionId);
+                    if (archiveDeletedSessions)
+                    {
+                        try
+                        {
+                            await overridesRepository.SetArchivedAsync(
+                                decision.SessionId,
+                                true,
+                                completedAt,
+                                ct);
+                            archived = true;
+                            resultName = "deleted_archived";
+                        }
+                        catch (SqliteException exception)
+                        {
+                            error =
+                                $"Local data was deleted, but Narnia could not archive the session: {exception.Message}";
+                            resultName = "deleted_archive_failed";
+                        }
+                    }
+                }
             }
 
             results.Add(new SessionCleanupResult(
                 decision.SessionId,
                 deleted,
+                archived,
                 decision.EstimatedBytes,
                 decision.Reasons,
                 error));

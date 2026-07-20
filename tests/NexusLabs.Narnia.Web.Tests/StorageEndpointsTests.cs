@@ -41,6 +41,8 @@ public sealed class StorageEndpointsTests
         Assert.Contains("Latest file write", html, StringComparison.Ordinal);
         Assert.Contains("Review cleanup plan", html, StringComparison.Ordinal);
         Assert.Contains("id=\"storage-cleanup-dialog\"", html, StringComparison.Ordinal);
+        Assert.Contains("Archive successfully cleaned sessions in Narnia", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"storage-plan-archive\" checked", html, StringComparison.Ordinal);
         Assert.Contains("Cleanup safety", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Explicitly include protected selections", html, StringComparison.Ordinal);
         Assert.True(
@@ -160,6 +162,9 @@ public sealed class StorageEndpointsTests
         Assert.Contains("narniaStoragePlanChanged", javascript, StringComparison.Ordinal);
         Assert.Contains("narniaStorageCleanupCompleted", javascript, StringComparison.Ordinal);
         Assert.Contains("storage-plan-include-protected", javascript, StringComparison.Ordinal);
+        Assert.Contains("storage-plan-archive", javascript, StringComparison.Ordinal);
+        Assert.Contains("archiveDeletedSessions", javascript, StringComparison.Ordinal);
+        Assert.Contains("result.archivedCount", javascript, StringComparison.Ordinal);
         Assert.Contains("storage-action--working", javascript, StringComparison.Ordinal);
         Assert.Contains("deleteButton.hidden = true", javascript, StringComparison.Ordinal);
         Assert.Contains("btn.hidden = true", javascript, StringComparison.Ordinal);
@@ -206,7 +211,6 @@ public sealed class StorageEndpointsTests
             {
                 sessionIds = new[] { SessionId },
                 overrideProtections = false,
-                confirmLocalDeletion = false,
             },
             Ct);
         var body = await response.Content.ReadFromJsonAsync<PreviewResponse>(Ct);
@@ -229,12 +233,71 @@ public sealed class StorageEndpointsTests
                 sessionIds = new[] { SessionId },
                 overrideProtections = false,
                 confirmLocalDeletion = false,
+                archiveDeletedSessions = true,
             },
             Ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         factory.SessionCleanupService.Verify(service => service.DeleteAsync(
             It.IsAny<IReadOnlyCollection<string>>(),
+            It.IsAny<bool>(),
+            It.IsAny<bool>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Delete_ArchivesOnlyWhenExplicitlyRequested()
+    {
+        using var factory = new NarniaWebAppFactory();
+        factory.SessionCleanupService
+            .Setup(service => service.DeleteAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                false,
+                true,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SessionCleanupBatchResult(
+            [
+                new SessionCleanupResult(SessionId, true, true, 1024, [], null),
+            ]));
+
+        var response = await factory.CreateClient().PostAsJsonAsync(
+            "/api/storage/delete",
+            new
+            {
+                sessionIds = new[] { SessionId },
+                overrideProtections = false,
+                confirmLocalDeletion = true,
+                archiveDeletedSessions = true,
+            },
+            Ct);
+        var result = await response.Content.ReadFromJsonAsync<DeleteResponse>(Ct);
+
+        response.EnsureSuccessStatusCode();
+        Assert.NotNull(result);
+        Assert.Equal(1, result!.DeletedCount);
+        Assert.Equal(1, result.ArchivedCount);
+        Assert.True(Assert.Single(result.Results).Archived);
+    }
+
+    [Fact]
+    public async Task Delete_RequiresExplicitArchiveChoice()
+    {
+        using var factory = new NarniaWebAppFactory();
+
+        var response = await factory.CreateClient().PostAsJsonAsync(
+            "/api/storage/delete",
+            new
+            {
+                sessionIds = new[] { SessionId },
+                overrideProtections = false,
+                confirmLocalDeletion = true,
+            },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        factory.SessionCleanupService.Verify(service => service.DeleteAsync(
+            It.IsAny<IReadOnlyCollection<string>>(),
+            It.IsAny<bool>(),
             It.IsAny<bool>(),
             It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -284,6 +347,13 @@ public sealed class StorageEndpointsTests
         List<PreviewDecision> Decisions);
 
     private sealed record PreviewDecision(string SessionId, string Disposition);
+
+    private sealed record DeleteResponse(
+        int DeletedCount,
+        int ArchivedCount,
+        List<DeleteResult> Results);
+
+    private sealed record DeleteResult(string SessionId, bool Deleted, bool Archived);
 
     private static string FindStorageJavaScript()
     {

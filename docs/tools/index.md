@@ -43,7 +43,7 @@ Storage tools use the same cached scanner and cleanup service as the web UI.
 | [`get_session_storage_overview`](get-session-storage-overview.md) | Cached totals and largest local sessions | — |
 | [`scan_session_storage`](scan-session-storage.md) | Queue a metadata-only background scan | — |
 | [`preview_local_session_cleanup`](preview-local-session-cleanup.md) | Dry-run cleanup safety and reclaim estimates | `sessionIds`, `overrideProtections` |
-| [`delete_local_sessions`](delete-local-sessions.md) | Delete validated local data through Copilot SDK | `sessionIds`, `overrideProtections`, `confirmLocalDeletion` |
+| [`delete_local_sessions`](delete-local-sessions.md) | Delete validated local data through Copilot SDK | `sessionIds`, `overrideProtections`, `archiveDeletedSessions`, `confirmLocalDeletion` |
 
 Deletion is local-only, irreversible, and requires explicit confirmation. Synced GitHub copies and
 Narnia-owned metadata remain.

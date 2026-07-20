@@ -421,8 +421,7 @@ async function narniaPreviewStorageCleanup(btn) {
     try {
         var request = {
             sessionIds: ids,
-            overrideProtections: false,
-            confirmLocalDeletion: false
+            overrideProtections: false
         };
         var previewResponse = await fetch('/api/storage/cleanup-preview', {
             method: 'POST',
@@ -467,6 +466,11 @@ async function narniaPreviewStorageCleanup(btn) {
         if (includeProtected) includeProtected.checked = false;
         var acknowledgement = document.getElementById('storage-plan-confirm-delete');
         if (acknowledgement) acknowledgement.checked = false;
+        var archiveDeleted = document.getElementById('storage-plan-archive');
+        if (archiveDeleted) {
+            archiveDeleted.checked = true;
+            archiveDeleted.disabled = false;
+        }
         var resultElement = document.getElementById('storage-cleanup-result');
         if (resultElement) {
             resultElement.hidden = true;
@@ -528,10 +532,12 @@ function narniaStoragePlanChanged() {
     if (!narniaStorageCleanupPlan) return;
     var includeProtected = document.getElementById('storage-plan-include-protected');
     var acknowledgement = document.getElementById('storage-plan-confirm-delete');
+    var archiveDeleted = document.getElementById('storage-plan-archive');
     var deleteButton = document.getElementById('storage-plan-delete');
     if (narniaStorageCleanupCompleted) {
         if (includeProtected) includeProtected.disabled = true;
         if (acknowledgement) acknowledgement.disabled = true;
+        if (archiveDeleted) archiveDeleted.disabled = true;
         if (deleteButton) {
             deleteButton.disabled = true;
             deleteButton.hidden = true;
@@ -556,6 +562,7 @@ async function narniaExecuteStorageCleanup(btn) {
     if (!narniaStorageCleanupPlan) return;
     var includeProtected = document.getElementById('storage-plan-include-protected');
     var acknowledgement = document.getElementById('storage-plan-confirm-delete');
+    var archiveDeleted = document.getElementById('storage-plan-archive');
     if (!(acknowledgement && acknowledgement.checked)) return;
     var originalText = btn.textContent;
     btn.disabled = true;
@@ -569,18 +576,22 @@ async function narniaExecuteStorageCleanup(btn) {
             body: JSON.stringify({
                 sessionIds: narniaStorageCleanupPlan.ids,
                 overrideProtections: !!(includeProtected && includeProtected.checked),
-                confirmLocalDeletion: true
+                confirmLocalDeletion: true,
+                archiveDeletedSessions: !!(archiveDeleted && archiveDeleted.checked)
             })
         });
         if (!response.ok) throw new Error('HTTP ' + response.status);
         var result = await response.json();
-        var failures = result.results.filter(function (item) { return !item.deleted; });
+        var issues = result.results.filter(function (item) { return !!item.error; });
         var message =
             'Deleted ' + result.deletedCount + ' local session(s), approximately ' +
             narniaFormatStorageBytes(result.deletedBytes) + '.';
-        if (failures.length > 0) {
-            message += ' ' + failures.length +
-                ' selected session(s) were not deleted; their audit entries include the reason.';
+        if (archiveDeleted && archiveDeleted.checked) {
+            message += ' Archived ' + result.archivedCount + ' successfully cleaned session(s) in Narnia.';
+        }
+        if (issues.length > 0) {
+            message += ' ' + issues.length +
+                ' session(s) reported a deletion or archive warning; their audit entries include the reason.';
         }
         var resultElement = document.getElementById('storage-cleanup-result');
         if (resultElement) {
@@ -592,6 +603,7 @@ async function narniaExecuteStorageCleanup(btn) {
         narniaStorageCleanupCompleted = true;
         if (includeProtected) includeProtected.disabled = true;
         if (acknowledgement) acknowledgement.disabled = true;
+        if (archiveDeleted) archiveDeleted.disabled = true;
         var cancel = document.getElementById('storage-plan-cancel');
         if (cancel) {
             cancel.textContent = 'Close and refresh';

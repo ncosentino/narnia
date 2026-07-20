@@ -38,12 +38,14 @@ public sealed class StorageToolsTests
         var json = await tools.DeleteLocalSessionsAsync(
             ["session-1"],
             false,
+            true,
             false,
             Ct);
 
         Assert.Contains("not explicitly confirmed", json, StringComparison.Ordinal);
         cleanup.Verify(service => service.DeleteAsync(
             It.IsAny<IReadOnlyCollection<string>>(),
+            It.IsAny<bool>(),
             It.IsAny<bool>(),
             It.IsAny<CancellationToken>()), Times.Never);
     }
