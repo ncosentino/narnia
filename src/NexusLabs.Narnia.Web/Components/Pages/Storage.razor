@@ -36,121 +36,165 @@ else
         }
     </div>
 
-    <div class="dashboard-summary storage-summary">
-        <a class="dashboard-summary-card" href="#storage-sessions">
-            <span class="dashboard-summary-value">@FormatBytes(_dashboard.Overview.Categories.TotalBytes)</span>
-            <span class="dashboard-summary-label">Local session storage</span>
-            <span class="dashboard-summary-detail">@_dashboard.Overview.LocalStateCount.ToString("N0") measured directories</span>
-        </a>
-        <a class="dashboard-summary-card" href="@CandidateUrl">
-            <span class="dashboard-summary-value">@FormatBytes(_candidateBytes)</span>
-            <span class="dashboard-summary-label">Potentially reclaimable</span>
-            <span class="dashboard-summary-detail">@_candidateCount.ToString("N0") sessions under current age/size rules</span>
-        </a>
-        <a class="dashboard-summary-card" href="/storage?view=growing">
-            <span class="dashboard-summary-value">@FormatBytes(_positiveGrowthBytes)</span>
-            <span class="dashboard-summary-label">Growth since prior scan</span>
-            <span class="dashboard-summary-detail">@_growingCount.ToString("N0") growing sessions</span>
-        </a>
-        <a class="dashboard-summary-card" href="/storage?view=issues">
-            <span class="dashboard-summary-value">@IssueCount</span>
-            <span class="dashboard-summary-label">Storage issues</span>
-            <span class="dashboard-summary-detail">Incomplete, risky, or unindexed local state</span>
-        </a>
-        <a class="dashboard-summary-card" href="/storage?view=history-only">
-            <span class="dashboard-summary-value">@_dashboard.Overview.IndexedOnlyCount.ToString("N0")</span>
-            <span class="dashboard-summary-label">History-only sessions</span>
-            <span class="dashboard-summary-detail">Indexed history with no local state footprint</span>
-        </a>
-        <a class="dashboard-summary-card" href="/storage?view=all">
-            <span class="dashboard-summary-value">@_dashboard.Overview.ActiveCount</span>
-            <span class="dashboard-summary-label">Active sessions</span>
-            <span class="dashboard-summary-detail">Always blocked from cleanup</span>
-        </a>
-    </div>
-
-    @if (_dashboard.Overview.Categories.TotalBytes > 0)
-    {
-        <div class="chart-row storage-chart-row">
-            <div class="chart-container">
-                <canvas id="storage-category-chart"></canvas>
-            </div>
-            <script type="application/json" data-chart-id="storage-category-chart">
-                @((MarkupString)BuildCategoryChartJson(_dashboard.Overview.Categories))
-            </script>
-
-            <div class="chart-container">
-                <canvas id="storage-age-size-chart"></canvas>
-            </div>
-            <script type="application/json" data-chart-id="storage-age-size-chart">
-                @((MarkupString)BuildAgeSizeChartJson(_dashboard.Sessions))
-            </script>
-        </div>
-    }
-
-    @if (_dashboard.History.Count > 1)
-    {
-        <h2>Storage Growth</h2>
-        <div class="chart-container storage-history-chart">
-            <canvas id="storage-history-chart"></canvas>
-        </div>
-        <script type="application/json" data-chart-id="storage-history-chart">
-            @((MarkupString)BuildHistoryChartJson(_dashboard.History))
-        </script>
-    }
-
-    <div class="storage-toolbar-links">
-        <a href="/files">Recorded file activity →</a>
-        <span>
-            The legacy Files view tracks paths Copilot touched; it does not measure local storage.
-        </span>
-    </div>
-
-    <form method="get" action="/storage" class="storage-filter-form">
-        <label>
-            View
-            <select name="view">
-                <option value="candidates" selected="@(EffectiveView == "candidates")">Cleanup candidates</option>
-                <option value="all" selected="@(EffectiveView == "all")">All local storage</option>
-                <option value="growing" selected="@(EffectiveView == "growing")">Growing sessions</option>
-                <option value="issues" selected="@(EffectiveView == "issues")">Storage issues</option>
-                <option value="history-only" selected="@(EffectiveView == "history-only")">History only</option>
-            </select>
-        </label>
-        <label>
-            Inactive days
-            <input type="number" name="ageDays" min="1" max="3650" value="@EffectiveAgeDays" />
-        </label>
-        <label>
-            Minimum MiB
-            <input type="number" name="minMb" min="0" max="1048576" value="@EffectiveMinimumMiB" />
-        </label>
-        <label class="storage-query">
-            Search
-            <input type="search" name="q" value="@Query" placeholder="Name, repository, or session ID" />
-        </label>
-        <label>
-            Sort
-            <select name="sort">
-                <option value="size" selected="@(EffectiveSort == "size")">Largest size</option>
-                <option value="growth" selected="@(EffectiveSort == "growth")">Largest growth</option>
-                <option value="activity" selected="@(EffectiveSort == "activity")">Oldest activity</option>
-            </select>
-        </label>
-        <label class="show-archived-label">
-            <input type="checkbox" name="showProtected" value="true" checked="@ShowProtected" />
-            Include protected
-        </label>
-        <button type="submit">Apply</button>
-    </form>
-
-    <section id="storage-sessions">
-        <div class="page-actions">
+    <section class="storage-step storage-step--scope">
+        <div class="storage-step-heading">
+            <span class="storage-step-number">1</span>
             <div>
-                <h2>@ViewHeading</h2>
-                <p class="search-hint">
-                    Showing @_visibleItems.Count.ToString("N0") of @_filteredCount.ToString("N0") matching sessions.
-                    Sizes are logical bytes; reparse targets are never followed.
+                <h2>Define the sessions you want to review</h2>
+                <p>
+                    These controls define the scope used by the summary cards, current-state charts,
+                    and session list below.
+                </p>
+            </div>
+        </div>
+
+        <form method="get" action="/storage" class="storage-filter-form">
+            <label>
+                Scope
+                <select name="view" onchange="this.form.submit()">
+                    <option value="candidates" selected="@(EffectiveView == "candidates")">Cleanup candidates</option>
+                    <option value="all" selected="@(EffectiveView == "all")">All local storage</option>
+                    <option value="growing" selected="@(EffectiveView == "growing")">Growing sessions</option>
+                    <option value="issues" selected="@(EffectiveView == "issues")">Storage issues</option>
+                    <option value="history-only" selected="@(EffectiveView == "history-only")">History only</option>
+                </select>
+            </label>
+            @if (EffectiveView == "candidates")
+            {
+                <label>
+                    Inactive for at least
+                    <span class="storage-input-with-unit">
+                        <input type="number" name="ageDays" min="1" max="3650" value="@EffectiveAgeDays" />
+                        <span>days</span>
+                    </span>
+                </label>
+                <label>
+                    At least
+                    <span class="storage-input-with-unit">
+                        <input type="number" name="minMb" min="0" max="1048576" value="@EffectiveMinimumMiB" />
+                        <span>MiB</span>
+                    </span>
+                </label>
+            }
+            else
+            {
+                <input type="hidden" name="ageDays" value="@EffectiveAgeDays" />
+                <input type="hidden" name="minMb" value="@EffectiveMinimumMiB" />
+            }
+            <label class="storage-query">
+                Search within this scope
+                <input type="search" name="q" value="@Query" placeholder="Name, repository, or session ID" />
+            </label>
+            <label>
+                Sort sessions by
+                <select name="sort">
+                    <option value="size" selected="@(EffectiveSort == "size")">Largest size</option>
+                    <option value="growth" selected="@(EffectiveSort == "growth")">Largest growth</option>
+                    <option value="activity" selected="@(EffectiveSort == "activity")">Oldest activity</option>
+                </select>
+            </label>
+            @if (EffectiveView == "candidates")
+            {
+                <label class="storage-show-protected">
+                    <input type="checkbox" name="showProtected" value="true" checked="@ShowProtected" />
+                    Show protected sessions in candidate results
+                </label>
+            }
+            <button type="submit">Update analysis</button>
+        </form>
+
+        <div class="storage-protection-explainer">
+            <strong>What is a protected session?</strong>
+            Narnia excludes a session from cleanup candidates by default when it is a favorite,
+            explicitly named by you, has a Narnia alias or notes, or belongs to a Collection or
+            Session Group. Showing protected sessions only makes them visible for review; it does
+            not silently remove that protection.
+        </div>
+    </section>
+
+    <section class="storage-step">
+        <div class="storage-step-heading">
+            <span class="storage-step-number">2</span>
+            <div>
+                <h2>Understand this scope</h2>
+                <p>
+                    @_filteredCount.ToString("N0") sessions match this analysis and use
+                    <strong>@FormatBytes(_scopeCategories.TotalBytes)</strong>.
+                    The complete scan contains @_dashboard.Overview.LocalStateCount.ToString("N0")
+                    local session directories using
+                    <strong>@FormatBytes(_dashboard.Overview.Categories.TotalBytes)</strong>.
+                </p>
+            </div>
+        </div>
+
+        <div class="dashboard-summary storage-summary">
+            <a class="dashboard-summary-card" href="#storage-sessions">
+                <span class="dashboard-summary-value">@FormatBytes(_scopeCategories.TotalBytes)</span>
+                <span class="dashboard-summary-label">Storage in this scope</span>
+                <span class="dashboard-summary-detail">@_filteredCount.ToString("N0") matching sessions</span>
+            </a>
+            <a class="dashboard-summary-card" href="#storage-sessions">
+                <span class="dashboard-summary-value">@FormatBytes(_cleanupReadyBytes)</span>
+                <span class="dashboard-summary-label">Ready for cleanup review</span>
+                <span class="dashboard-summary-detail">
+                    @_cleanupReadyCount.ToString("N0") unprotected sessions meet the current age and size rules
+                </span>
+            </a>
+            <a class="dashboard-summary-card" href="#storage-sessions">
+                <span class="dashboard-summary-value">@_scopeProtectedCount.ToString("N0")</span>
+                <span class="dashboard-summary-label">@ProtectedCardLabel</span>
+                <span class="dashboard-summary-detail">@ProtectedCardDetail</span>
+            </a>
+            <a class="dashboard-summary-card" href="#storage-sessions">
+                <span class="dashboard-summary-value">@_scopeActiveCount.ToString("N0")</span>
+                <span class="dashboard-summary-label">@ActiveCardLabel</span>
+                <span class="dashboard-summary-detail">@ActiveCardDetail</span>
+            </a>
+            <a class="dashboard-summary-card" href="#storage-sessions">
+                <span class="dashboard-summary-value">@FormatBytes(_scopeGrowthBytes)</span>
+                <span class="dashboard-summary-label">Growth since prior scan</span>
+                <span class="dashboard-summary-detail">@_scopeGrowingCount.ToString("N0") growing sessions in scope</span>
+            </a>
+            <a class="dashboard-summary-card" href="#storage-sessions">
+                <span class="dashboard-summary-value">@_scopeIssueCount.ToString("N0")</span>
+                <span class="dashboard-summary-label">@IssueCardLabel</span>
+                <span class="dashboard-summary-detail">@IssueCardDetail</span>
+            </a>
+        </div>
+
+        @if (_scopeCategories.TotalBytes > 0)
+        {
+            <div class="chart-row storage-chart-row">
+                <div class="chart-container">
+                    <canvas id="storage-category-chart"></canvas>
+                </div>
+                <script type="application/json" data-chart-id="storage-category-chart">
+                    @((MarkupString)BuildCategoryChartJson(_scopeCategories))
+                </script>
+
+                <div class="chart-container">
+                    <canvas id="storage-age-size-chart"></canvas>
+                </div>
+                <script type="application/json" data-chart-id="storage-age-size-chart">
+                    @((MarkupString)BuildAgeSizeChartJson(_scopeItems))
+                </script>
+            </div>
+        }
+        else
+        {
+            <p class="storage-empty-scope">No local storage matches this scope.</p>
+        }
+    </section>
+
+    <section class="storage-step" id="storage-sessions">
+        <div class="storage-step-heading">
+            <span class="storage-step-number">3</span>
+            <div>
+                <h2>Review individual sessions</h2>
+                <p>
+                    Showing @_visibleItems.Count.ToString("N0") of @_filteredCount.ToString("N0")
+                    matching sessions. Every row shows its footprint, session activity, latest
+                    storage write, and why cleanup is allowed, protected, or blocked.
                 </p>
             </div>
         </div>
@@ -167,28 +211,27 @@ else
                     <tr>
                         <th class="col-select" data-no-resize>
                             <input type="checkbox"
-                                   title="Select every cleanup-eligible visible session"
+                                   title="Select every selectable visible session"
                                    onclick="narniaToggleAllStorage(this)" />
                         </th>
                         <th>Session</th>
-                        <th>Status</th>
-                        <th>Remote Repository</th>
-                        <th>Size</th>
-                        <th>Growth</th>
-                        <th>Storage Mix</th>
-                        <th>Last Activity</th>
-                        <th>Largest File</th>
+                        <th>Storage</th>
+                        <th>Activity</th>
+                        <th>Cleanup Safety</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var item in _visibleItems)
                     {
-                        <tr class="@(item.IsArchived ? "session-archived" : "")">
+                        <tr class="@StorageRowClass(item)">
                             <td class="col-select">
                                 <input type="checkbox"
                                        class="storage-check"
                                        value="@item.SessionId"
+                                       data-bytes="@(item.Storage?.TotalBytes ?? 0)"
+                                       data-protected="@item.IsProtected.ToString().ToLowerInvariant()"
                                        disabled="@(!CanSelect(item))"
+                                       title="@SelectionTitle(item)"
                                        onclick="narniaStorageSelectionChanged()" />
                             </td>
                             <td>
@@ -200,33 +243,59 @@ else
                                 {
                                     <a href="/sessions/@item.SessionId">@(item.Summary ?? ShortId(item.SessionId))</a>
                                 }
+                                <div class="storage-repository">@(item.Repository ?? "No remote repository recorded")</div>
                                 <div class="storage-session-id">@item.SessionId</div>
-                            </td>
-                            <td>
-                                @foreach (var badge in StatusBadges(item))
+                                @if (item.IsProtected)
                                 {
-                                    <span class="storage-badge @badge.CssClass">@badge.Label</span>
+                                    <div class="storage-protection-reasons">
+                                        <strong>🛡 Protected:</strong> @string.Join(" · ", item.ProtectionReasons)
+                                    </div>
                                 }
                             </td>
-                            <td>@(item.Repository ?? "—")</td>
-                            <td class="storage-size">@FormatBytes(item.Storage?.TotalBytes ?? 0)</td>
-                            <td class="@GrowthClass(item.Storage?.GrowthBytes ?? 0)">
-                                @FormatSignedBytes(item.Storage?.GrowthBytes ?? 0)
-                            </td>
-                            <td>@StorageMix(item.Storage)</td>
-                            <td>@ActivityLabel(item)</td>
                             <td>
-                                @if (item.Storage?.LargestFilePath is not null)
+                                @if (item.Storage is null)
                                 {
-                                    <span class="storage-largest-file" title="@item.Storage.LargestFilePath">
-                                        @FormatBytes(item.Storage.LargestFileBytes)
-                                        · @item.Storage.LargestFilePath
-                                    </span>
+                                    <span>No local storage</span>
                                 }
                                 else
                                 {
-                                    <span>—</span>
+                                    <div class="storage-size">@FormatBytes(item.Storage.TotalBytes)</div>
+                                    <div class="@GrowthClass(item.Storage.GrowthBytes)">
+                                        @FormatSignedBytes(item.Storage.GrowthBytes) since prior scan
+                                    </div>
+                                    <div class="storage-row-detail">@item.Storage.FileCount.ToString("N0") files</div>
+                                    <div class="storage-row-detail">@StorageMix(item.Storage)</div>
+                                    @if (item.Storage.LargestFilePath is not null)
+                                    {
+                                        <div class="storage-largest-file" title="@item.Storage.LargestFilePath">
+                                            Largest: @FormatBytes(item.Storage.LargestFileBytes)
+                                            · @item.Storage.LargestFilePath
+                                        </div>
+                                    }
                                 }
+                            </td>
+                            <td>
+                                <div class="storage-activity-line">
+                                    <strong>Session activity</strong>
+                                    <span>@ActivityLabel(item)</span>
+                                </div>
+                                <div class="storage-activity-line">
+                                    <strong>Latest file write</strong>
+                                    <span>@StorageWriteLabel(item)</span>
+                                </div>
+                                <div class="storage-activity-line">
+                                    <strong>Measured</strong>
+                                    <span>@FormatTime(item.Storage?.ScannedAt)</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div>
+                                    @foreach (var badge in StatusBadges(item))
+                                    {
+                                        <span class="storage-badge @badge.CssClass">@badge.Label</span>
+                                    }
+                                </div>
+                                <div class="storage-safety-guidance">@CleanupGuidance(item)</div>
                             </td>
                         </tr>
                     }
@@ -236,16 +305,94 @@ else
 
             <div class="bulk-action-bar storage-cleanup-bar" id="storage-cleanup-bar" style="display:none;">
                 <span id="storage-selected-count">0 selected</span>
-                <label>
-                    <input type="checkbox" id="storage-override-protections" />
-                    Explicitly include protected selections
-                </label>
+                <span id="storage-selected-bytes">0 B selected</span>
+                <span id="storage-selected-protected" class="storage-selected-protected" hidden></span>
                 <button type="button" class="btn-storage-delete" onclick="narniaPreviewStorageCleanup(this)">
-                    Preview local deletion
+                    Review cleanup plan
                 </button>
             </div>
         }
     </section>
+
+    <dialog id="storage-cleanup-dialog"
+            class="storage-cleanup-dialog"
+            oncancel="event.preventDefault(); narniaCloseStorageCleanupDialog()">
+        <div class="storage-dialog-header">
+            <div>
+                <h2>4. Review the local cleanup plan</h2>
+                <p>
+                    This is a dry run. Nothing is deleted until you explicitly acknowledge the
+                    irreversible local deletion below.
+                </p>
+            </div>
+            <button type="button" class="storage-dialog-close" onclick="narniaCloseStorageCleanupDialog()" aria-label="Close">×</button>
+        </div>
+        <p id="storage-plan-summary" class="storage-plan-summary"></p>
+        <div class="storage-plan-columns">
+            <section>
+                <h3>Ready</h3>
+                <ul id="storage-plan-allowed"></ul>
+            </section>
+            <section>
+                <h3>Protected</h3>
+                <ul id="storage-plan-protected"></ul>
+            </section>
+            <section>
+                <h3>Blocked</h3>
+                <ul id="storage-plan-blocked"></ul>
+            </section>
+        </div>
+        <div id="storage-plan-protection-override" class="storage-plan-protection-override" hidden>
+            <label>
+                <input type="checkbox" id="storage-plan-include-protected" onchange="narniaStoragePlanChanged()" />
+                Include the protected sessions listed above in this one cleanup operation
+            </label>
+            <p>
+                This temporarily overrides their favorite, name, alias/notes, Collection, or
+                Session Group protection. It does not remove those Narnia references.
+            </p>
+        </div>
+        <div class="storage-delete-warning">
+            <strong>Local data only:</strong>
+            Copilot session files on this machine are permanently removed. Synced GitHub copies
+            and Narnia metadata remain.
+        </div>
+        <label class="storage-delete-acknowledgement">
+            <input type="checkbox" id="storage-plan-confirm-delete" onchange="narniaStoragePlanChanged()" />
+            I understand that this local deletion cannot be undone
+        </label>
+        <p id="storage-cleanup-result" class="storage-cleanup-result" hidden></p>
+        <div class="storage-dialog-actions">
+            <button type="button" class="btn-reset" id="storage-plan-cancel" onclick="narniaCloseStorageCleanupDialog()">Cancel</button>
+            <button type="button" class="btn-storage-delete" id="storage-plan-delete" onclick="narniaExecuteStorageCleanup(this)" disabled>
+                Delete local data
+            </button>
+        </div>
+    </dialog>
+
+    @if (_dashboard.History.Count > 1)
+    {
+        <details class="storage-global-history">
+            <summary>Overall storage history (all sessions)</summary>
+            <p>
+                This historical chart is global because daily snapshots are aggregate totals; the
+                analysis filters above do not change it.
+            </p>
+            <div class="chart-container storage-history-chart">
+                <canvas id="storage-history-chart"></canvas>
+            </div>
+            <script type="application/json" data-chart-id="storage-history-chart">
+                @((MarkupString)BuildHistoryChartJson(_dashboard.History))
+            </script>
+        </details>
+    }
+
+    <div class="storage-toolbar-links">
+        <a href="/files">Recorded file activity →</a>
+        <span>
+            The legacy Files view tracks paths Copilot touched; it does not measure local storage.
+        </span>
+    </div>
 
     @if (_dashboard.CleanupHistory.Count > 0)
     {
@@ -309,12 +456,18 @@ else
     private SessionStorageDashboard? _dashboard;
     private SessionStorageScanProgress _scanProgress =
         new("idle", null, null, 0, 0, null);
+    private List<SessionStorageItem> _scopeItems = [];
     private List<SessionStorageItem> _visibleItems = [];
+    private SessionStorageCategoryTotals _scopeCategories =
+        new(0, 0, 0, 0, 0, 0);
     private int _filteredCount;
-    private int _candidateCount;
-    private long _candidateBytes;
-    private int _growingCount;
-    private long _positiveGrowthBytes;
+    private int _cleanupReadyCount;
+    private long _cleanupReadyBytes;
+    private int _scopeProtectedCount;
+    private int _scopeActiveCount;
+    private int _scopeIssueCount;
+    private int _scopeGrowingCount;
+    private long _scopeGrowthBytes;
 
     private string EffectiveView => View is "all" or "growing" or "issues" or "history-only"
         ? View
@@ -323,22 +476,24 @@ else
     private int EffectiveAgeDays => Math.Clamp(AgeDays <= 0 ? 90 : AgeDays, 1, 3650);
     private int EffectiveMinimumMiB => Math.Clamp(MinimumMiB, 0, 1_048_576);
     private long MinimumBytes => EffectiveMinimumMiB * 1024L * 1024L;
-    private string CandidateUrl =>
-        $"/storage?view=candidates&ageDays={EffectiveAgeDays}&minMb={EffectiveMinimumMiB}";
-    private int IssueCount => _dashboard?.Sessions.Count(item =>
-        item.DataState == SessionStorageDataState.LocalStateOnly ||
-        item.Storage is { IsComplete: false } ||
-        item.Storage is { ContainsGitRepository: true } ||
-        item.Storage is { ContainsLinkedWorktree: true } ||
-        item.Storage is { ContainsReparsePoint: true }) ?? 0;
-    private string ViewHeading => EffectiveView switch
-    {
-        "all" => "All Local Session Storage",
-        "growing" => "Growing Sessions",
-        "issues" => "Storage Issues",
-        "history-only" => "History-Only Sessions",
-        _ => "Cleanup Candidates",
-    };
+    private string ProtectedCardLabel =>
+        EffectiveView == "candidates" ? "Protected candidates" : "Protected in this scope";
+    private string ProtectedCardDetail =>
+        EffectiveView == "candidates"
+            ? "Meet the current thresholds but are hidden unless Show protected sessions is enabled"
+            : "Visually marked and excluded unless explicitly overridden during cleanup review";
+    private string ActiveCardLabel =>
+        EffectiveView == "candidates" ? "Active candidates excluded" : "Currently active";
+    private string ActiveCardDetail =>
+        EffectiveView == "candidates"
+            ? "Meet the current thresholds but are hard-blocked while open in Copilot"
+            : "Hard-blocked while a live Copilot process owns them";
+    private string IssueCardLabel =>
+        EffectiveView == "candidates" ? "Safety-blocked candidates" : "Safety issues";
+    private string IssueCardDetail =>
+        EffectiveView == "candidates"
+            ? "Meet the current thresholds but fail scan, indexing, worktree, or reparse safety checks"
+            : "Incomplete, active, unindexed, worktree, or reparse risks";
     private string ScanStatusText => _scanProgress.Status switch
     {
         "running" =>
@@ -352,22 +507,44 @@ else
     {
         _dashboard = await StorageService.GetDashboardAsync(CancellationToken.None);
         _scanProgress = ScanCoordinator.GetProgress();
-        var candidates = _dashboard.Sessions
-            .Where(IsCleanupCandidate)
-            .ToArray();
-        _candidateCount = candidates.Length;
-        _candidateBytes = candidates.Sum(item => item.Storage?.TotalBytes ?? 0);
-        var growing = _dashboard.Sessions
-            .Where(item => (item.Storage?.GrowthBytes ?? 0) > 0)
-            .ToArray();
-        _growingCount = growing.Length;
-        _positiveGrowthBytes = growing.Sum(item => item.Storage!.GrowthBytes);
-
-        var filtered = ApplyView(_dashboard.Sessions)
+        var scoped = ApplyView(_dashboard.Sessions)
             .Where(MatchesQuery)
             .ToArray();
-        _filteredCount = filtered.Length;
-        _visibleItems = ApplySort(filtered).Take(VisibleLimit).ToList();
+        _scopeItems = scoped.ToList();
+        _filteredCount = scoped.Length;
+        _scopeCategories = SumCategories(scoped);
+        if (EffectiveView == "candidates")
+        {
+            var thresholdMatches = _dashboard.Sessions
+                .Where(MatchesQuery)
+                .Where(MeetsCandidateThresholds)
+                .ToArray();
+            _scopeActiveCount = thresholdMatches.Count(item => item.IsActive);
+            _scopeIssueCount = thresholdMatches.Count(item =>
+                !item.IsActive && IsHardCleanupIssue(item));
+            _scopeProtectedCount = thresholdMatches.Count(item =>
+                !item.IsActive &&
+                !IsHardCleanupIssue(item) &&
+                item.IsProtected);
+        }
+        else
+        {
+            _scopeProtectedCount = scoped.Count(item => item.IsProtected);
+            _scopeActiveCount = scoped.Count(item => item.IsActive);
+            _scopeIssueCount = scoped.Count(IsStorageIssue);
+        }
+        var growing = scoped
+            .Where(item => (item.Storage?.GrowthBytes ?? 0) > 0)
+            .ToArray();
+        _scopeGrowingCount = growing.Length;
+        _scopeGrowthBytes = growing.Sum(item => item.Storage!.GrowthBytes);
+        var cleanupReady = scoped
+            .Where(MeetsCandidateRules)
+            .Where(item => !item.IsProtected)
+            .ToArray();
+        _cleanupReadyCount = cleanupReady.Length;
+        _cleanupReadyBytes = cleanupReady.Sum(item => item.Storage!.TotalBytes);
+        _visibleItems = ApplySort(scoped).Take(VisibleLimit).ToList();
     }
 
     private IEnumerable<SessionStorageItem> ApplyView(
@@ -404,16 +581,22 @@ else
 
     private bool IsCleanupCandidate(SessionStorageItem item)
     {
-        if (item.DataState != SessionStorageDataState.IndexedWithLocalState ||
-            item.Storage is not { IsComplete: true } storage ||
-            storage.TotalBytes < MinimumBytes ||
-            item.IsActive ||
-            storage.ContainsLinkedWorktree ||
-            storage.ContainsReparsePoint ||
-            (!ShowProtected && item.IsProtected))
-        {
+        return MeetsCandidateRules(item) &&
+               (ShowProtected || !item.IsProtected);
+    }
+
+    private bool MeetsCandidateRules(SessionStorageItem item)
+    {
+        return MeetsCandidateThresholds(item) &&
+               !item.IsActive &&
+               !IsHardCleanupIssue(item);
+    }
+
+    private bool MeetsCandidateThresholds(SessionStorageItem item)
+    {
+        if (item.Storage is not { } storage ||
+            storage.TotalBytes < MinimumBytes)
             return false;
-        }
 
         var activity = ActivityAt(item);
         return activity is not null &&
@@ -443,13 +626,82 @@ else
     private static DateTimeOffset? ActivityAt(SessionStorageItem item) =>
         item.UpdatedAt ?? item.Storage?.LastWriteAt;
 
+    private static bool IsStorageIssue(SessionStorageItem item) =>
+        item.IsActive || IsHardCleanupIssue(item);
+
+    private static bool IsHardCleanupIssue(SessionStorageItem item) =>
+        item.DataState == SessionStorageDataState.LocalStateOnly ||
+        item.DataState == SessionStorageDataState.IndexedOnly ||
+        item.Storage is null ||
+        item.Storage is { IsComplete: false } ||
+        item.Storage is { ContainsLinkedWorktree: true } ||
+        item.Storage is { ContainsReparsePoint: true };
+
     private static string ActivityLabel(SessionStorageItem item)
     {
         var activity = ActivityAt(item);
         if (activity is null)
             return "Unknown";
-        var age = Math.Max(0, (DateTimeOffset.Now - activity.Value).Days);
-        return $"{FormatTime(activity)} · {age:N0}d ago";
+        return $"{FormatTime(activity)} · {FormatAge(activity.Value)}";
+    }
+
+    private static string StorageWriteLabel(SessionStorageItem item) =>
+        item.Storage?.LastWriteAt is null
+            ? "Unknown"
+            : $"{FormatTime(item.Storage.LastWriteAt)} · {FormatAge(item.Storage.LastWriteAt.Value)}";
+
+    private static string FormatAge(DateTimeOffset value)
+    {
+        var age = DateTimeOffset.Now - value;
+        if (age.TotalDays >= 1)
+            return $"{Math.Max(0, (int)age.TotalDays):N0}d ago";
+        if (age.TotalHours >= 1)
+            return $"{Math.Max(0, (int)age.TotalHours):N0}h ago";
+        return $"{Math.Max(0, (int)age.TotalMinutes):N0}m ago";
+    }
+
+    private static string StorageRowClass(SessionStorageItem item)
+    {
+        var classes = new List<string>();
+        if (item.IsArchived)
+            classes.Add("session-archived");
+        if (item.IsProtected)
+            classes.Add("storage-row--protected");
+        if (!CanSelect(item))
+            classes.Add("storage-row--blocked");
+        else if (!item.IsProtected)
+            classes.Add("storage-row--eligible");
+        return string.Join(" ", classes);
+    }
+
+    private static string SelectionTitle(SessionStorageItem item) =>
+        CanSelect(item)
+            ? item.IsProtected
+                ? $"Select protected session. Protection: {string.Join(", ", item.ProtectionReasons)}"
+                : "Select session for cleanup review"
+            : CleanupGuidance(item);
+
+    private static string CleanupGuidance(SessionStorageItem item)
+    {
+        if (item.IsActive)
+            return "Blocked: this session is currently open in Copilot.";
+        if (item.DataState == SessionStorageDataState.IndexedOnly)
+            return "No local data exists to reclaim.";
+        if (item.DataState == SessionStorageDataState.LocalStateOnly)
+            return "Blocked: reindex this local state with /chronicle reindex before cleanup.";
+        if (item.Storage is null)
+            return "Blocked: no storage measurement is available.";
+        if (!item.Storage.IsComplete)
+            return "Blocked: the latest storage scan was incomplete.";
+        if (item.Storage.ContainsLinkedWorktree)
+            return "Blocked: remove the linked Git worktree safely before deleting the session.";
+        if (item.Storage.ContainsReparsePoint)
+            return "Blocked: the session contains a filesystem reparse point.";
+        if (item.IsProtected)
+            return "Protected by Narnia. You may select it, but cleanup requires an explicit one-time override in the review plan.";
+        if (item.Storage.ContainsGitRepository)
+            return "Eligible for review. Git status and pushed commits will be checked again before deletion.";
+        return "Eligible for cleanup review.";
     }
 
     private static IReadOnlyList<(string Label, string CssClass)> StatusBadges(
@@ -503,6 +755,23 @@ else
 
     private static string FormatPercent(long part, long total) =>
         total == 0 ? "0%" : $"{part * 100d / total:0.#}%";
+
+    private static SessionStorageCategoryTotals SumCategories(
+        IEnumerable<SessionStorageItem> items)
+    {
+        var storage = items
+            .Select(item => item.Storage)
+            .Where(record => record is not null)
+            .Cast<SessionStorageRecord>()
+            .ToArray();
+        return new SessionStorageCategoryTotals(
+            storage.Sum(record => record.EventsBytes),
+            storage.Sum(record => record.SessionDatabaseBytes),
+            storage.Sum(record => record.CheckpointsBytes),
+            storage.Sum(record => record.RewindBytes),
+            storage.Sum(record => record.ArtifactsBytes),
+            storage.Sum(record => record.OtherBytes));
+    }
 
     private static string GrowthClass(long growth) =>
         growth > 0 ? "storage-growth-positive" :

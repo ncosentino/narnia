@@ -27,13 +27,19 @@ actual disk allocation differ.
 
 ## Finding Cleanup Candidates
 
-Use the filters to identify sessions by inactivity, minimum size, growth, or storage problems.
-Narnia shows an age-versus-size chart, category breakdown, daily growth, and the largest file in
-each session.
+The page follows one cleanup workflow:
+
+1. Define the analysis scope with inactivity, size, search, and sort controls.
+2. Review summary cards and current-state charts calculated from that scope.
+3. Inspect each session's size, growth, storage mix, session activity, latest file write, largest
+   file, and cleanup-safety explanation.
+4. Select sessions and review the server-generated cleanup plan before deletion.
 
 The default cleanup-candidate view excludes active and protected sessions. Favorites, Narnia
 aliases or notes, user-assigned Copilot names, Collection membership, and Session Group membership
-protect a session unless you explicitly override those protections.
+protect a session. **Show protected sessions in candidate results** only makes those sessions
+visible and visually identifies their protection reasons. A separate one-time override appears in
+the final cleanup plan when protected sessions were selected.
 
 ## Local Session Deletion
 

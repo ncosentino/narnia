@@ -10,7 +10,7 @@ public sealed class StorageEndpointsTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task StoragePage_RendersCachedUsageAndLegacyActivityLink()
+    public async Task StoragePage_RendersGuidedScopeReviewAndCleanupFlow()
     {
         using var factory = new NarniaWebAppFactory();
         var now = new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
@@ -23,13 +23,62 @@ public sealed class StorageEndpointsTests
             .Setup(repository => repository.ListAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([Metadata(now)]);
 
-        var html = await factory.CreateClient().GetStringAsync("/storage?view=all", Ct);
+        var html = await factory.CreateClient()
+            .GetStringAsync("/storage?view=candidates&minMb=0&showProtected=true", Ct);
 
         Assert.Contains("<h1>Session Storage</h1>", html, StringComparison.Ordinal);
         Assert.Contains("1 KiB", html, StringComparison.Ordinal);
         Assert.Contains("Storage session", html, StringComparison.Ordinal);
         Assert.Contains("href=\"/files\"", html, StringComparison.Ordinal);
         Assert.Contains("class=\"storage-check\"", html, StringComparison.Ordinal);
+        Assert.Contains("What is a protected session?", html, StringComparison.Ordinal);
+        Assert.Contains("Show protected sessions in candidate results", html, StringComparison.Ordinal);
+        Assert.Contains("Protected candidates", html, StringComparison.Ordinal);
+        Assert.Contains("Meet the current thresholds but are hidden", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"storage-row--protected", html, StringComparison.Ordinal);
+        Assert.Contains("Named by you in Copilot", html, StringComparison.Ordinal);
+        Assert.Contains("Session activity", html, StringComparison.Ordinal);
+        Assert.Contains("Latest file write", html, StringComparison.Ordinal);
+        Assert.Contains("Review cleanup plan", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"storage-cleanup-dialog\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Explicitly include protected selections", html, StringComparison.Ordinal);
+        Assert.True(
+            html.IndexOf("Define the sessions you want to review", StringComparison.Ordinal) <
+            html.IndexOf("Understand this scope", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StoragePage_SearchUpdatesScopeBeforeSummaryAndCharts()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var now = new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
+        await factory.StorageRepository.SaveScanAsync(
+            [Storage(now)],
+            now,
+            now.AddMinutes(1),
+            Ct);
+        factory.StorageMetadataSource
+            .Setup(repository => repository.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Metadata(now)]);
+
+        var html = await factory.CreateClient()
+            .GetStringAsync("/storage?view=all&q=does-not-match", Ct);
+
+        Assert.Contains("0 sessions match this analysis", html, StringComparison.Ordinal);
+        Assert.Contains("No local storage matches this scope.", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"storage-category-chart\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StorageJavaScript_UsesReviewDialogInsteadOfAmbiguousOverride()
+    {
+        var javascript = await File.ReadAllTextAsync(FindStorageJavaScript(), Ct);
+
+        Assert.Contains("narniaRenderStorageDecisionList", javascript, StringComparison.Ordinal);
+        Assert.Contains("narniaStoragePlanChanged", javascript, StringComparison.Ordinal);
+        Assert.Contains("narniaStorageCleanupCompleted", javascript, StringComparison.Ordinal);
+        Assert.Contains("storage-plan-include-protected", javascript, StringComparison.Ordinal);
+        Assert.DoesNotContain("storage-override-protections", javascript, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -121,7 +170,7 @@ public sealed class StorageEndpointsTests
             LargestFileBytes = 1024,
             LargestFilePath = "events.jsonl",
             IsComplete = true,
-            IsUserNamed = false,
+            IsUserNamed = true,
             ContainsGitRepository = false,
             ContainsLinkedWorktree = false,
             ContainsReparsePoint = false,
@@ -142,4 +191,24 @@ public sealed class StorageEndpointsTests
         List<PreviewDecision> Decisions);
 
     private sealed record PreviewDecision(string SessionId, string Disposition);
+
+    private static string FindStorageJavaScript()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "src",
+                "NexusLabs.Narnia.Web",
+                "wwwroot",
+                "js",
+                "narnia-charts.js");
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        throw new FileNotFoundException("Could not locate narnia-charts.js from the test output directory.");
+    }
 }
