@@ -83,6 +83,19 @@ public sealed class CopilotSessionLockResolverTests
         Assert.Equal(sessionB, resolver.ResolveSessionId(200));
     }
 
+    [Fact]
+    public void ResolveSessionId_NestedArtifactLock_IsIgnored()
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [$@"{SessionStatePath}\session-a\files\inuse.100.lock"] =
+                new MockFileData("100"),
+        });
+        var resolver = CreateResolver(fs);
+
+        Assert.Null(resolver.ResolveSessionId(100));
+    }
+
     private static CopilotSessionLockResolver CreateResolver(MockFileSystem fileSystem)
     {
         var options = CreateOptions();

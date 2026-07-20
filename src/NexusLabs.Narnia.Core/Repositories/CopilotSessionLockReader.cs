@@ -24,13 +24,13 @@ public sealed class CopilotSessionLockReader(
             return new Dictionary<int, IReadOnlyList<string>>();
         }
 
-        string[] matches;
+        string[] sessionDirectories;
         try
         {
-            matches = fileSystem.Directory.GetFiles(
+            sessionDirectories = fileSystem.Directory.GetDirectories(
                 options.SessionStatePath,
-                "inuse.*.lock",
-                SearchOption.AllDirectories);
+                "*",
+                SearchOption.TopDirectoryOnly);
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException)
@@ -39,27 +39,44 @@ public sealed class CopilotSessionLockReader(
         }
 
         var grouped = new Dictionary<int, HashSet<string>>();
-        foreach (var match in matches)
+        foreach (var sessionDirectory in sessionDirectories)
         {
-            if (!TryParseProcessId(fileSystem.Path.GetFileName(match), out var processId) ||
-                !requested.Contains(processId))
+            string[] matches;
+            try
+            {
+                var attributes = fileSystem.File.GetAttributes(sessionDirectory);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    continue;
+                matches = fileSystem.Directory.GetFiles(
+                    sessionDirectory,
+                    "inuse.*.lock",
+                    SearchOption.TopDirectoryOnly);
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException)
             {
                 continue;
             }
 
-            var directory = fileSystem.Path.GetDirectoryName(match);
-            var sessionId = string.IsNullOrWhiteSpace(directory)
-                ? null
-                : fileSystem.Path.GetFileName(directory);
+            var sessionId = fileSystem.Path.GetFileName(sessionDirectory);
             if (string.IsNullOrWhiteSpace(sessionId))
                 continue;
 
-            if (!grouped.TryGetValue(processId, out var sessionIds))
+            foreach (var match in matches)
             {
-                sessionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                grouped[processId] = sessionIds;
+                if (!TryParseProcessId(fileSystem.Path.GetFileName(match), out var processId) ||
+                    !requested.Contains(processId))
+                {
+                    continue;
+                }
+
+                if (!grouped.TryGetValue(processId, out var sessionIds))
+                {
+                    sessionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    grouped[processId] = sessionIds;
+                }
+                sessionIds.Add(sessionId);
             }
-            sessionIds.Add(sessionId);
         }
 
         return grouped.ToDictionary(
