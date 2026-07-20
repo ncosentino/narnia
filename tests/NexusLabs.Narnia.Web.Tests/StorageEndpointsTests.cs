@@ -160,6 +160,10 @@ public sealed class StorageEndpointsTests
         Assert.Contains("narniaStoragePlanChanged", javascript, StringComparison.Ordinal);
         Assert.Contains("narniaStorageCleanupCompleted", javascript, StringComparison.Ordinal);
         Assert.Contains("storage-plan-include-protected", javascript, StringComparison.Ordinal);
+        Assert.Contains("storage-action--working", javascript, StringComparison.Ordinal);
+        Assert.Contains("deleteButton.hidden = true", javascript, StringComparison.Ordinal);
+        Assert.Contains("btn.hidden = true", javascript, StringComparison.Ordinal);
+        Assert.Contains("storage-close-complete", javascript, StringComparison.Ordinal);
         Assert.DoesNotContain("storage-override-protections", javascript, StringComparison.Ordinal);
     }
 

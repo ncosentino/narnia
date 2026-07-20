@@ -558,7 +558,16 @@ span.dashboard-item-title { color: var(--text); }
 .storage-cleanup-bar { flex-wrap: wrap; }
 .storage-selected-protected { color: var(--text-muted); font-weight: 650; }
 .btn-storage-delete { background: var(--status-danger); color: white; }
-.btn-storage-delete:hover { filter: brightness(1.08); }
+.btn-storage-delete:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-storage-delete:disabled {
+    opacity: .48;
+    cursor: not-allowed;
+    filter: grayscale(.35);
+}
+.storage-action--working {
+    opacity: .65 !important;
+    cursor: wait !important;
+}
 .storage-cleanup-dialog {
     width: min(1000px, calc(100vw - 2rem));
     max-height: calc(100vh - 2rem);
@@ -615,6 +624,10 @@ span.dashboard-item-title { color: var(--text); }
 .storage-delete-warning { background: var(--status-danger-bg); border: 1px solid var(--status-danger); }
 .storage-delete-acknowledgement { display: flex; align-items: center; gap: .45rem; margin-top: 1rem; font-weight: 650; }
 .storage-cleanup-result { padding: .65rem; background: var(--surface-alt); border-radius: 6px; }
+.storage-cleanup-result--success { border: 1px solid #22c55e; }
+.storage-cleanup-result--error { border: 1px solid var(--status-danger); color: var(--status-danger); }
+.storage-close-complete { background: #15803d; color: white; }
+.storage-close-complete:hover { background: #166534; color: white; }
 .storage-dialog-actions {
     display: flex;
     justify-content: flex-end;

@@ -471,9 +471,21 @@ async function narniaPreviewStorageCleanup(btn) {
         if (resultElement) {
             resultElement.hidden = true;
             resultElement.textContent = '';
+            resultElement.classList.remove(
+                'storage-cleanup-result--success',
+                'storage-cleanup-result--error');
         }
         var cancel = document.getElementById('storage-plan-cancel');
-        if (cancel) cancel.textContent = 'Cancel';
+        if (cancel) {
+            cancel.textContent = 'Cancel';
+            cancel.classList.remove('storage-close-complete');
+        }
+        var deleteButton = document.getElementById('storage-plan-delete');
+        if (deleteButton) {
+            deleteButton.hidden = false;
+            deleteButton.removeAttribute('aria-busy');
+            deleteButton.classList.remove('storage-action--working');
+        }
         narniaStoragePlanChanged();
         var dialog = document.getElementById('storage-cleanup-dialog');
         if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
@@ -520,7 +532,10 @@ function narniaStoragePlanChanged() {
     if (narniaStorageCleanupCompleted) {
         if (includeProtected) includeProtected.disabled = true;
         if (acknowledgement) acknowledgement.disabled = true;
-        if (deleteButton) deleteButton.disabled = true;
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            deleteButton.hidden = true;
+        }
         return;
     }
     var preview = narniaStorageCleanupPlan.preview;
@@ -545,6 +560,8 @@ async function narniaExecuteStorageCleanup(btn) {
     var originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = '⏳ Deleting local data…';
+    btn.setAttribute('aria-busy', 'true');
+    btn.classList.add('storage-action--working');
     try {
         var response = await fetch('/api/storage/delete', {
             method: 'POST',
@@ -569,19 +586,30 @@ async function narniaExecuteStorageCleanup(btn) {
         if (resultElement) {
             resultElement.textContent = message;
             resultElement.hidden = false;
+            resultElement.classList.remove('storage-cleanup-result--error');
+            resultElement.classList.add('storage-cleanup-result--success');
         }
         narniaStorageCleanupCompleted = true;
         if (includeProtected) includeProtected.disabled = true;
         if (acknowledgement) acknowledgement.disabled = true;
         var cancel = document.getElementById('storage-plan-cancel');
-        if (cancel) cancel.textContent = 'Close and refresh';
-        btn.textContent = 'Cleanup complete';
+        if (cancel) {
+            cancel.textContent = 'Close and refresh';
+            cancel.classList.add('storage-close-complete');
+        }
+        btn.removeAttribute('aria-busy');
+        btn.classList.remove('storage-action--working');
+        btn.hidden = true;
     } catch (e) {
         var resultElement = document.getElementById('storage-cleanup-result');
         if (resultElement) {
             resultElement.textContent = 'Cleanup failed: ' + e.message;
             resultElement.hidden = false;
+            resultElement.classList.remove('storage-cleanup-result--success');
+            resultElement.classList.add('storage-cleanup-result--error');
         }
+        btn.removeAttribute('aria-busy');
+        btn.classList.remove('storage-action--working');
         btn.textContent = originalText;
         btn.disabled = false;
     }
