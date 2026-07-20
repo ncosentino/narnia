@@ -15,16 +15,16 @@ public sealed class StorageEndpointsTests
         using var factory = new NarniaWebAppFactory();
         var now = new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
         await factory.StorageRepository.SaveScanAsync(
-            [Storage(now)],
+            [Storage(now, SessionId, isUserNamed: true, containsGitRepository: false)],
             now,
             now.AddMinutes(1),
             Ct);
         factory.StorageMetadataSource
             .Setup(repository => repository.ListAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Metadata(now)]);
+            .ReturnsAsync([Metadata(now, SessionId, "Storage session")]);
 
         var html = await factory.CreateClient()
-            .GetStringAsync("/storage?view=candidates&minMb=0&showProtected=true", Ct);
+            .GetStringAsync("/storage?view=candidates&minMb=0&showProtected=true&safety=all", Ct);
 
         Assert.Contains("<h1>Session Storage</h1>", html, StringComparison.Ordinal);
         Assert.Contains("1 KiB", html, StringComparison.Ordinal);
@@ -41,6 +41,7 @@ public sealed class StorageEndpointsTests
         Assert.Contains("Latest file write", html, StringComparison.Ordinal);
         Assert.Contains("Review cleanup plan", html, StringComparison.Ordinal);
         Assert.Contains("id=\"storage-cleanup-dialog\"", html, StringComparison.Ordinal);
+        Assert.Contains("Cleanup safety", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Explicitly include protected selections", html, StringComparison.Ordinal);
         Assert.True(
             html.IndexOf("Define the sessions you want to review", StringComparison.Ordinal) <
@@ -53,13 +54,13 @@ public sealed class StorageEndpointsTests
         using var factory = new NarniaWebAppFactory();
         var now = new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
         await factory.StorageRepository.SaveScanAsync(
-            [Storage(now)],
+            [Storage(now, SessionId, isUserNamed: false, containsGitRepository: false)],
             now,
             now.AddMinutes(1),
             Ct);
         factory.StorageMetadataSource
             .Setup(repository => repository.ListAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Metadata(now)]);
+            .ReturnsAsync([Metadata(now, SessionId, "Storage session")]);
 
         var html = await factory.CreateClient()
             .GetStringAsync("/storage?view=all&q=does-not-match", Ct);
@@ -67,6 +68,87 @@ public sealed class StorageEndpointsTests
         Assert.Contains("0 sessions match this analysis", html, StringComparison.Ordinal);
         Assert.Contains("No local storage matches this scope.", html, StringComparison.Ordinal);
         Assert.DoesNotContain("id=\"storage-category-chart\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StoragePage_SafetyFilterSeparatesReadyFromGitCheckSessions()
+    {
+        const string readyId = "22222222-2222-4222-8222-222222222222";
+        const string gitId = "33333333-3333-4333-8333-333333333333";
+        using var factory = new NarniaWebAppFactory();
+        var now = new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
+        await factory.StorageRepository.SaveScanAsync(
+            [
+                Storage(now, readyId, isUserNamed: false, containsGitRepository: false),
+                Storage(now, gitId, isUserNamed: false, containsGitRepository: true),
+            ],
+            now,
+            now.AddMinutes(1),
+            Ct);
+        factory.StorageMetadataSource
+            .Setup(repository => repository.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                Metadata(now, readyId, "Obvious cleanup"),
+                Metadata(now, gitId, "Repository cleanup"),
+            ]);
+        var client = factory.CreateClient();
+
+        var readyHtml = await client.GetStringAsync(
+            "/storage?view=candidates&ageDays=1&minMb=0",
+            Ct);
+        var gitHtml = await client.GetStringAsync(
+            "/storage?view=candidates&ageDays=1&minMb=0&safety=git",
+            Ct);
+
+        Assert.Contains("Obvious cleanup", readyHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Repository cleanup", readyHtml, StringComparison.Ordinal);
+        Assert.Contains("Ready", readyHtml, StringComparison.Ordinal);
+        Assert.Contains("no extra checks", readyHtml, StringComparison.Ordinal);
+        Assert.Contains("Repository cleanup", gitHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Obvious cleanup", gitHtml, StringComparison.Ordinal);
+        Assert.Contains("Git check required", gitHtml, StringComparison.Ordinal);
+        Assert.Contains("no uncommitted, untracked, or unpushed changes", gitHtml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StoragePage_PaginatesLargeReviewSets()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var now = new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
+        var storage = Enumerable.Range(1, 101)
+            .Select(index =>
+            {
+                var id = $"00000000-0000-4000-8000-{index:D12}";
+                return Storage(now, id, isUserNamed: false, containsGitRepository: false);
+            })
+            .ToArray();
+        var metadata = storage
+            .Select((record, index) => Metadata(now, record.SessionId, $"Session {index + 1}"))
+            .ToArray();
+        await factory.StorageRepository.SaveScanAsync(storage, now, now.AddMinutes(1), Ct);
+        factory.StorageMetadataSource
+            .Setup(repository => repository.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(metadata);
+        var client = factory.CreateClient();
+
+        var firstPage = await client.GetStringAsync("/storage?view=all&safety=ready", Ct);
+        var secondPage = await client.GetStringAsync("/storage?view=all&safety=ready&page=2", Ct);
+
+        Assert.Contains("Showing 1", firstPage, StringComparison.Ordinal);
+        Assert.Equal(
+            100,
+            System.Text.RegularExpressions.Regex.Matches(
+                firstPage,
+                "class=\"storage-check\"").Count);
+        Assert.Contains("Page 1 of 2", firstPage, StringComparison.Ordinal);
+        Assert.Contains("Next →", firstPage, StringComparison.Ordinal);
+        Assert.Contains("Showing 101", secondPage, StringComparison.Ordinal);
+        Assert.Single(
+            System.Text.RegularExpressions.Regex.Matches(
+                secondPage,
+                "class=\"storage-check\"").Cast<System.Text.RegularExpressions.Match>());
+        Assert.Contains("← Previous", secondPage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -153,10 +235,14 @@ public sealed class StorageEndpointsTests
             It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private static SessionStorageRecord Storage(DateTimeOffset now) =>
+    private static SessionStorageRecord Storage(
+        DateTimeOffset now,
+        string sessionId,
+        bool isUserNamed,
+        bool containsGitRepository) =>
         new()
         {
-            SessionId = SessionId,
+            SessionId = sessionId,
             ScannedAt = now,
             TotalBytes = 1024,
             FileCount = 1,
@@ -170,18 +256,21 @@ public sealed class StorageEndpointsTests
             LargestFileBytes = 1024,
             LargestFilePath = "events.jsonl",
             IsComplete = true,
-            IsUserNamed = true,
-            ContainsGitRepository = false,
+            IsUserNamed = isUserNamed,
+            ContainsGitRepository = containsGitRepository,
             ContainsLinkedWorktree = false,
             ContainsReparsePoint = false,
         };
 
-    private static SessionStorageMetadata Metadata(DateTimeOffset now) =>
+    private static SessionStorageMetadata Metadata(
+        DateTimeOffset now,
+        string sessionId,
+        string summary) =>
         new(
-            SessionId,
+            sessionId,
             @"C:\repo",
             "owner/repo",
-            "Storage session",
+            summary,
             now.AddDays(-100),
             now.AddDays(-90));
 

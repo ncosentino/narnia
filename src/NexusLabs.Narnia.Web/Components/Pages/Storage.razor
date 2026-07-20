@@ -93,6 +93,16 @@ else
                     <option value="activity" selected="@(EffectiveSort == "activity")">Oldest activity</option>
                 </select>
             </label>
+            <label>
+                Cleanup safety
+                <select name="safety">
+                    <option value="ready" selected="@(EffectiveSafety == "ready")">Ready — no extra checks</option>
+                    <option value="git" selected="@(EffectiveSafety == "git")">Git check required</option>
+                    <option value="protected" selected="@(EffectiveSafety == "protected")">Protected</option>
+                    <option value="blocked" selected="@(EffectiveSafety == "blocked")">Blocked</option>
+                    <option value="all" selected="@(EffectiveSafety == "all")">All safety states</option>
+                </select>
+            </label>
             @if (EffectiveView == "candidates")
             {
                 <label class="storage-show-protected">
@@ -109,6 +119,10 @@ else
             explicitly named by you, has a Narnia alias or notes, or belongs to a Collection or
             Session Group. Showing protected sessions only makes them visible for review; it does
             not silently remove that protection.
+        </div>
+        <div class="storage-safety-filter-explainer">
+            <strong>@SafetyFilterTitle</strong>
+            @SafetyFilterDescription
         </div>
     </section>
 
@@ -135,9 +149,10 @@ else
             </a>
             <a class="dashboard-summary-card" href="#storage-sessions">
                 <span class="dashboard-summary-value">@FormatBytes(_cleanupReadyBytes)</span>
-                <span class="dashboard-summary-label">Ready for cleanup review</span>
+                <span class="dashboard-summary-label">Selectable for cleanup review</span>
                 <span class="dashboard-summary-detail">
-                    @_cleanupReadyCount.ToString("N0") unprotected sessions meet the current age and size rules
+                    @_cleanupReadyCount.ToString("N0") unprotected sessions meet the current rules;
+                    Git-tagged rows receive an additional live Git check
                 </span>
             </a>
             <a class="dashboard-summary-card" href="#storage-sessions">
@@ -192,12 +207,31 @@ else
             <div>
                 <h2>Review individual sessions</h2>
                 <p>
-                    Showing @_visibleItems.Count.ToString("N0") of @_filteredCount.ToString("N0")
-                    matching sessions. Every row shows its footprint, session activity, latest
-                    storage write, and why cleanup is allowed, protected, or blocked.
+                    Showing @FirstVisibleResult.ToString("N0")–@LastVisibleResult.ToString("N0")
+                    of @_filteredCount.ToString("N0") matching sessions. Every row shows its
+                    footprint, session activity, latest storage write, and why cleanup is ready,
+                    protected, Git-checked, or blocked.
                 </p>
             </div>
         </div>
+
+        <nav class="storage-safety-filters" aria-label="Cleanup safety filters">
+            <a class="@SafetyFilterClass("ready")" href="@SafetyUrl("ready")">
+                Ready <span>@_safetyReadyCount.ToString("N0")</span>
+            </a>
+            <a class="@SafetyFilterClass("git")" href="@SafetyUrl("git")">
+                Git check required <span>@_safetyGitCount.ToString("N0")</span>
+            </a>
+            <a class="@SafetyFilterClass("protected")" href="@SafetyUrl("protected")">
+                Protected <span>@_safetyProtectedCount.ToString("N0")</span>
+            </a>
+            <a class="@SafetyFilterClass("blocked")" href="@SafetyUrl("blocked")">
+                Blocked <span>@_safetyBlockedCount.ToString("N0")</span>
+            </a>
+            <a class="@SafetyFilterClass("all")" href="@SafetyUrl("all")">
+                All <span>@_safetyBaseCount.ToString("N0")</span>
+            </a>
+        </nav>
 
         @if (_visibleItems.Count == 0)
         {
@@ -302,6 +336,21 @@ else
                 </tbody>
             </table>
             </div>
+
+            @if (_totalPages > 1)
+            {
+                <nav class="session-pagination" aria-label="Storage session pages">
+                    @if (_currentPage > 1)
+                    {
+                        <a href="@PageUrl(_currentPage - 1)">← Previous</a>
+                    }
+                    <span>Page @_currentPage of @_totalPages</span>
+                    @if (_currentPage < _totalPages)
+                    {
+                        <a href="@PageUrl(_currentPage + 1)">Next →</a>
+                    }
+                </nav>
+            }
 
             <div class="bulk-action-bar storage-cleanup-bar" id="storage-cleanup-bar" style="display:none;">
                 <span id="storage-selected-count">0 selected</span>
@@ -452,7 +501,15 @@ else
     [SupplyParameterFromQuery(Name = "showProtected")]
     public bool ShowProtected { get; set; }
 
-    private const int VisibleLimit = 250;
+    /// <summary>Gets or sets the cleanup-safety classification filter.</summary>
+    [SupplyParameterFromQuery(Name = "safety")]
+    public string? Safety { get; set; }
+
+    /// <summary>Gets or sets the one-based session review page.</summary>
+    [SupplyParameterFromQuery(Name = "page")]
+    public int Page { get; set; } = 1;
+
+    private const int PageSize = 100;
     private SessionStorageDashboard? _dashboard;
     private SessionStorageScanProgress _scanProgress =
         new("idle", null, null, 0, 0, null);
@@ -468,11 +525,23 @@ else
     private int _scopeIssueCount;
     private int _scopeGrowingCount;
     private long _scopeGrowthBytes;
+    private int _safetyBaseCount;
+    private int _safetyReadyCount;
+    private int _safetyGitCount;
+    private int _safetyProtectedCount;
+    private int _safetyBlockedCount;
+    private int _currentPage;
+    private int _totalPages;
 
     private string EffectiveView => View is "all" or "growing" or "issues" or "history-only"
         ? View
         : "candidates";
     private string EffectiveSort => Sort is "growth" or "activity" ? Sort : "size";
+    private string EffectiveSafety => Safety is "ready" or "git" or "protected" or "blocked" or "all"
+        ? Safety
+        : EffectiveView == "candidates"
+            ? "ready"
+            : "all";
     private int EffectiveAgeDays => Math.Clamp(AgeDays <= 0 ? 90 : AgeDays, 1, 3650);
     private int EffectiveMinimumMiB => Math.Clamp(MinimumMiB, 0, 1_048_576);
     private long MinimumBytes => EffectiveMinimumMiB * 1024L * 1024L;
@@ -494,6 +563,31 @@ else
         EffectiveView == "candidates"
             ? "Meet the current thresholds but fail scan, indexing, worktree, or reparse safety checks"
             : "Incomplete, active, unindexed, worktree, or reparse risks";
+    private string SafetyFilterTitle => EffectiveSafety switch
+    {
+        "git" => "Git check required:",
+        "protected" => "Protected:",
+        "blocked" => "Blocked:",
+        "all" => "All safety states:",
+        _ => "Ready — no extra checks:",
+    };
+    private string SafetyFilterDescription => EffectiveSafety switch
+    {
+        "git" =>
+            "These sessions contain a Git repository inside their stored artifacts. They are not automatically unsafe; during cleanup review Narnia verifies there are no uncommitted, untracked, or unpushed changes.",
+        "protected" =>
+            "These sessions have an intentional keep signal such as a favorite, user-assigned name, alias/notes, Collection, or Session Group.",
+        "blocked" =>
+            "These sessions cannot be selected because they are active, unindexed, incompletely scanned, linked worktrees, or contain reparse points.",
+        "all" =>
+            "Ready, Git-check, protected, and blocked sessions are shown together.",
+        _ =>
+            "No active-session, protection, Git-repository, worktree, reparse, or scan issue is currently known. Final server validation still runs before deletion.",
+    };
+    private int FirstVisibleResult =>
+        _filteredCount == 0 ? 0 : ((_currentPage - 1) * PageSize) + 1;
+    private int LastVisibleResult =>
+        Math.Min(_currentPage * PageSize, _filteredCount);
     private string ScanStatusText => _scanProgress.Status switch
     {
         "running" =>
@@ -507,8 +601,16 @@ else
     {
         _dashboard = await StorageService.GetDashboardAsync(CancellationToken.None);
         _scanProgress = ScanCoordinator.GetProgress();
-        var scoped = ApplyView(_dashboard.Sessions)
+        var safetyBase = ApplyView(_dashboard.Sessions)
             .Where(MatchesQuery)
+            .ToArray();
+        _safetyBaseCount = safetyBase.Length;
+        _safetyReadyCount = safetyBase.Count(item => SafetyCategory(item) == "ready");
+        _safetyGitCount = safetyBase.Count(item => SafetyCategory(item) == "git");
+        _safetyProtectedCount = safetyBase.Count(item => SafetyCategory(item) == "protected");
+        _safetyBlockedCount = safetyBase.Count(item => SafetyCategory(item) == "blocked");
+        var scoped = safetyBase
+            .Where(MatchesSafetyFilter)
             .ToArray();
         _scopeItems = scoped.ToList();
         _filteredCount = scoped.Length;
@@ -544,7 +646,12 @@ else
             .ToArray();
         _cleanupReadyCount = cleanupReady.Length;
         _cleanupReadyBytes = cleanupReady.Sum(item => item.Storage!.TotalBytes);
-        _visibleItems = ApplySort(scoped).Take(VisibleLimit).ToList();
+        _totalPages = Math.Max(1, (int)Math.Ceiling(_filteredCount / (double)PageSize));
+        _currentPage = Math.Clamp(Page <= 0 ? 1 : Page, 1, _totalPages);
+        _visibleItems = ApplySort(scoped)
+            .Skip((_currentPage - 1) * PageSize)
+            .Take(PageSize)
+            .ToList();
     }
 
     private IEnumerable<SessionStorageItem> ApplyView(
@@ -613,6 +720,48 @@ else
                (item.Repository?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false);
     }
 
+    private bool MatchesSafetyFilter(SessionStorageItem item) =>
+        EffectiveSafety == "all" ||
+        string.Equals(SafetyCategory(item), EffectiveSafety, StringComparison.Ordinal);
+
+    private static string SafetyCategory(SessionStorageItem item)
+    {
+        if (!CanSelect(item))
+            return "blocked";
+        if (item.IsProtected)
+            return "protected";
+        if (item.Storage is { ContainsGitRepository: true })
+            return "git";
+        return "ready";
+    }
+
+    private string SafetyFilterClass(string safety) =>
+        string.Equals(EffectiveSafety, safety, StringComparison.Ordinal)
+            ? "storage-safety-filter storage-safety-filter--active"
+            : "storage-safety-filter";
+
+    private string SafetyUrl(string safety) => BuildUrl(safety, 1);
+
+    private string PageUrl(int page) => BuildUrl(EffectiveSafety, page);
+
+    private string BuildUrl(string safety, int page)
+    {
+        var parameters = new List<string>
+        {
+            $"view={Uri.EscapeDataString(EffectiveView)}",
+            $"ageDays={EffectiveAgeDays}",
+            $"minMb={EffectiveMinimumMiB}",
+            $"sort={Uri.EscapeDataString(EffectiveSort)}",
+            $"safety={Uri.EscapeDataString(safety)}",
+            $"page={page}",
+        };
+        if (!string.IsNullOrWhiteSpace(Query))
+            parameters.Add($"q={Uri.EscapeDataString(Query.Trim())}");
+        if (ShowProtected)
+            parameters.Add("showProtected=true");
+        return "/storage?" + string.Join("&", parameters);
+    }
+
     private static bool CanSelect(SessionStorageItem item) =>
         item.DataState == SessionStorageDataState.IndexedWithLocalState &&
         item.Storage is
@@ -669,6 +818,8 @@ else
             classes.Add("storage-row--protected");
         if (!CanSelect(item))
             classes.Add("storage-row--blocked");
+        else if (item.Storage is { ContainsGitRepository: true })
+            classes.Add("storage-row--git-check");
         else if (!item.IsProtected)
             classes.Add("storage-row--eligible");
         return string.Join(" ", classes);
@@ -700,8 +851,8 @@ else
         if (item.IsProtected)
             return "Protected by Narnia. You may select it, but cleanup requires an explicit one-time override in the review plan.";
         if (item.Storage.ContainsGitRepository)
-            return "Eligible for review. Git status and pushed commits will be checked again before deletion.";
-        return "Eligible for cleanup review.";
+            return "Git check required: this session stores a Git repository in its artifacts. Narnia will verify that it has no uncommitted, untracked, or unpushed changes before deletion.";
+        return "Ready for cleanup review with no extra safety check currently required.";
     }
 
     private static IReadOnlyList<(string Label, string CssClass)> StatusBadges(
@@ -721,13 +872,13 @@ else
         if (item.Storage is { IsComplete: false })
             badges.Add(("incomplete scan", "storage-badge--danger"));
         if (item.Storage is { ContainsGitRepository: true })
-            badges.Add(("Git repository", "storage-badge--warning"));
+            badges.Add(("Git check required", "storage-badge--warning"));
         if (item.Storage is { ContainsLinkedWorktree: true })
             badges.Add(("linked worktree", "storage-badge--danger"));
         if (item.Storage is { ContainsReparsePoint: true })
             badges.Add(("reparse point", "storage-badge--danger"));
         if (badges.Count == 0)
-            badges.Add(("local", ""));
+            badges.Add(("ready", "storage-badge--ready"));
         return badges;
     }
 

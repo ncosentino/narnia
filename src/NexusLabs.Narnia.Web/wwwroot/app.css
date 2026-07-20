@@ -456,6 +456,47 @@ span.dashboard-item-title { color: var(--text); }
     color: var(--text-muted);
     font-size: .86rem;
 }
+.storage-safety-filter-explainer {
+    margin-top: .75rem;
+    padding: .7rem .8rem;
+    background: var(--surface-alt);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: .86rem;
+}
+.storage-safety-filter-explainer strong { margin-right: .25rem; }
+.storage-safety-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .45rem;
+    margin-bottom: .9rem;
+}
+.storage-safety-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .3rem .55rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: .78rem;
+}
+.storage-safety-filter span {
+    min-width: 1.3rem;
+    padding: .05rem .3rem;
+    text-align: center;
+    background: var(--surface-muted);
+    border-radius: 999px;
+}
+.storage-safety-filter:hover,
+.storage-safety-filter--active {
+    color: var(--text);
+    border-color: var(--accent);
+}
+.storage-safety-filter--active { background: rgba(139, 92, 246, .13); }
 .storage-table-scroll { width: 100%; overflow-x: auto; }
 .storage-table { min-width: 900px; table-layout: fixed; }
 .storage-table th:nth-child(1) { width: 42px; }
@@ -468,6 +509,7 @@ span.dashboard-item-title { color: var(--text); }
 .storage-row--protected td:first-child { box-shadow: inset 4px 0 #8b5cf6; }
 .storage-row--blocked td { color: var(--text-subtle); }
 .storage-row--blocked td:first-child { box-shadow: inset 4px 0 var(--status-danger); }
+.storage-row--git-check td:first-child { box-shadow: inset 4px 0 #f59e0b; }
 .storage-row--eligible td:first-child { box-shadow: inset 4px 0 #22c55e; }
 .storage-repository { margin-top: .25rem; color: var(--text-muted); font-size: .78rem; }
 .storage-session-id { margin-top: .2rem; color: var(--text-subtle); font-family: monospace; font-size: .68rem; }
@@ -509,6 +551,7 @@ span.dashboard-item-title { color: var(--text); }
     white-space: nowrap;
 }
 .storage-badge--active { background: var(--tag-bg); color: var(--tag-text); }
+.storage-badge--ready { background: #14532d; color: #dcfce7; }
 .storage-badge--protected { background: #312e81; color: #ddd6fe; }
 .storage-badge--warning { background: #78350f; color: #fde68a; }
 .storage-badge--danger { background: var(--status-danger-bg); color: var(--status-danger); }

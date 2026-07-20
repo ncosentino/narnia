@@ -35,6 +35,16 @@ The page follows one cleanup workflow:
    file, and cleanup-safety explanation.
 4. Select sessions and review the server-generated cleanup plan before deletion.
 
+The cleanup-safety filter separates the review into:
+
+- **Ready — no extra checks**: no active, protection, Git, worktree, reparse, or scan issue is known
+- **Git check required**: the session stores a Git repository in its artifacts; Narnia verifies
+  that it has no uncommitted, untracked, or unpushed changes during final review
+- **Protected**: an intentional Narnia or Copilot keep signal is present
+- **Blocked**: the session cannot currently be selected safely
+
+Review results are paginated in groups of 100 so large histories remain manageable.
+
 The default cleanup-candidate view excludes active and protected sessions. Favorites, Narnia
 aliases or notes, user-assigned Copilot names, Collection membership, and Session Group membership
 protect a session. **Show protected sessions in candidate results** only makes those sessions
