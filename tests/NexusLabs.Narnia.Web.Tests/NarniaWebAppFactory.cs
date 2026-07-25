@@ -19,6 +19,8 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 {
     private readonly string _settingsDbPath = Path.Combine(
         Path.GetTempPath(), $"narnia_web_test_{Guid.NewGuid():N}.db");
+    private readonly string _recoveryDirectory = Path.Combine(
+        Path.GetTempPath(), $"narnia_web_recovery_{Guid.NewGuid():N}");
 
     /// <summary>Mock session repository used for tab metadata enrichment.</summary>
     public Mock<ISessionRepository> SessionRepository { get; } = new();
@@ -52,6 +54,12 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
     /// <summary>Mock Copilot SDK boundary so tests never launch a real Copilot runtime.</summary>
     public Mock<ICopilotSessionManager> CopilotSessionManager { get; } = new();
+
+    /// <summary>Mock resume-safety reader so tests never inspect real Copilot session files.</summary>
+    public Mock<ISessionResumeSafetyReader> ResumeSafetyReader { get; } = new();
+
+    /// <summary>Mock migration orchestrator for HTTP and page contract tests.</summary>
+    public Mock<ISessionMigrationService> SessionMigrationService { get; } = new();
 
     /// <summary>Mock scan coordinator so endpoint tests never queue a real filesystem scan.</summary>
     public Mock<ISessionStorageScanCoordinator> StorageScanCoordinator { get; } = new();
@@ -109,6 +117,31 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyCollection<string> ids, CancellationToken _) =>
                 ids.Select(id => new CopilotSessionDeletionResult(id, true, null)).ToArray());
+        CopilotSessionManager
+            .Setup(manager => manager.CreateRecoverySessionAsync(
+                It.IsAny<CopilotRecoverySessionRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CopilotRecoverySessionRequest request, CancellationToken _) =>
+                new CopilotRecoverySessionResult(request.SessionId, true, null));
+        CopilotSessionManager
+            .Setup(manager => manager.CheckSessionAvailabilityAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string sessionId, CancellationToken _) =>
+                new CopilotSessionAvailabilityResult(sessionId, true, true, null));
+        ResumeSafetyReader
+            .Setup(reader => reader.Inspect(It.IsAny<string>()))
+            .Returns((string sessionId) => new SessionResumeAssessment(
+                sessionId,
+                SessionResumeSafety.Unknown,
+                "No test event stream.",
+                null,
+                false));
+        SessionMigrationService
+            .Setup(service => service.GetRelatedAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SessionMigration?)null);
         StorageScanCoordinator
             .Setup(coordinator => coordinator.GetProgress())
             .Returns(new SessionStorageScanProgress("idle", null, null, 0, 0, null));
@@ -154,6 +187,7 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("Narnia:SettingsDatabasePath", _settingsDbPath);
+        builder.UseSetting("Narnia:RecoveryDirectory", _recoveryDirectory);
         builder.UseSetting("Narnia:SnapshotterEnabled", "false");
 
         builder.ConfigureTestServices(services =>
@@ -191,6 +225,12 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
             services.RemoveAll<ICopilotSessionManager>();
             services.AddSingleton(CopilotSessionManager.Object);
 
+            services.RemoveAll<ISessionResumeSafetyReader>();
+            services.AddSingleton(ResumeSafetyReader.Object);
+
+            services.RemoveAll<ISessionMigrationService>();
+            services.AddSingleton(SessionMigrationService.Object);
+
             services.RemoveAll<ISessionStorageScanCoordinator>();
             services.AddSingleton(StorageScanCoordinator.Object);
 
@@ -209,6 +249,8 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         {
             if (File.Exists(_settingsDbPath))
                 File.Delete(_settingsDbPath);
+            if (Directory.Exists(_recoveryDirectory))
+                Directory.Delete(_recoveryDirectory, recursive: true);
         }
         catch (IOException)
         {

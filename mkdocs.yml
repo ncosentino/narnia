@@ -48,6 +48,7 @@ nav:
   - Getting Started: getting-started.md
   - Setup by Tool: setup-by-tool.md
   - Configuration: configuration.md
+  - Broken Session Recovery: session-recovery.md
   - Session Storage: session-storage.md
   - Terminal Window Recovery: terminal-windows.md
   - MCP Tools:
@@ -64,6 +65,9 @@ nav:
     - scan_session_storage: tools/scan-session-storage.md
     - preview_local_session_cleanup: tools/preview-local-session-cleanup.md
     - delete_local_sessions: tools/delete-local-sessions.md
+    - preview_session_migration: tools/preview-session-migration.md
+    - migrate_broken_session: tools/migrate-broken-session.md
+    - get_session_recovery_packet: tools/get-session-recovery-packet.md
     - list_schedules: tools/list-schedules.md
     - get_schedule: tools/get-schedule.md
     - get_schedule_log: tools/get-schedule-log.md

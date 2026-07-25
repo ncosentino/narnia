@@ -1145,3 +1145,77 @@ span.dashboard-item-title { color: var(--text); }
 .sched-log-panel { margin: 0 0 1.5rem; padding: .8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-alt); }
 .sched-log-panel textarea { width: 100%; min-height: 300px; font-family: var(--mono, monospace); font-size: .75rem; white-space: pre; }
 .badge-fail-link { cursor: pointer; text-decoration: underline dotted; border: none; }
+.session-migration-link {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem .8rem;
+    margin: 1rem 0;
+    padding: .85rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+    border-radius: .65rem;
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.session-migration-link strong {
+    color: var(--accent);
+}
+
+.session-recovery {
+    display: block;
+    margin: 1rem 0 1.25rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--border);
+    border-radius: .75rem;
+    background: var(--surface);
+}
+
+.session-recovery > summary {
+    cursor: pointer;
+    font-weight: 650;
+}
+
+.session-recovery--blocked {
+    border-color: color-mix(in srgb, #ef4444 58%, var(--border));
+    background: color-mix(in srgb, #ef4444 8%, var(--surface));
+}
+
+.session-recovery--blocked h2 {
+    margin: .2rem 0 .55rem;
+}
+
+.session-recovery-kicker {
+    color: #ef4444;
+    font-size: .78rem;
+    font-weight: 750;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.session-recovery-plan {
+    margin-top: .8rem;
+}
+
+.session-recovery-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem;
+    margin: .75rem 0;
+}
+
+.session-recovery-metrics span {
+    padding: .35rem .6rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 80%, var(--bg));
+}
+
+.session-recovery-error {
+    color: #ef4444;
+    font-weight: 650;
+}
+
+.session-migrate-btn--working {
+    cursor: wait;
+    opacity: .72;
+}

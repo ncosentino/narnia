@@ -10,6 +10,7 @@ public sealed class SessionStorageService(
     ISessionOverridesRepository overridesRepository,
     ISessionGroupsRepository groupsRepository,
     IWorkCollectionsRepository collectionsRepository,
+    ISessionMigrationRepository migrationRepository,
     ICopilotSessionActivityReader activityReader) : ISessionStorageService
 {
     /// <inheritdoc />
@@ -20,6 +21,7 @@ public sealed class SessionStorageService(
         var overridesTask = overridesRepository.GetAllOverridesAsync(ct).AsTask();
         var groupsTask = groupsRepository.GetAllAsync(ct).AsTask();
         var collectionsTask = collectionsRepository.GetAllAsync(ct).AsTask();
+        var recoverySourcesTask = migrationRepository.GetRecoveryProtectedSessionIdsAsync(ct).AsTask();
         var historyTask = storageRepository.GetDailyAsync(90, ct).AsTask();
         var cleanupHistoryTask = storageRepository.GetRecentCleanupAsync(25, ct).AsTask();
         var scanTask = storageRepository.GetLastScanAsync(ct).AsTask();
@@ -29,6 +31,7 @@ public sealed class SessionStorageService(
             overridesTask,
             groupsTask,
             collectionsTask,
+            recoverySourcesTask,
             historyTask,
             cleanupHistoryTask,
             scanTask);
@@ -45,6 +48,7 @@ public sealed class SessionStorageService(
             .Select(member => member.SessionId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var activeSessionIds = activityReader.GetActiveSessionIds();
+        var recoveryProtectedSessionIds = await recoverySourcesTask;
         var sessionsById = sessions.ToDictionary(
             session => session.SessionId,
             StringComparer.OrdinalIgnoreCase);
@@ -73,7 +77,8 @@ public sealed class SessionStorageService(
                 record?.IsUserNamed == true,
                 hasNarniaMetadata,
                 inGroup,
-                inCollection);
+                inCollection,
+                recoveryProtectedSessionIds.Contains(sessionId));
 
             items.Add(new SessionStorageItem
             {
@@ -135,7 +140,8 @@ public sealed class SessionStorageService(
         bool isUserNamed,
         bool hasNarniaMetadata,
         bool inGroup,
-        bool inCollection)
+        bool inCollection,
+        bool isRecoveryProtected)
     {
         var reasons = new List<string>(4);
         if (favorite)
@@ -148,6 +154,8 @@ public sealed class SessionStorageService(
             reasons.Add("Session Group member");
         if (inCollection)
             reasons.Add("Collection member");
+        if (isRecoveryProtected)
+            reasons.Add("Recovered session");
         return reasons;
     }
 }

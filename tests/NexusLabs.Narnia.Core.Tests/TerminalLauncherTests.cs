@@ -1,3 +1,5 @@
+using NexusLabs.Narnia.Core.Models;
+using NexusLabs.Narnia.Core.Repositories;
 using NexusLabs.Narnia.Core.Services;
 
 namespace NexusLabs.Narnia.Core.Tests;
@@ -10,8 +12,27 @@ public sealed class TerminalLauncherTests
 
     private readonly Mock<ITerminalCommandBuilder> _commandBuilder = new();
     private readonly Mock<IProcessLauncher> _processLauncher = new();
+    private readonly Mock<ISessionResumeSafetyReader> _resumeSafetyReader = new();
+    private readonly SessionOperationCoordinator _operationCoordinator = new();
 
-    private TerminalLauncher Launcher() => new(_commandBuilder.Object, _processLauncher.Object);
+    public TerminalLauncherTests()
+    {
+        _resumeSafetyReader
+            .Setup(reader => reader.Inspect(It.IsAny<string>()))
+            .Returns((string sessionId) => new SessionResumeAssessment(
+                sessionId,
+                SessionResumeSafety.Resumable,
+                null,
+                "session.start",
+                false));
+    }
+
+    private TerminalLauncher Launcher() =>
+        new(
+            _commandBuilder.Object,
+            _processLauncher.Object,
+            _resumeSafetyReader.Object,
+            _operationCoordinator);
 
     private static TerminalLaunchTab Tab(string sessionId, string? directory = null) =>
         new(sessionId, $"Title {sessionId}", directory);
@@ -99,5 +120,71 @@ public sealed class TerminalLauncherTests
         var failure = Assert.Single(outcome.Failures);
         Assert.Equal("s1", failure.SessionId);
         Assert.Equal("nope", failure.Reason);
+    }
+
+    [Fact]
+    public void Launch_IncompatibleSession_BlocksOnlyThatTab()
+    {
+        _resumeSafetyReader
+            .Setup(reader => reader.Inspect("broken"))
+            .Returns(new SessionResumeAssessment(
+                "broken",
+                SessionResumeSafety.Incompatible,
+                "Missing session.start.",
+                "system.message",
+                true));
+        _commandBuilder.Setup(builder => builder.FindWindowsTerminalPath()).Returns(WtPath);
+        _commandBuilder
+            .Setup(builder => builder.BuildNewTabSegment(
+                ShellPath,
+                "pwsh",
+                It.IsAny<TerminalLaunchTab>(),
+                CopilotCommand))
+            .Returns<string, string, TerminalLaunchTab, string>(
+                (_, _, tab, _) => $"segment-{tab.SessionId}");
+
+        var outcome = Launcher().Launch(
+            ShellPath,
+            "pwsh",
+            [Tab("broken"), Tab("safe")],
+            TerminalWindowMode.SeparateWindows,
+            CopilotCommand);
+
+        Assert.Equal(["safe"], outcome.LaunchedSessionIds);
+        var failure = Assert.Single(outcome.Failures);
+        Assert.Equal("broken", failure.SessionId);
+        Assert.Contains("Recover this session", failure.Reason, StringComparison.Ordinal);
+        _processLauncher.Verify(
+            launcher => launcher.Start(WtPath, "segment-safe", null),
+            Times.Once);
+        _processLauncher.Verify(
+            launcher => launcher.Start(
+                It.IsAny<string>(),
+                It.Is<string>(arguments => arguments.Contains("broken", StringComparison.Ordinal)),
+                It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public void Launch_SessionOperationInProgress_BlocksLaunch()
+    {
+        using var lease = _operationCoordinator.TryAcquire("locked");
+        Assert.NotNull(lease);
+
+        var outcome = Launcher().Launch(
+            ShellPath,
+            "pwsh",
+            [Tab("locked")],
+            TerminalWindowMode.SeparateWindows,
+            CopilotCommand);
+
+        var failure = Assert.Single(outcome.Failures);
+        Assert.Contains("in progress", failure.Reason, StringComparison.Ordinal);
+        _processLauncher.Verify(
+            launcher => launcher.Start(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>()),
+            Times.Never);
     }
 }

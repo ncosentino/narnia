@@ -16,6 +16,8 @@ public sealed class WorkspaceReader(NarniaOptions options, IFileSystem fileSyste
 
         string? gitRoot = null;
         string? name = null;
+        string? parentTaskId = null;
+        string? parentSessionId = null;
         var isUserNamed = false;
         var workspacePath = fileSystem.Path.Combine(sessionDir, "workspace.yaml");
         if (fileSystem.File.Exists(workspacePath))
@@ -29,6 +31,8 @@ public sealed class WorkspaceReader(NarniaOptions options, IFileSystem fileSyste
                 {
                     gitRoot = ReadScalar(root, "git_root");
                     name = ReadScalar(root, "name");
+                    parentTaskId = ReadScalar(root, "mc_task_id");
+                    parentSessionId = ReadScalar(root, "mc_session_id");
                     isUserNamed = string.Equals(
                         ReadScalar(root, "user_named"),
                         "true",
@@ -44,6 +48,8 @@ public sealed class WorkspaceReader(NarniaOptions options, IFileSystem fileSyste
         {
             Name = name,
             IsUserNamed = isUserNamed,
+            ParentTaskId = parentTaskId,
+            ParentSessionId = parentSessionId,
         };
     }
 

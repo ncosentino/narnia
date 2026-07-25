@@ -9,6 +9,12 @@ public sealed class NarniaOptions
     public string SessionStatePath { get; set; } = GetDefaultSessionStatePath();
 
     /// <summary>
+    /// Directory for Narnia-owned recovery packets created when a Copilot session cannot be
+    /// resumed safely.
+    /// </summary>
+    public string RecoveryDirectory { get; set; } = GetDefaultRecoveryDirectory();
+
+    /// <summary>
     /// Directory that holds the self-contained wrapper scripts and per-run logs for Narnia-owned
     /// scheduled jobs, one subfolder per job. Lives in Narnia's own app-data folder
     /// (<c>%LOCALAPPDATA%\narnia\schedules</c> on Windows) and is never mixed with a user's own scripts.
@@ -78,6 +84,11 @@ public sealed class NarniaOptions
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".copilot", "session-state");
+
+    private static string GetDefaultRecoveryDirectory() =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "narnia", "recoveries");
 
     private static string GetDefaultSchedulesDirectory() =>
         Path.Combine(

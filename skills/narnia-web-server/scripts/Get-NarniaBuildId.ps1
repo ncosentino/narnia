@@ -8,9 +8,10 @@
     so /health can distinguish two builds even when both came from plugin bundles without git
     metadata:
 
-      * Git checkout (dev clone or $env:NARNIA_REPO_PATH): the short commit SHA, e.g. "git.0ef3ff203603".
-      * Plugin bundle (no git): a deterministic SHA-256 over the 'src' content, e.g.
-        "content.f1a82e159aba". It changes if and only if the source changes -- exactly the
+      * Clean Git checkout (dev clone or $env:NARNIA_REPO_PATH): the short commit SHA, e.g. "git.0ef3ff203603".
+      * Dirty Git checkout or plugin bundle: a deterministic SHA-256 over the 'src' content, e.g.
+        "content.f1a82e159aba".
+        It changes if and only if the source changes -- exactly the
         "did this update actually change anything?" signal an Update needs.
 
 .PARAMETER Root
@@ -32,9 +33,12 @@ $buildId = $null
 
 if (Test-Path (Join-Path $Root '.git')) {
     try {
-        $sha = (& git -C $Root rev-parse --short=12 HEAD 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $sha) {
-            $buildId = "git.$sha"
+        $changes = (& git -C $Root status --porcelain --untracked-files=normal 2>$null)
+        if ($LASTEXITCODE -eq 0 -and -not $changes) {
+            $sha = (& git -C $Root rev-parse --short=12 HEAD 2>$null)
+            if ($LASTEXITCODE -eq 0 -and $sha) {
+                $buildId = "git.$sha"
+            }
         }
     }
     catch {

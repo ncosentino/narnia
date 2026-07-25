@@ -14,6 +14,7 @@ public sealed class SessionCleanupService(
     IWorkspaceReader workspaceReader,
     IGitArtifactInspector gitInspector,
     ICopilotSessionManager copilotSessionManager,
+    ISessionOperationCoordinator operationCoordinator,
     NarniaOptions options,
     IFileSystem fileSystem,
     TimeProvider timeProvider) : ISessionCleanupService
@@ -59,8 +60,14 @@ public sealed class SessionCleanupService(
         bool archiveDeletedSessions,
         CancellationToken ct)
     {
+        var normalized = sessionIds
+            .Where(sessionId => !string.IsNullOrWhiteSpace(sessionId))
+            .Select(sessionId => sessionId.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        await using var operation = await operationCoordinator.AcquireAsync(normalized, ct);
         var requestedAt = timeProvider.GetUtcNow();
-        var preview = await PreviewAsync(sessionIds, overrideProtections, ct);
+        var preview = await PreviewAsync(normalized, overrideProtections, ct);
         var allowed = preview.Decisions
             .Where(decision => decision.Disposition == SessionCleanupDisposition.Allowed)
             .ToArray();

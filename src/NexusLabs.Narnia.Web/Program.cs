@@ -50,12 +50,21 @@ builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
 builder.Services.AddSingleton<SettingsDatabaseRelocator>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<IWorkspaceReader, WorkspaceReader>();
+builder.Services.AddSingleton<ISessionResumeSafetyReader, SessionResumeSafetyReader>();
+builder.Services.AddSingleton<ISessionTaskStateReader, SessionTaskStateReader>();
 builder.Services.AddSingleton<ICopilotSessionLockReader, CopilotSessionLockReader>();
 builder.Services.AddSingleton<ICopilotSessionLockResolver, CopilotSessionLockResolver>();
 builder.Services.AddSingleton<ICopilotProcessProvider, CopilotProcessProvider>();
 builder.Services.AddSingleton<ICopilotSessionActivityReader, CopilotSessionActivityReader>();
+builder.Services.AddSingleton<ISessionOperationCoordinator, SessionOperationCoordinator>();
 builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
 builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredService<SqliteNarniaSettingsRepository>());
+builder.Services.AddSingleton<SqliteSessionMigrationRepository>();
+builder.Services.AddSingleton<ISessionMigrationRepository>(
+    sp => sp.GetRequiredService<SqliteSessionMigrationRepository>());
+builder.Services.AddSingleton<ISessionRecoveryPacketBuilder, SessionRecoveryPacketBuilder>();
+builder.Services.AddSingleton<ISessionEventStreamRecovery, SessionEventStreamRecovery>();
+builder.Services.AddSingleton<ISessionMigrationService, SessionMigrationService>();
 builder.Services.AddSingleton<SqliteSessionStorageRepository>();
 builder.Services.AddSingleton<ISessionStorageRepository>(sp => sp.GetRequiredService<SqliteSessionStorageRepository>());
 builder.Services.AddSingleton<ISessionStorageScanner, SessionStorageScanner>();
@@ -126,7 +135,8 @@ builder.Services
     .WithHttpTransport(httpOptions => httpOptions.Stateless = true)
     .WithTools<SessionTools>()
     .WithTools<ScheduleTools>()
-    .WithTools<StorageTools>();
+    .WithTools<StorageTools>()
+    .WithTools<SessionMigrationTools>();
 
 var app = builder.Build();
 
@@ -602,6 +612,7 @@ MapSessionGroupsApi("/api/session-groups");
 MapSessionGroupsApi("/api/groups");
 app.MapWorkCollectionsEndpoints();
 app.MapStorageEndpoints();
+app.MapSessionMigrationEndpoints();
 
 void MapSessionGroupsApi(string routePrefix)
 {

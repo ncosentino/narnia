@@ -209,6 +209,7 @@ public sealed class SessionCleanupServiceTests
             workspaceReader.Object,
             gitInspector.Object,
             copilotManager.Object,
+            new SessionOperationCoordinator(),
             new NarniaOptions
             {
                 SessionStatePath = SessionStatePath,
