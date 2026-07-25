@@ -16,13 +16,15 @@ Table columns can be resized by dragging the separator at the right edge of a he
 
 The **Storage** page measures local session-state disk usage, growth, staleness, and cleanup safety.
 The previous recorded-path search remains available as a secondary file-activity audit.
+Session detail pages can recover incompatible history in place by retaining the same session ID and
+folder while Copilot reseeds only the active event stream.
 
 The supported prebuilt release is Windows x64. Narnia's defining recovery, scheduling, autostart,
 and terminal-launch features integrate with Windows Terminal, WMI, and Windows Task Scheduler.
 
 ## MCP Tools
 
-Narnia exposes 20 tools over one shared HTTP endpoint (`/mcp`): eight for session history, four for local session storage, and eight for managing scheduled Copilot jobs.
+Narnia exposes 23 tools over one shared HTTP endpoint (`/mcp`): eight for session history, three for broken-session recovery, four for local session storage, and eight for managing scheduled Copilot jobs.
 
 ### Session History
 
@@ -45,6 +47,14 @@ Narnia exposes 20 tools over one shared HTTP endpoint (`/mcp`): eight for sessio
 | [`scan_session_storage`](tools/scan-session-storage.md) | Queue a metadata-only background scan |
 | [`preview_local_session_cleanup`](tools/preview-local-session-cleanup.md) | Dry-run cleanup safety and reclaim estimates |
 | [`delete_local_sessions`](tools/delete-local-sessions.md) | Delete validated local session data through Copilot SDK |
+
+### Broken Session Recovery
+
+| Tool | Description |
+|------|-------------|
+| [`preview_session_migration`](tools/preview-session-migration.md) | Inspect compatibility and recoverable context |
+| [`migrate_broken_session`](tools/migrate-broken-session.md) | Reseed the same session ID and folder |
+| [`get_session_recovery_packet`](tools/get-session-recovery-packet.md) | Read exact archived recovery context in chunks |
 
 ### Scheduled Jobs
 

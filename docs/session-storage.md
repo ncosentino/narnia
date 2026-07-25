@@ -52,7 +52,8 @@ Review results are paginated in groups of 100 so large histories remain manageab
 
 The default cleanup-candidate view excludes active and protected sessions. Favorites, Narnia
 aliases or notes, user-assigned Copilot names, Collection membership, and Session Group membership
-protect a session. **Show protected sessions in candidate results** only makes those sessions
+protect a session. Recovered sessions are also protected while their recovery record is retained.
+**Show protected sessions in candidate results** only makes those sessions
 visible and visually identifies their protection reasons. A separate one-time override appears in
 the final cleanup plan when protected sessions were selected.
 

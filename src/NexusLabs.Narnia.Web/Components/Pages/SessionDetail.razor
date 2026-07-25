@@ -10,6 +10,8 @@
 @inject IWorkspaceReader WorkspaceReader
 @inject INarniaSettingsRepository SettingsRepo
 @inject ISessionStorageRepository StorageRepository
+@inject ISessionResumeSafetyReader ResumeSafetyReader
+@inject ISessionMigrationService MigrationService
 
 <PageTitle>@(_session?.Summary ?? SessionId) — Narnia</PageTitle>
 
@@ -38,20 +40,99 @@ else if (_session is not null)
         </button>
     </div>
 
-    <div class="resume-commands">
-        @foreach (var (label, cmd, target, idx) in BuildResumeEntries())
-        {
-            <div class="resume-entry">
-                <span class="resume-label">@label</span>
-                <code id="resume-cmd-@idx">@cmd</code>
-                <button class="copy-btn" onclick="narniaCopyText('resume-cmd-@idx', this)" title="Copy to clipboard">📋 Copy</button>
-                @if (target != "none")
+    @if (_relatedMigration is not null)
+    {
+        <div class="session-migration-link">
+            @if (_relatedMigration.Status is SessionMigrationStatus.SessionCreated or SessionMigrationStatus.Completed)
+            {
+                @if (IsInPlaceMigration)
                 {
-                    <button class="launch-btn" onclick="narniaLaunch('@target', '@_session.Id', this)" title="Launch in terminal">🚀 Launch</button>
+                    <strong>Recovered in place</strong>
+                    <span>
+                        Copilot retained this session ID and folder. The original broken event
+                        stream remains archived beside the new valid stream.
+                    </span>
                 }
+                else if (IsMigrationSource)
+                {
+                    <strong>Recovered successor</strong>
+                    <span>
+                        This session is preserved as the recovery source.
+                        <a href="/sessions/@_relatedMigration.ReplacementSessionId">
+                            Open successor @ShortSession(_relatedMigration.ReplacementSessionId)
+                        </a>
+                    </span>
+                }
+                else
+                {
+                    <strong>Recovered session</strong>
+                    <span>
+                        Created from
+                        <a href="/sessions/@_relatedMigration.SourceSessionId">
+                            source @ShortSession(_relatedMigration.SourceSessionId)
+                        </a>
+                        without modifying the original history.
+                    </span>
+                }
+            }
+            else
+            {
+                <strong>Recovery attempt @FormatMigrationStatus(_relatedMigration.Status)</strong>
+                <span>
+                    No usable successor has been confirmed.
+                    @if (!string.IsNullOrWhiteSpace(_relatedMigration.Error))
+                    {
+                        <span>@_relatedMigration.Error</span>
+                    }
+                </span>
+            }
+            @if (_relatedMigration.RecoveryPacketBytes > 0)
+            {
+                <a href="/api/session-migrations/@SessionId/packet">Download recovery packet</a>
+            }
+        </div>
+    }
+
+    @if (_resumeAssessment?.Safety == SessionResumeSafety.Incompatible)
+    {
+        <section class="session-recovery session-recovery--blocked">
+            <div>
+                <span class="session-recovery-kicker">Resume blocked for safety</span>
+                <h2>This session cannot be resumed as-is</h2>
+                <p>@_resumeAssessment.Reason</p>
+                <p>
+                    Copilot would reject this history and open an unrelated blank session.
+                    Narnia has disabled Launch for this session instead of pretending it resumed.
+                </p>
             </div>
-        }
-    </div>
+            @RecoveryPlan
+        </section>
+    }
+    else if (!IsMigrationReplacement)
+    {
+        <details class="session-recovery">
+            <summary>Recover into a new successor session</summary>
+            @RecoveryPlan
+        </details>
+    }
+
+    @if (_resumeAssessment?.Safety != SessionResumeSafety.Incompatible)
+    {
+        <div class="resume-commands">
+            @foreach (var (label, cmd, target, idx) in BuildResumeEntries())
+            {
+                <div class="resume-entry">
+                    <span class="resume-label">@label</span>
+                    <code id="resume-cmd-@idx">@cmd</code>
+                    <button class="copy-btn" onclick="narniaCopyText('resume-cmd-@idx', this)" title="Copy to clipboard">📋 Copy</button>
+                    @if (target != "none")
+                    {
+                        <button class="launch-btn" onclick="narniaLaunch('@target', '@_session.Id', this)" title="Launch in terminal">🚀 Launch</button>
+                    }
+                </div>
+            }
+        </div>
+    }
 
     <dl class="session-meta">
         <dt>ID</dt><dd><code>@_session.Id</code></dd>
@@ -295,6 +376,9 @@ else if (_session is not null)
     private Checkpoint[]? _checkpoints;
     private Turn[]? _turns;
     private IReadOnlyList<WorkCollection> _collections = [];
+    private SessionResumeAssessment? _resumeAssessment;
+    private SessionMigrationPreview? _migrationPreview;
+    private SessionMigration? _relatedMigration;
     private bool _loaded;
     private bool HasNarniaAlias => !string.IsNullOrWhiteSpace(_override?.DisplayName);
     private string? CopilotName => _workspace?.Name ?? _rawSession?.Summary;
@@ -308,6 +392,19 @@ else if (_session is not null)
             || !string.IsNullOrWhiteSpace(_override.LocalPath)
             || !string.IsNullOrWhiteSpace(_override.TerminalTitle));
     private string _copilotCommand = CopilotSettingKeys.DefaultCommand;
+    private bool IsMigrationSource =>
+        _relatedMigration is not null &&
+        string.Equals(
+            _relatedMigration.SourceSessionId,
+            SessionId,
+            StringComparison.OrdinalIgnoreCase);
+    private bool IsInPlaceMigration => _relatedMigration?.IsInPlace == true;
+    private bool IsMigrationReplacement =>
+        _relatedMigration is not null &&
+        string.Equals(
+            _relatedMigration.ReplacementSessionId,
+            SessionId,
+            StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
@@ -326,9 +423,70 @@ else if (_session is not null)
             _collections = await CollectionsRepository.GetBySessionIdAsync(SessionId);
             _checkpoints = await Repository.GetCheckpointsAsync(SessionId);
             _turns = await Repository.GetTurnsAsync(SessionId, 0, 100);
+            _resumeAssessment = ResumeSafetyReader.Inspect(SessionId);
+            _relatedMigration = await MigrationService.GetRelatedAsync(
+                SessionId,
+                CancellationToken.None);
+            if (!IsMigrationReplacement)
+            {
+                _migrationPreview = await MigrationService.PreviewAsync(
+                    SessionId,
+                    CancellationToken.None);
+            }
         }
         _loaded = true;
     }
+
+    private RenderFragment RecoveryPlan => @<div class="session-recovery-plan">
+            @if (_migrationPreview is null)
+            {
+                <p>Recovery details are unavailable.</p>
+            }
+            else
+            {
+                <p>
+                    Narnia will archive only the broken <code>events.jsonl</code>, ask Copilot to
+                    reseed this exact session ID and folder, and use one bootstrap response to
+                    synthesize the recovered context. The original event stream is retained for
+                    rollback and audit.
+                </p>
+                <div class="session-recovery-metrics">
+                    <span><strong>@_migrationPreview.TurnCount</strong> turns</span>
+                    <span><strong>@_migrationPreview.CheckpointCount</strong> checkpoints</span>
+                    <span><strong>@_migrationPreview.TodoCount</strong> workspace tasks</span>
+                </div>
+                <p>
+                    Existing artifacts, workspace tasks, checkpoints, rewind snapshots, favorite,
+                    alias, notes, Collections, Session Groups, and saved windows remain attached to
+                    this same session.
+                </p>
+                @if (_migrationPreview.ExistingMigration?.Status == SessionMigrationStatus.Completed)
+                {
+                    @if (_migrationPreview.ExistingMigration.IsInPlace)
+                    {
+                        <span class="storage-success">Recovery is complete in this session.</span>
+                    }
+                    else
+                    {
+                        <a class="launch-btn"
+                           href="/sessions/@_migrationPreview.ExistingMigration.ReplacementSessionId">
+                            Open recovered successor
+                        </a>
+                    }
+                }
+                else if (_migrationPreview.CanMigrate)
+                {
+                    <button class="launch-btn session-migrate-btn"
+                            onclick="narniaMigrateSession('@SessionId', this)">
+                        Recover this session in place
+                    </button>
+                }
+                else
+                {
+                    <p class="session-recovery-error">@_migrationPreview.BlockingReason</p>
+                }
+            }
+        </div>;
 
     private static string BuildCadenceChartJson(Checkpoint[] checkpoints) =>
         JsonSerializer.Serialize(new
@@ -399,6 +557,17 @@ else if (_session is not null)
     {
         return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
+
+    private static string ShortSession(string sessionId) =>
+        sessionId.Length >= 8 ? sessionId[..8] : sessionId;
+
+    private static string FormatMigrationStatus(SessionMigrationStatus status) =>
+        status switch
+        {
+            SessionMigrationStatus.SessionCreated => "session created",
+            SessionMigrationStatus.CleanupRequired => "cleanup required",
+            _ => status.ToString().ToLowerInvariant(),
+        };
 
     private static string FormatBytes(long bytes)
     {

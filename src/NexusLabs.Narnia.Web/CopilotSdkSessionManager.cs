@@ -115,6 +115,229 @@ public sealed class CopilotSdkSessionManager(
         }
     }
 
+    /// <inheritdoc />
+    public async ValueTask<CopilotRecoverySessionResult> CreateRecoverySessionAsync(
+        CopilotRecoverySessionRequest request,
+        CancellationToken ct)
+    {
+        if (!Guid.TryParse(request.SessionId, out _))
+        {
+            return new CopilotRecoverySessionResult(
+                request.SessionId,
+                false,
+                "The replacement session identifier must be a GUID.");
+        }
+        if (string.IsNullOrWhiteSpace(request.BootstrapPrompt))
+        {
+            return new CopilotRecoverySessionResult(
+                request.SessionId,
+                false,
+                "Recovery bootstrap context is empty.");
+        }
+        if (!TryResolveCopilotHome(out var copilotHome, out var pathError))
+            return new CopilotRecoverySessionResult(request.SessionId, false, pathError);
+
+        var configuredCommand =
+            await settings.GetAsync(CopilotSettingKeys.Command, ct) ??
+            CopilotSettingKeys.DefaultCommand;
+        if (!CopilotCommandParser.TryParse(configuredCommand, out var command, out var commandError))
+            return new CopilotRecoverySessionResult(request.SessionId, false, commandError);
+
+        await _gate.WaitAsync(ct);
+        try
+        {
+            CopilotClient? client = null;
+            CopilotSession? session = null;
+            try
+            {
+                client = new CopilotClient(new CopilotClientOptions
+                {
+                    Connection = BuildConnection(command!),
+                    BaseDirectory = copilotHome,
+                    Mode = CopilotClientMode.Empty,
+                    EnableRemoteSessions = false,
+                    UseLoggedInUser = true,
+                    LogLevel = CopilotLogLevel.Error,
+                });
+                await client.StartAsync(ct);
+                var available = await client.ListSessionsAsync(null, ct);
+                if (available.Any(item => string.Equals(
+                        item.SessionId,
+                        request.SessionId,
+                        StringComparison.OrdinalIgnoreCase)))
+                {
+                    return new CopilotRecoverySessionResult(
+                        request.SessionId,
+                        false,
+                        "The replacement session identifier is already in use.");
+                }
+
+                session = await client.CreateSessionAsync(
+                    new SessionConfig
+                    {
+                        SessionId = request.SessionId,
+                        WorkingDirectory =
+                            !string.IsNullOrWhiteSpace(request.WorkingDirectory) &&
+                            Directory.Exists(request.WorkingDirectory)
+                                ? request.WorkingDirectory
+                                : null,
+                        AvailableTools = [],
+                        EnableSessionStore = true,
+                        SkipCustomInstructions = true,
+                        EnableConfigDiscovery = false,
+                        EnableSkills = false,
+                        Streaming = false,
+                        ClientName = "narnia-session-recovery",
+                    },
+                    ct);
+                var response = await session.SendAndWaitAsync(
+                    new MessageOptions { Prompt = request.BootstrapPrompt },
+                    TimeSpan.FromMinutes(5),
+                    ct);
+                if (response is null || string.IsNullOrWhiteSpace(response.Data.Content))
+                {
+                    return new CopilotRecoverySessionResult(
+                        request.SessionId,
+                        false,
+                        "Copilot created the successor but did not return a recovery handoff.");
+                }
+                return new CopilotRecoverySessionResult(request.SessionId, true, null);
+            }
+            catch (Exception exception) when (IsExpectedSdkException(exception))
+            {
+                return new CopilotRecoverySessionResult(
+                    request.SessionId,
+                    false,
+                    exception.Message);
+            }
+            finally
+            {
+                if (session is not null)
+                {
+                    try
+                    {
+                        await session.DisposeAsync();
+                    }
+                    catch (Exception exception) when (IsExpectedSdkException(exception))
+                    {
+                        logger.LogWarning(
+                            exception,
+                            "Recovered Copilot session {SessionId} did not disconnect cleanly.",
+                            request.SessionId);
+                    }
+                }
+
+                if (client is not null)
+                {
+                    try
+                    {
+                        await client.DisposeAsync();
+                    }
+                    catch (Exception exception) when (IsExpectedSdkException(exception))
+                    {
+                        logger.LogWarning(
+                            exception,
+                            "Copilot SDK recovery runtime did not shut down cleanly.");
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<CopilotSessionAvailabilityResult> CheckSessionAvailabilityAsync(
+        string sessionId,
+        CancellationToken ct)
+    {
+        if (!Guid.TryParse(sessionId, out _))
+        {
+            return new CopilotSessionAvailabilityResult(
+                sessionId,
+                false,
+                false,
+                "The session identifier must be a GUID.");
+        }
+        if (!TryResolveCopilotHome(out var copilotHome, out var pathError))
+        {
+            return new CopilotSessionAvailabilityResult(
+                sessionId,
+                false,
+                false,
+                pathError);
+        }
+
+        var configuredCommand =
+            await settings.GetAsync(CopilotSettingKeys.Command, ct) ??
+            CopilotSettingKeys.DefaultCommand;
+        if (!CopilotCommandParser.TryParse(configuredCommand, out var command, out var commandError))
+        {
+            return new CopilotSessionAvailabilityResult(
+                sessionId,
+                false,
+                false,
+                commandError);
+        }
+
+        await _gate.WaitAsync(ct);
+        try
+        {
+            CopilotClient? client = null;
+            try
+            {
+                client = new CopilotClient(new CopilotClientOptions
+                {
+                    Connection = BuildConnection(command!),
+                    BaseDirectory = copilotHome,
+                    EnableRemoteSessions = false,
+                    UseLoggedInUser = true,
+                    LogLevel = CopilotLogLevel.Error,
+                });
+                await client.StartAsync(ct);
+                var sessions = await client.ListSessionsAsync(null, ct);
+                return new CopilotSessionAvailabilityResult(
+                    sessionId,
+                    true,
+                    sessions.Any(item => string.Equals(
+                        item.SessionId,
+                        sessionId,
+                        StringComparison.OrdinalIgnoreCase)),
+                    null);
+            }
+            catch (Exception exception) when (IsExpectedSdkException(exception))
+            {
+                return new CopilotSessionAvailabilityResult(
+                    sessionId,
+                    false,
+                    false,
+                    exception.Message);
+            }
+            finally
+            {
+                if (client is not null)
+                {
+                    try
+                    {
+                        await client.DisposeAsync();
+                    }
+                    catch (Exception exception) when (IsExpectedSdkException(exception))
+                    {
+                        logger.LogWarning(
+                            exception,
+                            "Copilot SDK availability runtime did not shut down cleanly.");
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private bool TryResolveCopilotHome(out string copilotHome, out string? error)
     {
         error = null;
@@ -240,6 +463,7 @@ public sealed class CopilotSdkSessionManager(
             Win32Exception or
             SocketException or
             TimeoutException or
+            ArgumentException or
             JsonException ||
         string.Equals(
             exception.GetType().Namespace,
