@@ -77,12 +77,18 @@ public sealed class SessionStorageServiceTests
         var activity = new Mock<ICopilotSessionActivityReader>();
         activity.Setup(reader => reader.GetActiveSessionIds())
             .Returns(new HashSet<string>(["indexed"], StringComparer.OrdinalIgnoreCase));
+        var migrations = new Mock<ISessionMigrationRepository>();
+        migrations
+            .Setup(repository => repository.GetRecoveryProtectedSessionIdsAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(["indexed"], StringComparer.OrdinalIgnoreCase));
         var service = new SessionStorageService(
             storageRepository.Object,
             metadataSource.Object,
             overrides.Object,
             groups.Object,
             collections.Object,
+            migrations.Object,
             activity.Object);
 
         var dashboard = await service.GetDashboardAsync(CancellationToken.None);
@@ -93,7 +99,8 @@ public sealed class SessionStorageServiceTests
         Assert.True(indexed.IsActive);
         Assert.True(indexed.IsProtected);
         Assert.True(indexed.IsArchived);
-        Assert.Equal(4, indexed.ProtectionReasons.Count);
+        Assert.Equal(5, indexed.ProtectionReasons.Count);
+        Assert.Contains("Recovered session", indexed.ProtectionReasons);
         Assert.Equal(1, dashboard.Overview.IndexedOnlyCount);
         Assert.Equal(1, dashboard.Overview.LocalStateOnlyCount);
         Assert.Equal(150, dashboard.Overview.Categories.TotalBytes);

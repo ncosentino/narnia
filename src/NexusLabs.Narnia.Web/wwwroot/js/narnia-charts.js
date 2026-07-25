@@ -166,6 +166,41 @@ async function narniaLaunch(target, sessionId, btn) {
     }
 }
 
+async function narniaMigrateSession(sessionId, btn) {
+    if (!confirm(
+        'Recover this Copilot session in place? Narnia will archive the broken event stream, ' +
+        'retain the same folder and session ID, and use one bootstrap model response to reseed it.')) {
+        return;
+    }
+
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.classList.add('session-migrate-btn--working');
+    btn.textContent = '⏳ Recovering session in place…';
+    try {
+        var response = await fetch(
+            '/api/sessions/' + encodeURIComponent(sessionId) + '/migration',
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirmMigration: true }),
+            });
+        var body = await response.json().catch(function () { return null; });
+        if (!response.ok) {
+            throw new Error(body?.message || 'HTTP ' + response.status);
+        }
+
+        btn.textContent = '✅ Recovery complete';
+        window.location.assign(
+            '/sessions/' + encodeURIComponent(body.replacementSessionId));
+    } catch (e) {
+        alert('Session recovery failed: ' + e.message);
+        btn.disabled = false;
+        btn.classList.remove('session-migrate-btn--working');
+        btn.textContent = originalText;
+    }
+}
+
 async function narniaSaveSettings() {
     var shellInput = document.getElementById('setting-shell-path');
     var copilotInput = document.getElementById('setting-copilot-command');

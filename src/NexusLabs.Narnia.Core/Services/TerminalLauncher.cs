@@ -1,3 +1,6 @@
+using NexusLabs.Narnia.Core.Models;
+using NexusLabs.Narnia.Core.Repositories;
+
 namespace NexusLabs.Narnia.Core.Services;
 
 /// <summary>
@@ -9,7 +12,9 @@ namespace NexusLabs.Narnia.Core.Services;
 /// </summary>
 public sealed class TerminalLauncher(
     ITerminalCommandBuilder commandBuilder,
-    IProcessLauncher processLauncher) : ITerminalLauncher
+    IProcessLauncher processLauncher,
+    ISessionResumeSafetyReader resumeSafetyReader,
+    ISessionOperationCoordinator operationCoordinator) : ITerminalLauncher
 {
     /// <inheritdoc />
     public TerminalLaunchOutcome Launch(
@@ -22,12 +27,57 @@ public sealed class TerminalLauncher(
         if (tabs.Count == 0)
             return new TerminalLaunchOutcome([], []);
 
-        var wtPath = commandBuilder.FindWindowsTerminalPath();
+        var safeTabs = new List<TerminalLaunchTab>(tabs.Count);
+        var blocked = new List<TerminalLaunchFailure>();
+        var leases = new List<IDisposable>(tabs.Count);
+        try
+        {
+            foreach (var tab in tabs)
+            {
+                var lease = operationCoordinator.TryAcquire(tab.SessionId);
+                if (lease is null)
+                {
+                    blocked.Add(new TerminalLaunchFailure(
+                        tab.SessionId,
+                        "Session recovery or cleanup is currently in progress."));
+                    continue;
+                }
 
-        if (wtPath is not null && mode == TerminalWindowMode.SingleWindow)
-            return LaunchSingleWindow(wtPath, shellPath, shellName, tabs, copilotCommand);
+                var assessment = resumeSafetyReader.Inspect(tab.SessionId);
+                if (assessment.Safety == SessionResumeSafety.Incompatible)
+                {
+                    lease.Dispose();
+                    blocked.Add(new TerminalLaunchFailure(
+                        tab.SessionId,
+                        $"{assessment.Reason} Recover this session from its detail page."));
+                }
+                else
+                {
+                    leases.Add(lease);
+                    safeTabs.Add(tab);
+                }
+            }
 
-        return LaunchPerTab(wtPath, shellPath, shellName, tabs, copilotCommand);
+            if (safeTabs.Count == 0)
+                return new TerminalLaunchOutcome([], blocked);
+
+            var wtPath = commandBuilder.FindWindowsTerminalPath();
+
+            var outcome = wtPath is not null && mode == TerminalWindowMode.SingleWindow
+                ? LaunchSingleWindow(wtPath, shellPath, shellName, safeTabs, copilotCommand)
+                : LaunchPerTab(wtPath, shellPath, shellName, safeTabs, copilotCommand);
+
+            return blocked.Count == 0
+                ? outcome
+                : new TerminalLaunchOutcome(
+                    outcome.LaunchedSessionIds,
+                    [.. blocked, .. outcome.Failures]);
+        }
+        finally
+        {
+            foreach (var lease in leases)
+                lease.Dispose();
+        }
     }
 
     private TerminalLaunchOutcome LaunchSingleWindow(

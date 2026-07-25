@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NexusLabs.Narnia.Core.Configuration;
+using NexusLabs.Narnia.Core.Models;
 using NexusLabs.Narnia.Core.Repositories;
 using NexusLabs.Narnia.Core.Services;
 using NexusLabs.Narnia.Web;
@@ -55,5 +56,45 @@ public sealed class CopilotSdkSessionManagerTests
         var failure = Assert.Single(result);
         Assert.False(failure.Deleted);
         Assert.Contains("blank", failure.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CreateRecoverySessionAsync_EmptyBootstrap_ReturnsExplicitFailure()
+    {
+        var manager = new CopilotSdkSessionManager(
+            Mock.Of<INarniaSettingsRepository>(),
+            new NarniaOptions
+            {
+                SessionStatePath = @"C:\copilot\session-state",
+                DatabasePath = @"C:\copilot\session-store.db",
+            },
+            Mock.Of<IPowerShellHostResolver>(),
+            NullLogger<CopilotSdkSessionManager>.Instance);
+
+        var result = await manager.CreateRecoverySessionAsync(
+            new CopilotRecoverySessionRequest(
+                "11111111-1111-4111-8111-111111111111",
+                @"C:\repo",
+                " "),
+            Ct);
+
+        Assert.False(result.Created);
+        Assert.Contains("empty", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CheckSessionAvailabilityAsync_InvalidId_ReturnsExplicitFailure()
+    {
+        var manager = new CopilotSdkSessionManager(
+            Mock.Of<INarniaSettingsRepository>(),
+            new NarniaOptions(),
+            Mock.Of<IPowerShellHostResolver>(),
+            NullLogger<CopilotSdkSessionManager>.Instance);
+
+        var result = await manager.CheckSessionAvailabilityAsync("not-a-guid", Ct);
+
+        Assert.False(result.Checked);
+        Assert.False(result.Exists);
+        Assert.Contains("GUID", result.Error, StringComparison.Ordinal);
     }
 }

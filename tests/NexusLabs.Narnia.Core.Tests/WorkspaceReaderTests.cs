@@ -27,6 +27,9 @@ public sealed class WorkspaceReaderTests
         Assert.Null(result.GitRoot);
         Assert.Null(result.Name);
         Assert.False(result.IsUserNamed);
+        Assert.Null(result.ParentTaskId);
+        Assert.Null(result.ParentSessionId);
+        Assert.False(result.IsNestedAgent);
         Assert.Empty(result.ArtifactFiles);
     }
 
@@ -94,6 +97,23 @@ public sealed class WorkspaceReaderTests
 
         Assert.Equal("Generated session name", result.Name);
         Assert.False(result.IsUserNamed);
+    }
+
+    [Fact]
+    public void ReadWorkspace_NestedAgent_RecordsParentIdentifiers()
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [$@"{SessionDir}\workspace.yaml"] = new MockFileData(
+                "mc_task_id: task-123\nmc_session_id: session-456\n"),
+        });
+        var reader = new WorkspaceReader(CreateOptions(), fs);
+
+        var result = reader.ReadWorkspace(SessionId);
+
+        Assert.Equal("task-123", result.ParentTaskId);
+        Assert.Equal("session-456", result.ParentSessionId);
+        Assert.True(result.IsNestedAgent);
     }
 
     [Fact]

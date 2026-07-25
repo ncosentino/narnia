@@ -1,10 +1,10 @@
 ---
-description: Reference for Narnia MCP tools covering session history, local storage management, and scheduled Copilot jobs.
+description: Reference for Narnia MCP tools covering session history, broken-session recovery, local storage management, and scheduled Copilot jobs.
 ---
 
 # MCP Tools
 
-Narnia exposes twenty MCP tools: eight for session history, four for local session storage, and eight for Narnia-owned scheduled Copilot jobs. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
+Narnia exposes twenty-three MCP tools: eight for session history, three for broken-session recovery, four for local session storage, and eight for Narnia-owned scheduled Copilot jobs. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
 
 ## Session History Tools
 
@@ -33,6 +33,17 @@ After a machine restart, choose the field you actually know:
 5. `get_session_checkpoints` — read the last checkpoint to restore context
 
 Session-history tools are read-only and return JSON.
+
+## Broken Session Recovery Tools
+
+Recovery tools archive the broken event stream and ask Copilot to reseed the same session ID and
+folder. Narnia does not modify Chronicle.
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| [`preview_session_migration`](preview-session-migration.md) | Inspect compatibility and migration impact | `sessionId` |
+| [`migrate_broken_session`](migrate-broken-session.md) | Reseed the same session ID and folder | `sessionId`, `confirmMigration` |
+| [`get_session_recovery_packet`](get-session-recovery-packet.md) | Read archived recovery context in chunks | `sessionId`, `offset`, `maxCharacters` |
 
 ## Session Storage Tools
 

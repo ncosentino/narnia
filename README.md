@@ -15,11 +15,12 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 
 ## Features
 
-- **MCP Server** — one shared HTTP endpoint (`/mcp`) exposing 20 tools that any MCP-compatible client (including Copilot CLI) can call to search session history, inspect storage, clean up local sessions, and manage scheduled jobs — no per-client process to launch, every client talks to the same running instance
+- **MCP Server** — one shared HTTP endpoint (`/mcp`) exposing 23 tools that any MCP-compatible client (including Copilot CLI) can call to search session history, recover incompatible sessions, inspect storage, clean up local sessions, and manage scheduled jobs — no per-client process to launch, every client talks to the same running instance
 - **Web UI** — Blazor Static SSR local web interface for browsing, searching, favoriting, and reading session details, checkpoints, and conversation turns, with persistent browser-local table column widths
 - **Scheduled Jobs** — create, edit, and monitor Windows Task Scheduler-backed `copilot -p` jobs (daily/weekly/monthly) with hidden/headless execution and live log streaming, from the web UI or MCP
 - **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
 - **Session organization** — save exact, ordered Session Groups for reopening together and place related sessions in overlapping Collections that can span repositories
+- **Broken-session recovery** — detect incompatible Copilot event history, block unsafe launches, archive the broken stream, and have Copilot reseed the same session ID and folder
 - **Session storage** — measure per-session disk usage and growth, identify stale or risky sessions, and delete validated local data through the official Copilot SDK
 - **Session workspace** — reads supplemental metadata from `~/.copilot/session-state/` including git root and session artifact files
 
@@ -110,6 +111,9 @@ This is exactly what this repo's own [`.mcp.json`](.mcp.json) contains, so a Cop
 | `scan_session_storage` | Queue a background metadata-only storage scan |
 | `preview_local_session_cleanup` | Dry-run local cleanup safety and reclaim estimates |
 | `delete_local_sessions` | Permanently delete validated local session data through Copilot SDK |
+| `preview_session_migration` | Inspect resume compatibility and recoverable history |
+| `migrate_broken_session` | Reseed a broken session in its existing folder and ID |
+| `get_session_recovery_packet` | Read archived recovery context in bounded chunks |
 | `list_schedules` | All cataloged scheduled jobs joined to live task status |
 | `get_schedule` | A single scheduled job's full catalog entry by id |
 | `get_schedule_log` | Read the latest run log and whether the job is still running |
@@ -196,6 +200,7 @@ Narnia reads configuration from environment variables (or `appsettings.Developme
 | `NARNIA__DatabasePath` | Path to `session-store.db` | `~/.copilot/session-store.db` |
 | `NARNIA__SessionStatePath` | Path to session state directory | `~/.copilot/session-state` |
 | `NARNIA__SettingsDatabasePath` | Path to Narnia's own settings database (overrides, favorites, schedules, recorded terminal windows) | `<LocalAppData>/narnia/settings.db` |
+| `NARNIA__RecoveryDirectory` | Narnia-owned bounded recovery packets for migrated sessions | `<LocalAppData>/narnia/recoveries` |
 | `NARNIA__SnapshotterEnabled` | Whether the terminal-window snapshotter runs by default | `true` |
 | `NARNIA__SnapshotterIntervalSeconds` | Snapshot interval in seconds (minimum 5) | `60` |
 | `NARNIA__SnapshotterRetentionCount` | Number of recently-closed windows to retain | `50` |
