@@ -51,6 +51,7 @@ nav:
   - Broken Session Recovery: session-recovery.md
   - Session Storage: session-storage.md
   - Terminal Window Recovery: terminal-windows.md
+  - Portable Scheduled Jobs: schedule-portability.md
   - MCP Tools:
     - Overview: tools/index.md
     - list_recent_sessions: tools/list-recent-sessions.md
@@ -76,6 +77,10 @@ nav:
     - set_schedule_enabled: tools/set-schedule-enabled.md
     - run_schedule_now: tools/run-schedule-now.md
     - delete_schedule: tools/delete-schedule.md
+    - export_schedule_package: tools/export-schedule-package.md
+    - build_schedule_package: tools/build-schedule-package.md
+    - preview_schedule_package: tools/preview-schedule-package.md
+    - import_schedule_package: tools/import-schedule-package.md
   - Skills:
     - Overview: skills/index.md
     - narnia-web-server: skills/narnia-web-server.md

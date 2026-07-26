@@ -1,7 +1,9 @@
 @page "/schedules"
 @using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
 @using NexusLabs.Narnia.Core.Services
 @inject IScheduledJobService JobService
+@inject IScheduledJobImportRepository ImportRepository
 
 <PageTitle>Scheduled Jobs — Narnia</PageTitle>
 
@@ -39,10 +41,17 @@
 
 @if (_jobs.Count > 0)
 {
-    <h2>Cataloged <span class="window-meta">@_jobs.Count job@(_jobs.Count == 1 ? "" : "s")</span></h2>
+    <div class="schedule-package-toolbar">
+        <h2>Cataloged <span class="window-meta">@_jobs.Count job@(_jobs.Count == 1 ? "" : "s")</span></h2>
+        <div>
+            <button id="sched-export-transfer" class="btn-refresh" disabled onclick="narniaScheduleExportPackage('transfer')">Export for transfer</button>
+            <button id="sched-export-share" class="btn-refresh" disabled onclick="narniaScheduleExportPackage('share')">Export share template</button>
+        </div>
+    </div>
     <table class="schedule-table" data-resizable-table="scheduled-jobs">
         <thead>
             <tr>
+                <th class="schedule-select"><input id="sched-package-check-all" type="checkbox" onchange="narniaScheduleTogglePackageSelection(this)" title="Select all jobs for export" /></th>
                 <th>Job</th>
                 <th>Cadence</th>
                 <th>Health</th>
@@ -57,10 +66,15 @@
             @foreach (var view in _jobs)
             {
                 <tr>
+                    <td class="schedule-select"><input class="sched-package-check" type="checkbox" value="@view.Job.Id" onchange="narniaSchedulePackageSelectionChanged()" /></td>
                     <td>
                         <div class="schedule-name">@view.Job.Name</div>
                         <div class="schedule-sub">
                             <span class="schedule-task">@view.Job.TaskFolder@view.Job.TaskName</span>
+                            @if (_importsByJob.TryGetValue(view.Job.Id, out var imported))
+                            {
+                                <span class="badge-skill" title="Imported from package @imported.PackageId">imported</span>
+                            }
                         </div>
                     </td>
                     <td>@(view.Job.Cadence ?? "—")</td>
@@ -94,6 +108,24 @@
         </tbody>
     </table>
 }
+
+<div class="sched-package-panel">
+    <h2>Move or share scheduled work</h2>
+    <p class="settings-hint">
+        Import a <code>.narnia-schedules.json</code> package. Narnia previews path mappings,
+        dependencies, timezone differences, and task-name conflicts before creating anything.
+        Imported jobs are always registered disabled.
+    </p>
+    <div class="sched-package-file-row">
+        <input id="sched-package-file" type="file" accept=".json,.narnia-schedules.json,application/json" />
+        <button class="btn-refresh" onclick="narniaSchedulePreviewSelectedPackage()">Preview package</button>
+        <button class="btn-refresh" id="sched-package-refresh" style="display:none;" onclick="narniaScheduleRefreshPackagePreview()">Refresh preview</button>
+        <button class="launch-btn" id="sched-package-import" style="display:none;" disabled onclick="narniaScheduleImportPackage()">Import disabled</button>
+    </div>
+    <p id="sched-package-status" class="settings-hint"></p>
+    <div id="sched-package-bindings"></div>
+    <div id="sched-package-jobs"></div>
+</div>
 
 <div class="sched-create">
     <button type="button" class="sched-toggle-btn" id="sched-form-title" onclick="narniaToggleScheduleForm()">➕ New scheduled job</button>
@@ -172,6 +204,8 @@
 @code {
     private IReadOnlyList<ScheduledJobStatusView> _jobs = [];
     private IReadOnlyList<ScheduledTaskStatus> _untracked = [];
+    private IReadOnlyDictionary<string, ScheduledJobImportRecord> _importsByJob =
+        new Dictionary<string, ScheduledJobImportRecord>(StringComparer.Ordinal);
     private bool _schedulerSupported;
 
     protected override async Task OnInitializedAsync()
@@ -180,6 +214,10 @@
         _schedulerSupported = view.SchedulerSupported;
         _jobs = view.Jobs;
         _untracked = view.Untracked;
+        _importsByJob = (await ImportRepository.GetByJobIdsAsync(
+                _jobs.Select(job => job.Job.Id).ToArray(),
+                CancellationToken.None))
+            .ToDictionary(record => record.JobId, StringComparer.Ordinal);
     }
 
     private static string FormatTime(DateTimeOffset? time) =>

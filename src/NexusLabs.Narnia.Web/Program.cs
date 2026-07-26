@@ -88,8 +88,12 @@ builder.Services.AddSingleton<SqliteWorkCollectionsRepository>();
 builder.Services.AddSingleton<IWorkCollectionsRepository>(sp => sp.GetRequiredService<SqliteWorkCollectionsRepository>());
 builder.Services.AddSingleton<SqliteScheduledJobRegistry>();
 builder.Services.AddSingleton<IScheduledJobRegistry>(sp => sp.GetRequiredService<SqliteScheduledJobRegistry>());
+builder.Services.AddSingleton<SqliteScheduledJobImportRepository>();
+builder.Services.AddSingleton<IScheduledJobImportRepository>(
+    sp => sp.GetRequiredService<SqliteScheduledJobImportRepository>());
 builder.Services.AddSingleton<IScheduledJobWorkspace, ScheduledJobWorkspace>();
 builder.Services.AddSingleton<IScheduledJobService, ScheduledJobService>();
+builder.Services.AddSingleton<IScheduledJobPackageService, ScheduledJobPackageService>();
 builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
 builder.Services.AddSingleton<IProcessLauncher, ShellExecuteProcessLauncher>();
 builder.Services.AddSingleton<ITerminalLauncher, TerminalLauncher>();
@@ -135,6 +139,7 @@ builder.Services
     .WithHttpTransport(httpOptions => httpOptions.Stateless = true)
     .WithTools<SessionTools>()
     .WithTools<ScheduleTools>()
+    .WithTools<SchedulePackageTools>()
     .WithTools<StorageTools>()
     .WithTools<SessionMigrationTools>();
 
@@ -884,7 +889,9 @@ app.MapDelete("/api/schedules/{id}", async (
     string id, IScheduledJobService jobService, CancellationToken ct) =>
 {
     var result = await jobService.DeleteAsync(id, ct);
-    return result.NotFound ? Results.NotFound(result.Error) : Results.NoContent();
+    if (result.NotFound)
+        return Results.NotFound(result.Error);
+    return result.Ok ? Results.NoContent() : Results.BadRequest(result.Error);
 });
 
 app.MapGet("/api/schedules/{id}/log", async (
@@ -895,6 +902,96 @@ app.MapGet("/api/schedules/{id}/log", async (
         return Results.NotFound("Job not found");
 
     return Results.Ok(new { found = log.Found, path = log.Path, content = log.Content, truncated = log.Truncated, isRunning = log.IsRunning });
+});
+
+// ── Portable scheduled-job packages ─────────────────────────────────────────
+app.MapPost("/api/schedule-packages/export", async (
+    SchedulePackageExportHttpRequest request,
+    IScheduledJobPackageService packageService,
+    CancellationToken ct) =>
+{
+    if (!SchedulePackageRequestMapping.TryParseProfile(request.Profile, out var profile))
+        return Results.BadRequest("Profile must be 'transfer' or 'share'.");
+
+    var result = await packageService.ExportAsync(
+        new ScheduledJobPackageExportRequest(request.JobIds ?? [], profile),
+        ct);
+    return Results.Json(
+        result,
+        SchedulePackageWebJsonContext.Default.ScheduledJobPackageExportResult,
+        statusCode: result.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
+app.MapPost("/api/schedule-packages/build", async (
+    SchedulePackageBuildHttpRequest request,
+    IScheduledJobPackageService packageService,
+    CancellationToken ct) =>
+{
+    if (!SchedulePackageRequestMapping.TryParseProfile(request.Profile, out var profile))
+        return Results.BadRequest("Profile must be 'transfer' or 'share'.");
+
+    var definitions = new List<ScheduledJobDefinition>(request.Jobs?.Length ?? 0);
+    foreach (var job in request.Jobs ?? [])
+    {
+        var normalized = ScheduledJobDefinitions.FromInput(job.ToInput());
+        if (normalized.Error is not null)
+            return Results.BadRequest(normalized.Error);
+        definitions.Add(normalized.Definition!);
+    }
+    var dependencies = new List<ScheduledJobPackageDependency>(request.Dependencies?.Length ?? 0);
+    foreach (var dependency in request.Dependencies ?? [])
+    {
+        if (!dependency.TryToModel(out var model))
+            return Results.BadRequest(
+                $"Dependency '{dependency.Id}' kind must be 'configuration' or 'externalState'.");
+        dependencies.Add(model!);
+    }
+
+    var result = await packageService.BuildAsync(
+        new ScheduledJobPackageBuildRequest(
+            definitions,
+            dependencies,
+            profile),
+        ct);
+    return Results.Json(
+        result,
+        SchedulePackageWebJsonContext.Default.ScheduledJobPackageExportResult,
+        statusCode: result.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
+app.MapPost("/api/schedule-packages/preview", async (
+    SchedulePackagePreviewHttpRequest request,
+    IScheduledJobPackageService packageService,
+    CancellationToken ct) =>
+{
+    var result = await packageService.PreviewAsync(
+        new ScheduledJobPackagePreviewRequest(
+            request.PackageJson,
+            (request.Bindings ?? []).Select(binding => binding.ToModel()).ToArray(),
+            (request.Jobs ?? []).Select(job => job.ToModel()).ToArray()),
+        ct);
+    return Results.Json(
+        result,
+        SchedulePackageWebJsonContext.Default.ScheduledJobPackagePreviewResult,
+        statusCode: result.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+});
+
+app.MapPost("/api/schedule-packages/import", async (
+    SchedulePackageImportHttpRequest request,
+    IScheduledJobPackageService packageService,
+    CancellationToken ct) =>
+{
+    var result = await packageService.ImportAsync(
+        new ScheduledJobPackageImportRequest(
+            request.PackageJson,
+            (request.Bindings ?? []).Select(binding => binding.ToModel()).ToArray(),
+            (request.Jobs ?? []).Select(job => job.ToModel()).ToArray(),
+            request.PreviewFingerprint),
+        ct);
+    return Results.Json(
+        result,
+        SchedulePackageWebJsonContext.Default.ScheduledJobPackageImportResult,
+        statusCode: result.Ok ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 });
 
 // ── Logon autostart API ─────────────────────────────────────────────────────
@@ -1122,6 +1219,88 @@ internal static class ScheduleRequestMapping
 }
 
 internal sealed record ScheduleEnableRequest(bool Enabled);
+
+internal sealed record SchedulePackageExportHttpRequest(
+    string[]? JobIds,
+    string Profile);
+
+internal sealed record SchedulePackageBuildHttpRequest(
+    ScheduleCreateRequest[]? Jobs,
+    SchedulePackageDependencyHttpRequest[]? Dependencies,
+    string Profile);
+
+internal sealed record SchedulePackageDependencyHttpRequest(
+    string Id,
+    string Kind,
+    string Name,
+    bool Required,
+    string? BindingId,
+    string? RelativePath,
+    string? Description)
+{
+    public bool TryToModel(out ScheduledJobPackageDependency? dependency)
+    {
+        ScheduledJobPackageDependencyKind kind;
+        if (string.Equals(Kind, "externalState", StringComparison.OrdinalIgnoreCase))
+            kind = ScheduledJobPackageDependencyKind.ExternalState;
+        else if (string.Equals(Kind, "configuration", StringComparison.OrdinalIgnoreCase))
+            kind = ScheduledJobPackageDependencyKind.Configuration;
+        else
+        {
+            dependency = null;
+            return false;
+        }
+
+        dependency = new ScheduledJobPackageDependency(
+            Id,
+            kind,
+            Name,
+            Required,
+            null,
+            null,
+            null,
+            BindingId,
+            RelativePath,
+            Description);
+        return true;
+    }
+}
+
+internal sealed record SchedulePackageBindingHttpRequest(
+    string Id,
+    string Value)
+{
+    public ScheduledJobPackageBindingValue ToModel() => new(Id, Value);
+}
+
+internal sealed record SchedulePackageJobOptionsHttpRequest(
+    string PortableJobId,
+    string? TaskName,
+    bool AllowDuplicate,
+    bool Skip)
+{
+    public ScheduledJobPackageJobOptions ToModel() =>
+        new(PortableJobId, TaskName, AllowDuplicate, Skip);
+}
+
+internal sealed record SchedulePackagePreviewHttpRequest(
+    string PackageJson,
+    SchedulePackageBindingHttpRequest[]? Bindings,
+    SchedulePackageJobOptionsHttpRequest[]? Jobs);
+
+internal sealed record SchedulePackageImportHttpRequest(
+    string PackageJson,
+    SchedulePackageBindingHttpRequest[]? Bindings,
+    SchedulePackageJobOptionsHttpRequest[]? Jobs,
+    string PreviewFingerprint);
+
+internal static class SchedulePackageRequestMapping
+{
+    public static bool TryParseProfile(
+        string value,
+        out ScheduledJobPackageProfile profile) =>
+        Enum.TryParse(value, ignoreCase: true, out profile);
+}
 
 internal sealed record AutostartRequest(bool Enabled);
 

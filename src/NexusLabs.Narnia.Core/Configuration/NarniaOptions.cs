@@ -9,6 +9,12 @@ public sealed class NarniaOptions
     public string SessionStatePath { get; set; } = GetDefaultSessionStatePath();
 
     /// <summary>
+    /// Read-only Copilot plugin installation root used to validate package skill dependencies.
+    /// Narnia never writes to this directory.
+    /// </summary>
+    public string InstalledPluginsPath { get; set; } = GetDefaultInstalledPluginsPath();
+
+    /// <summary>
     /// Directory for Narnia-owned recovery packets created when a Copilot session cannot be
     /// resumed safely.
     /// </summary>
@@ -84,6 +90,11 @@ public sealed class NarniaOptions
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".copilot", "session-state");
+
+    private static string GetDefaultInstalledPluginsPath() =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".copilot", "installed-plugins");
 
     private static string GetDefaultRecoveryDirectory() =>
         Path.Combine(

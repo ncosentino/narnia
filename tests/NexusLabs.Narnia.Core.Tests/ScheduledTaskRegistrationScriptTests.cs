@@ -12,7 +12,8 @@ public sealed class ScheduledTaskRegistrationScriptTests
         Execute: "powershell.exe",
         Arguments: "-NoProfile -File 'C:\\s\\run.ps1' -Lookback 24h",
         WorkingDirectory: @"C:\dev\repo",
-        Cadence: cadence);
+        Cadence: cadence,
+        Enabled: true);
 
     [Fact]
     public void Build_Daily_EmitsDailyTriggerAndMarker()
@@ -62,6 +63,37 @@ public sealed class ScheduledTaskRegistrationScriptTests
             Reg(new ScheduleCadence(ScheduleCadenceKind.Monthly, new TimeOnly(6, 0), [], DayOfMonth: 15)));
 
         Assert.Contains("<Day>15</Day>", script);
+    }
+
+    [Fact]
+    public void Build_DisabledDaily_RegistersWithDisabledSettingsAtomically()
+    {
+        var registration = Reg(
+            new ScheduleCadence(ScheduleCadenceKind.Daily, new TimeOnly(5, 0), [])) with
+        {
+            Enabled = false,
+        };
+
+        var script = ScheduledTaskRegistrationScript.Build(registration);
+
+        Assert.Contains("-Settings (New-ScheduledTaskSettingsSet -Disable)", script);
+        Assert.DoesNotContain("Disable-ScheduledTask", script);
+    }
+
+    [Fact]
+    public void Build_DisabledMonthly_WritesDisabledTaskXml()
+    {
+        var registration = Reg(
+            new ScheduleCadence(ScheduleCadenceKind.Monthly, new TimeOnly(6, 0), [], DayOfMonth: 1)) with
+        {
+            Enabled = false,
+        };
+
+        var script = ScheduledTaskRegistrationScript.Build(registration);
+
+        Assert.Contains("<Settings>", script);
+        Assert.Contains("<Enabled>false</Enabled>", script);
+        Assert.DoesNotContain("Disable-ScheduledTask", script);
     }
 
     [Fact]

@@ -1,10 +1,12 @@
 ---
-description: Reference for Narnia MCP tools covering session history, broken-session recovery, local storage management, and scheduled Copilot jobs.
+description: Reference for Narnia MCP tools covering session history, recovery, storage, and portable scheduled Copilot jobs.
 ---
 
 # MCP Tools
 
-Narnia exposes twenty-three MCP tools: eight for session history, three for broken-session recovery, four for local session storage, and eight for Narnia-owned scheduled Copilot jobs. Use them from any AI assistant that supports the Model Context Protocol — including GitHub Copilot CLI, Claude Desktop, Cursor, and VS Code.
+Narnia exposes twenty-seven MCP tools: eight for session history, three for broken-session recovery,
+four for local session storage, eight for scheduled-job management, and four for file-based schedule
+portability. Use them from any AI assistant that supports the Model Context Protocol.
 
 ## Session History Tools
 
@@ -61,7 +63,10 @@ Narnia-owned metadata remain.
 
 ## Scheduled Job Tools
 
-Manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that Windows Task Scheduler executes unattended on a daily/weekly/monthly cadence. See the [narnia-scheduler skill](../skills/narnia-scheduler.md) for the full create/migrate/verify workflow built on top of these tools.
+Manage and transfer Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that Windows
+Task Scheduler executes unattended. See the
+[narnia-scheduler skill](../skills/narnia-scheduler.md) for create, migration, packaging, import,
+verification, and handoff workflows.
 
 | Tool | Purpose | Key Parameters |
 |------|---------|----------------|
@@ -73,5 +78,12 @@ Manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that 
 | [`set_schedule_enabled`](set-schedule-enabled.md) | Enable/disable a job's task | `id`, `enabled` |
 | [`run_schedule_now`](run-schedule-now.md) | Start a job's task immediately | `id` |
 | [`delete_schedule`](delete-schedule.md) | Remove a job's task, wrapper, and catalog entry | `id` |
+| [`export_schedule_package`](export-schedule-package.md) | Export selected Narnia jobs | `jobIds`, `profile` |
+| [`build_schedule_package`](build-schedule-package.md) | Package definitions reconstructed from external tasks | `jobs`, `profile` |
+| [`preview_schedule_package`](preview-schedule-package.md) | Resolve bindings and inspect destination readiness | `packageJson` |
+| [`import_schedule_package`](import-schedule-package.md) | Import an accepted preview as disabled jobs | `packageJson`, `previewFingerprint` |
 
 These tools are backed by the same service as the web UI's Schedules page — creating or editing a job through either surface is immediately visible in the other.
+
+See [Portable Scheduled Jobs](../schedule-portability.md) for the complete transfer and handoff
+workflow.

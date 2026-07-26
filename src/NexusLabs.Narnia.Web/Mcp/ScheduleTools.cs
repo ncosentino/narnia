@@ -188,6 +188,8 @@ internal sealed class ScheduleTools(IScheduledJobService jobService)
             var result = await jobService.DeleteAsync(id, cancellationToken);
             if (result.NotFound)
                 return $"Error: no scheduled job with id '{id}'.";
+            if (!result.Ok)
+                return $"Error: {result.Error}";
 
             return JsonSerializer.Serialize(new ScheduleMutationMcpDto(true, id), McpJsonContext.Default.ScheduleMutationMcpDto);
         }

@@ -277,4 +277,17 @@ public sealed class ScheduleToolsTests
 
         Assert.StartsWith("Error:", result);
     }
+
+    [Fact]
+    public async Task DeleteScheduleAsync_ServiceFailure_ReturnsErrorString()
+    {
+        _jobService.Setup(service => service.DeleteAsync(
+                "job-1",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ScheduledJobMutationResult.Failure("task is locked"));
+
+        var result = await CreateTools().DeleteScheduleAsync("job-1", Ct);
+
+        Assert.Equal("Error: task is locked", result);
+    }
 }

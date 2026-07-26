@@ -57,28 +57,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-
-function Get-LocalTimeFromBoundary {
-    param([string]$StartBoundary)
-    if ([string]::IsNullOrWhiteSpace($StartBoundary)) { return $null }
-    # StartBoundary is an ISO-8601 local wall-clock time, with or without a timezone offset suffix
-    # (e.g. "2024-01-01T06:15:00" or "2026-07-01T06:00:00-07:00"). Either way the HH:mm right after
-    # 'T' is the local fire time Narnia's cadence cares about.
-    $m = [regex]::Match($StartBoundary, 'T(\d{2}:\d{2})')
-    if ($m.Success) { return $m.Groups[1].Value }
-    return $null
-}
-
-function Resolve-ScriptPathFromArguments {
-    param([string]$Arguments)
-    if ([string]::IsNullOrWhiteSpace($Arguments)) { return $null }
-    $m = [regex]::Match($Arguments, '-File\s+"([^"]+)"')
-    if (-not $m.Success) { $m = [regex]::Match($Arguments, '-File\s+(\S+)') }
-    if (-not $m.Success) { return $null }
-    $path = $m.Groups[1].Value
-    if (Test-Path -LiteralPath $path -PathType Leaf) { return (Resolve-Path -LiteralPath $path).Path }
-    return $path # surfaced even if unresolvable, so the caller can see what was attempted
-}
+. (Join-Path $PSScriptRoot 'ScheduledTaskIntrospection.ps1')
 
 $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
 if (-not $task) {
@@ -88,7 +67,7 @@ if (-not $task) {
 
 $info = Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
 $action = $task.Actions | Select-Object -First 1
-$resolvedScript = Resolve-ScriptPathFromArguments -Arguments $action.Arguments
+$resolvedScript = Resolve-NarniaScriptPathFromArguments -Arguments $action.Arguments
 
 [xml]$xml = Export-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
 $triggerNodes = @($xml.Task.Triggers.ChildNodes)
@@ -105,7 +84,7 @@ if ($triggerNodes.Count -eq 0) {
 }
 
 foreach ($node in $triggerNodes) {
-    $time = Get-LocalTimeFromBoundary -StartBoundary $node.StartBoundary
+    $time = Get-NarniaLocalTimeFromBoundary -StartBoundary $node.StartBoundary
     $cadenceKind = $null; $days = $null; $dayOfMonth = $null; $supported = $true
 
     if ($node.ScheduleByDay) {

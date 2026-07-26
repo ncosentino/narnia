@@ -21,6 +21,8 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         Path.GetTempPath(), $"narnia_web_test_{Guid.NewGuid():N}.db");
     private readonly string _recoveryDirectory = Path.Combine(
         Path.GetTempPath(), $"narnia_web_recovery_{Guid.NewGuid():N}");
+    private readonly string _installedPluginsPath = Path.Combine(
+        Path.GetTempPath(), $"narnia_web_plugins_{Guid.NewGuid():N}");
 
     /// <summary>Mock session repository used for tab metadata enrichment.</summary>
     public Mock<ISessionRepository> SessionRepository { get; } = new();
@@ -95,10 +97,14 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
         ScheduledJobWorkspace.Setup(w => w.ScriptPath(It.IsAny<string>()))
             .Returns((string id) => $@"C:\narnia\schedules\{id}\run.ps1");
+        ScheduledJobWorkspace.Setup(w => w.LauncherPath(It.IsAny<string>()))
+            .Returns((string id) => $@"C:\narnia\schedules\{id}\run.vbs");
         ScheduledJobWorkspace.Setup(w => w.LogDirectory(It.IsAny<string>()))
             .Returns((string id) => $@"C:\narnia\schedules\{id}\logs");
         ScheduledJobWorkspace.Setup(w => w.WriteScriptAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string id, string _, CancellationToken _) => $@"C:\narnia\schedules\{id}\run.ps1");
+        ScheduledJobWorkspace.Setup(w => w.WriteLauncherAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string id, string _, CancellationToken _) => $@"C:\narnia\schedules\{id}\run.vbs");
 
         SessionActivityReader
             .Setup(reader => reader.GetActiveSessionIds())
@@ -179,6 +185,10 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     public IScheduledJobRegistry ScheduledJobRegistry =>
         Services.GetRequiredService<IScheduledJobRegistry>();
 
+    /// <summary>The real temp-database-backed scheduled-job import provenance repository.</summary>
+    public IScheduledJobImportRepository ScheduledJobImports =>
+        Services.GetRequiredService<IScheduledJobImportRepository>();
+
     /// <summary>The real temp-database-backed session storage repository.</summary>
     public ISessionStorageRepository StorageRepository =>
         Services.GetRequiredService<ISessionStorageRepository>();
@@ -188,6 +198,7 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Testing");
         builder.UseSetting("Narnia:SettingsDatabasePath", _settingsDbPath);
         builder.UseSetting("Narnia:RecoveryDirectory", _recoveryDirectory);
+        builder.UseSetting("Narnia:InstalledPluginsPath", _installedPluginsPath);
         builder.UseSetting("Narnia:SnapshotterEnabled", "false");
 
         builder.ConfigureTestServices(services =>
