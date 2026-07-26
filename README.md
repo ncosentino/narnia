@@ -15,9 +15,9 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 
 ## Features
 
-- **MCP Server** — one shared HTTP endpoint (`/mcp`) exposing 23 tools that any MCP-compatible client (including Copilot CLI) can call to search session history, recover incompatible sessions, inspect storage, clean up local sessions, and manage scheduled jobs — no per-client process to launch, every client talks to the same running instance
+- **MCP Server** — one shared HTTP endpoint (`/mcp`) exposing 27 tools that any MCP-compatible client (including Copilot CLI) can call to search session history, recover incompatible sessions, inspect storage, clean up local sessions, and manage or transfer scheduled jobs — no per-client process to launch, every client talks to the same running instance
 - **Web UI** — Blazor Static SSR local web interface for browsing, searching, favoriting, and reading session details, checkpoints, and conversation turns, with persistent browser-local table column widths
-- **Scheduled Jobs** — create, edit, and monitor Windows Task Scheduler-backed `copilot -p` jobs (daily/weekly/monthly) with hidden/headless execution and live log streaming, from the web UI or MCP
+- **Scheduled Jobs** — create, edit, monitor, export, share, and safely import Windows Task Scheduler-backed `copilot -p` jobs with hidden execution, live logs, portable file packages, and disabled-first destination registration
 - **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
 - **Session organization** — save exact, ordered Session Groups for reopening together and place related sessions in overlapping Collections that can span repositories
 - **Broken-session recovery** — detect incompatible Copilot event history, block unsafe launches, archive the broken stream, and have Copilot reseed the same session ID and folder
@@ -122,6 +122,10 @@ This is exactly what this repo's own [`.mcp.json`](.mcp.json) contains, so a Cop
 | `set_schedule_enabled` | Enable/disable a scheduled job's task |
 | `run_schedule_now` | Start a scheduled job's task immediately |
 | `delete_schedule` | Remove a scheduled job's task, wrapper, and catalog entry |
+| `export_schedule_package` | Export selected jobs as a transfer package or share template |
+| `build_schedule_package` | Package definitions reconstructed from non-Narnia tasks |
+| `preview_schedule_package` | Inspect destination bindings, dependencies, conflicts, and timezone |
+| `import_schedule_package` | Import an accepted preview as new disabled jobs |
 
 ---
 
@@ -134,7 +138,7 @@ Narnia ships with agentic skills that can be loaded by Copilot CLI or Claude Cod
 | Skill | Description |
 |-------|-------------|
 | `narnia-web-server` | Start, stop, restart, and check status of the Narnia web UI |
-| `narnia-scheduler` | Create, migrate, and manage Narnia-owned scheduled Copilot jobs |
+| `narnia-scheduler` | Create, migrate, move, share, and manage scheduled Copilot jobs |
 | `narnia-report-email` | Render Markdown reports as HTML and explicitly deliver them through a reusable SMTP profile |
 
 ### Installing as a Plugin
@@ -246,7 +250,7 @@ PowerShell 7; installing and running the resulting release does not.
 narnia/
   skills/
     narnia-web-server/            # Agentic skill for web UI + MCP server lifecycle management
-    narnia-scheduler/             # Agentic skill for scheduled Copilot job create/migrate/verify
+    narnia-scheduler/             # Create/migrate/export/import/verify scheduled Copilot jobs
     narnia-report-email/          # Deterministic Markdown report rendering + explicit SMTP delivery
   src/
     NexusLabs.Narnia.Core/        # Shared library — trim-safe, AOT-compatible

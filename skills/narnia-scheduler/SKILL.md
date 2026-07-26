@@ -1,31 +1,33 @@
 ---
 name: narnia-scheduler
 description: >
-  Create, migrate, and manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs
+  Create, migrate, move, share, and manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs
   that Windows Task Scheduler executes unattended on a daily/weekly/monthly cadence. Use to
   schedule a new recurring job, migrate an existing hand-built Windows Scheduled Task into Narnia,
-  run a supervised dry-run before trusting a schedule, or inspect/enable/disable/run/delete a
-  cataloged job.
+  export/import portable schedule packages between computers or users, run a supervised dry-run
+  before trusting a schedule, or inspect/enable/disable/run/delete a cataloged job.
 license: MIT
 compatibility: Windows only — depends on the ScheduledTasks PowerShell module and Narnia's MCP schedule tools being available.
 metadata:
   author: nexus-labs
-  version: "1.0"
+  version: "1.1"
 allowed-tools: PowerShell(*) Read Write
 ---
 
 # Narnia Scheduler
 
-Create, migrate, and manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that
-Windows Task Scheduler executes unattended on a daily/weekly/monthly cadence. This skill is the
-workflow layer on top of Narnia's schedule MCP tools, which are already available as regular tool
-calls in any session sharing Narnia's MCP endpoint — there is no HTTP API or script to shell out to
-for the core create/read/update/delete work.
+Create, migrate, move, share, and manage Narnia-owned scheduled Copilot jobs — recurring
+`copilot -p` runs that Windows Task Scheduler executes unattended on a daily/weekly/monthly cadence.
+This skill is the workflow layer on top of Narnia's schedule and package MCP tools, which are already
+available as regular tool calls in any session sharing Narnia's MCP endpoint.
 
 ## When to Use
 
 - User asks to schedule a recurring Copilot task ("run this every morning", "email me a weekly report").
 - User asks to migrate an existing Windows Scheduled Task they set up by hand into Narnia.
+- User asks to move scheduled work to another computer without shared/server state.
+- User asks to export or share one or more Narnia schedules with another user.
+- User asks to inspect or import a `.narnia-schedules.json` package.
 - User asks to list, inspect, enable/disable, run-now, or delete a scheduled job.
 
 ## Design invariants (read before acting)
@@ -50,6 +52,16 @@ for the core create/read/update/delete work.
   generates the wrapper; it does not understand what a job's prompt does.
 - **Prefer disabling over deleting when migrating.** Keep the original scheduled task as a disabled
   backup until the Narnia-owned replacement has proven itself on at least one real run.
+- **Packages contain declarations, never machine execution artifacts.** Do not copy `settings.db`,
+  Task Scheduler XML, generated `run.ps1`/`run.vbs`, logs, Copilot sessions, or source job folders.
+  The destination regenerates all of those locally.
+- **Never package secrets.** A package may name a required profile, environment key, or state file,
+  but must never contain credentials, `.env` contents, tokens, SMTP values, or database passwords.
+  Package creation rejects obvious credential-like literals; if it does, move that value into
+  destination-local configuration instead of weakening or bypassing the check.
+- **Imports are staged disabled.** `import_schedule_package` creates new local Narnia ids and
+  atomically disabled Task Scheduler entries. Never enable an imported job until its dependencies,
+  rendered prompt, and supervised dry run have been reviewed.
 
 ## The MCP tools (primitives — call these directly, no scripts needed)
 
@@ -62,6 +74,10 @@ for the core create/read/update/delete work.
 | `set_schedule_enabled` | Enable/disable a job's OS task without deleting it |
 | `run_schedule_now` | Start a job's OS task immediately, out of band from its cadence |
 | `delete_schedule` | Remove a job's OS task, wrapper, and catalog entry (irreversible) |
+| `export_schedule_package` | Export selected Narnia jobs as a transfer package or share template |
+| `build_schedule_package` | Package canonical definitions reconstructed from non-Narnia tasks |
+| `preview_schedule_package` | Resolve bindings and inspect conflicts/dependencies without side effects |
+| `import_schedule_package` | Materialize an accepted preview as new disabled Narnia jobs |
 
 These are already available as normal tool calls — do not shell out to an HTTP API or the web UI to
 do what these tools do directly.
@@ -109,6 +125,64 @@ do what these tools do directly.
    Disable-ScheduledTask -TaskName "<name>" -TaskPath "<folder>"
    ```
    Keep it as a backup until the new job has completed at least one real unattended run.
+
+## Flow C: export existing Narnia jobs
+
+1. Call `list_schedules` and identify the exact job ids.
+2. Choose the package profile from the user's intent:
+   - `transfer`: moving work between machines they control; retains non-secret source path hints.
+   - `share`: sending a reusable template to someone else; removes source-local hints and identity.
+3. Call `export_schedule_package` with every selected id in one request.
+4. Review the returned warnings and package JSON. Confirm it contains no credential values or
+   source-only state that should not be shared.
+5. Write the exact `packageJson` to a `.narnia-schedules.json` file in the current Copilot session
+   workspace and return its absolute path. Do not hand-edit generated fingerprints.
+
+Generated wrappers, task XML, logs, task history, and the Narnia settings database are intentionally
+absent. The destination will generate new local ids, scripts, and task registrations.
+
+## Flow D: package scheduled work from a machine that does not use Narnia
+
+1. Discover likely candidates with the read-only helper:
+   ```powershell
+   & "<skill-dir>/scripts/Find-CopilotScheduledTasks.ps1" | Format-Table -AutoSize
+   ```
+   It does not read wrapper contents or modify tasks. Let the user identify the intended tasks.
+2. Run `Read-ExistingScheduledTask.ps1` for each selected task and trigger.
+3. If `ResolvedScriptPath` is present, read only that selected script. Determine:
+   - The actual Copilot prompt and flags.
+   - Any environment setup the wrapper currently injects.
+   - Repo-local scripts/skills and their required working directory.
+   - External durable state, configuration files, and named profiles.
+4. Reconstruct a self-contained `ScheduledJobDefinition` for every supported trigger. Multiple
+   triggers remain separate package jobs.
+5. Call `build_schedule_package`, including every identified configuration or omitted external-state
+   requirement in its `dependencies` array; do not create a temporary local Narnia schedule first.
+6. Save the returned `packageJson` as a `.narnia-schedules.json` artifact.
+7. Leave every source task unchanged. Unsupported triggers or wrapper behavior must be reported,
+   not approximated silently.
+
+## Flow E: preview, import, and hand off on the destination
+
+1. Read the package file and call `preview_schedule_package` with empty `bindings`/`jobs` arrays and
+   no guessed values.
+2. Resolve every required binding explicitly:
+   - Map working repositories/directories to destination paths.
+   - Confirm repo-local skill files exist.
+   - Install missing plugins separately through supported Copilot plugin commands.
+   - Configure named profiles and secrets locally; never add their values to the package.
+3. Resolve task-name conflicts with explicit per-job task-name overrides.
+4. Re-run preview with the exact bindings and options until every intended job has
+   `canImport: true`. Review timezone warnings, broad allow flags, the rendered prompt, and any
+   omitted external state.
+5. Call `import_schedule_package` with the unchanged package JSON, identical bindings/options, and
+   the latest preview fingerprint.
+6. Save the returned receipt. Every imported job is disabled.
+7. Run a supervised dry run of each rendered job before enabling it.
+8. Enable the destination jobs explicitly with `set_schedule_enabled`.
+9. Only after the destination has proven itself, return to the source machine and disable the exact
+   original tasks. Prefer using the receipt mapping as the handoff record. Never delete them during
+   the initial transfer.
 
 ## Writing a self-contained prompt (checklist)
 
@@ -195,3 +269,7 @@ on deliberately) rather than trying to make the dry-run script guess what's safe
 - **A job's prompt is its entire behavior.** Narnia never edits a user's own scripts and has no
   hidden orchestration beyond generating the wrapper and registering the task — everything the job
   does is exactly what its prompt says.
+- **Definition transfer is not state transfer.** Packages report external caches, checkpoints,
+  configuration, or databases when known, but schema v1 never copies them automatically.
+- **Treat packages as executable intent.** Import only packages from a trusted source and review the
+  rendered prompt, allow flags, dependencies, and destination paths before enabling anything.

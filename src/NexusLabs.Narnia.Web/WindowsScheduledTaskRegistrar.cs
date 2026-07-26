@@ -39,7 +39,14 @@ public sealed class WindowsScheduledTaskRegistrar : IScheduledTaskRegistrar
     /// <inheritdoc />
     public ValueTask<ScheduledTaskCommandResult> DeleteAsync(
         string folder, string name, CancellationToken ct = default) =>
-        RunAsync($"Unregister-ScheduledTask -TaskName '{Esc(name)}' -TaskPath '{Esc(folder)}' -Confirm:$false", ct);
+        RunAsync(
+            "$task = Get-ScheduledTask -TaskName '" + Esc(name) +
+            "' -TaskPath '" + Esc(folder) +
+            "' -ErrorAction SilentlyContinue; if ($null -ne $task) { " +
+            "Unregister-ScheduledTask -TaskName '" + Esc(name) +
+            "' -TaskPath '" + Esc(folder) +
+            "' -Confirm:$false }",
+            ct);
 
     private static async ValueTask<ScheduledTaskCommandResult> RunAsync(string script, CancellationToken ct)
     {

@@ -50,6 +50,10 @@ public sealed record ScheduleCadence(
 /// <param name="Arguments">Arguments passed to the executable.</param>
 /// <param name="WorkingDirectory">The working directory, or <c>null</c> to inherit.</param>
 /// <param name="Cadence">When the task fires.</param>
+/// <param name="Enabled">
+/// Whether the task is enabled at the instant it is registered. Imports use <c>false</c> so copied
+/// work cannot execute before its target-machine dependencies have been reviewed.
+/// </param>
 public sealed record ScheduledTaskRegistration(
     string JobId,
     string Folder,
@@ -57,4 +61,5 @@ public sealed record ScheduledTaskRegistration(
     string Execute,
     string Arguments,
     string? WorkingDirectory,
-    ScheduleCadence Cadence);
+    ScheduleCadence Cadence,
+    bool Enabled);

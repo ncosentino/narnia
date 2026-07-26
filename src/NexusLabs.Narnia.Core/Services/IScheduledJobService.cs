@@ -149,6 +149,14 @@ public interface IScheduledJobService
     /// </summary>
     ValueTask<ScheduledJobCreateResult> CreateAsync(ScheduledJobInput input, bool register, CancellationToken ct = default);
 
+    /// <summary>
+    /// Creates and catalogs a Narnia-owned job whose OS task is disabled atomically during
+    /// registration. This is the safe materialization path for imported definitions.
+    /// </summary>
+    ValueTask<ScheduledJobCreateResult> CreateDisabledAsync(
+        ScheduledJobInput input,
+        CancellationToken ct);
+
     /// <summary>Updates an existing job's definition and re-registers its OS task in place.</summary>
     ValueTask<ScheduledJobMutationResult> UpdateAsync(string id, ScheduledJobInput input, CancellationToken ct = default);
 

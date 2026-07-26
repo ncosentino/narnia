@@ -1,8 +1,11 @@
 # narnia-scheduler
 
-Create, migrate, and manage Narnia-owned scheduled Copilot jobs — recurring `copilot -p` runs that Windows Task Scheduler executes unattended on a daily, weekly, or monthly cadence.
+Create, migrate, move, share, and manage Narnia-owned scheduled Copilot jobs.
 
-This skill is a thin workflow layer over the [scheduled-job MCP tools](../tools/index.md#scheduled-job-tools) (`list_schedules`, `get_schedule`, `create_schedule`, `update_schedule`, `set_schedule_enabled`, `run_schedule_now`, `delete_schedule`), which are already available as regular tool calls — the skill adds the judgment: designing a self-contained prompt, migrating an existing hand-made scheduled task, and verifying a job before trusting it.
+The skill is the judgment layer over Narnia's scheduled-job and
+[package tools](../tools/index.md#scheduled-job-tools). It designs self-contained prompts, inspects
+selected Windows tasks, resolves portability requirements, and coordinates a safe disabled-first
+handoff.
 
 ## Capabilities
 
@@ -10,6 +13,9 @@ This skill is a thin workflow layer over the [scheduled-job MCP tools](../tools/
 |------|-------------|
 | **Create from scratch** | Design a prompt + cadence, call `create_schedule`, verify the task registered |
 | **Migrate an existing task** | Introspect a hand-made Windows Scheduled Task, translate its trigger to a Narnia cadence, and register an equivalent self-contained job |
+| **Export/share Narnia jobs** | Create a transfer package or sanitized share template |
+| **Package external tasks** | Reconstruct selected non-Narnia task behavior without adopting it locally |
+| **Import and hand off** | Resolve bindings, import disabled, dry-run, enable the destination, then disable the source |
 | **Supervised dry run** | Run a job's generation logic manually (optionally with secrets scrubbed from the environment) before trusting it on an unattended schedule |
 
 ## How It Works
@@ -31,6 +37,19 @@ This skill is a thin workflow layer over the [scheduled-job MCP tools](../tools/
 
 The bundled `Invoke-NarniaDryRun.ps1` script runs a prompt via `copilot -p` from a given directory, optionally scrubbing environment variables matching a given prefix first — proving secret self-resolution actually works rather than relying on variables your interactive shell happens to already have set.
 
+### Moving or sharing jobs
+
+Use `export_schedule_package` for existing Narnia jobs. Use the read-only
+`Find-CopilotScheduledTasks.ps1` plus `Read-ExistingScheduledTask.ps1` and
+`build_schedule_package` for selected external tasks.
+
+On the destination, call `preview_schedule_package` until paths, task names, and dependencies are
+resolved, then call `import_schedule_package`. Imported jobs are registered disabled. Save the
+receipt, run a supervised test, enable the destination, and only then disable the original source
+task.
+
+See [Portable Scheduled Jobs](../schedule-portability.md).
+
 ## Prerequisites
 
 - Windows (Task Scheduler). `create_schedule`/`update_schedule` support a `register: false` copy-paste mode on unsupported platforms.
@@ -44,6 +63,9 @@ Just ask the LLM naturally:
 - *"Migrate my hand-made 'Nightly Backup' scheduled task into Narnia"*
 - *"List my scheduled jobs and tell me if any are failing"*
 - *"Disable my example radar job for now"*
+- *"Export these schedules so I can move them to another computer"*
+- *"Package this existing Windows task without registering it in Narnia"*
+- *"Preview and import this .narnia-schedules.json file"*
 - *"Schedule my weekly report and explicitly deliver the Markdown with the [narnia-report-email skill](narnia-report-email.md)"*
 
 ## Design Principles
@@ -53,3 +75,5 @@ Just ask the LLM naturally:
 - **No pre-injected environment.** A job's prompt/skill must self-resolve its own secrets.
 - **Orchestration lives in the prompt, never in Narnia.** Multi-step behavior is prompt text or a script colocated with the skill it belongs to.
 - **Report delivery stays explicit.** A prompt may invoke `narnia-report-email` after generation, but the scheduler never injects SMTP behavior.
+- **Packages never contain secrets or generated machine artifacts.**
+- **Imports are disabled-first.** Nothing runs until the destination is explicitly enabled.

@@ -24,7 +24,9 @@ and terminal-launch features integrate with Windows Terminal, WMI, and Windows T
 
 ## MCP Tools
 
-Narnia exposes 23 tools over one shared HTTP endpoint (`/mcp`): eight for session history, three for broken-session recovery, four for local session storage, and eight for managing scheduled Copilot jobs.
+Narnia exposes 27 tools over one shared HTTP endpoint (`/mcp`): eight for session history, three for
+broken-session recovery, four for local session storage, eight for managing scheduled jobs, and four
+for file-based schedule portability.
 
 ### Session History
 
@@ -68,6 +70,10 @@ Narnia exposes 23 tools over one shared HTTP endpoint (`/mcp`): eight for sessio
 | [`set_schedule_enabled`](tools/set-schedule-enabled.md) | Enable/disable a scheduled job's task |
 | [`run_schedule_now`](tools/run-schedule-now.md) | Start a scheduled job's task immediately |
 | [`delete_schedule`](tools/delete-schedule.md) | Remove a scheduled job's task, wrapper, and catalog entry |
+| [`export_schedule_package`](tools/export-schedule-package.md) | Export selected jobs for transfer or sharing |
+| [`build_schedule_package`](tools/build-schedule-package.md) | Package selected non-Narnia task definitions |
+| [`preview_schedule_package`](tools/preview-schedule-package.md) | Inspect destination bindings, dependencies, and conflicts |
+| [`import_schedule_package`](tools/import-schedule-package.md) | Import an accepted preview as disabled jobs |
 
 ## Why It Exists
 

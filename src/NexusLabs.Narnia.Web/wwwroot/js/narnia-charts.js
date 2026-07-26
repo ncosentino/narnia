@@ -1466,6 +1466,312 @@ async function narniaScheduleDelete(id) {
     if (resp.ok) location.reload(); else alert('Delete failed');
 }
 
+function narniaScheduleSelectedPackageIds() {
+    return Array.from(document.querySelectorAll('.sched-package-check:checked')).map(function (check) { return check.value; });
+}
+
+function narniaSchedulePackageSelectionChanged() {
+    var checks = document.querySelectorAll('.sched-package-check');
+    var selected = narniaScheduleSelectedPackageIds();
+    ['sched-export-transfer', 'sched-export-share'].forEach(function (id) {
+        var button = document.getElementById(id);
+        if (button) button.disabled = selected.length === 0;
+    });
+    var master = document.getElementById('sched-package-check-all');
+    if (master) {
+        master.checked = selected.length > 0 && selected.length === checks.length;
+        master.indeterminate = selected.length > 0 && selected.length < checks.length;
+    }
+}
+
+function narniaScheduleTogglePackageSelection(master) {
+    document.querySelectorAll('.sched-package-check').forEach(function (check) { check.checked = master.checked; });
+    narniaSchedulePackageSelectionChanged();
+}
+
+function narniaScheduleDownloadJson(content, fileName) {
+    var blob = new Blob([content], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+async function narniaScheduleResponseError(resp) {
+    var body = await resp.json().catch(function () { return null; });
+    if (typeof body === 'string') return body;
+    if (body && body.error) return body.error;
+    return 'HTTP ' + resp.status;
+}
+
+async function narniaScheduleExportPackage(profile) {
+    var ids = narniaScheduleSelectedPackageIds();
+    if (ids.length === 0) return;
+    try {
+        var resp = await fetch('/api/schedule-packages/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobIds: ids, profile: profile }),
+        });
+        if (!resp.ok) throw new Error(await narniaScheduleResponseError(resp));
+        var data = await resp.json();
+        if (data.warnings && data.warnings.length > 0) {
+            alert('The package was created with warnings. Review them before transferring it:\n\n- ' + data.warnings.join('\n- '));
+        }
+        var stamp = new Date().toISOString().substring(0, 10);
+        narniaScheduleDownloadJson(data.packageJson, 'narnia-schedules-' + profile + '-' + stamp + '.narnia-schedules.json');
+    } catch (e) {
+        alert('Schedule export failed: ' + e.message);
+    }
+}
+
+var _narniaSchedulePackageJson = null;
+var _narniaSchedulePackagePreview = null;
+
+async function narniaSchedulePreviewSelectedPackage() {
+    var fileInput = document.getElementById('sched-package-file');
+    var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!file) {
+        alert('Choose a .narnia-schedules.json package first.');
+        return;
+    }
+
+    try {
+        _narniaSchedulePackageJson = await file.text();
+        _narniaSchedulePackagePreview = null;
+        await narniaScheduleRefreshPackagePreview();
+    } catch (e) {
+        document.getElementById('sched-package-status').textContent = 'Could not read package: ' + e.message;
+    }
+}
+
+function narniaSchedulePackageBindings() {
+    return Array.from(document.querySelectorAll('.sched-package-binding-input')).map(function (input) {
+        return { id: input.dataset.bindingId, value: input.value.trim() };
+    }).filter(function (binding) { return binding.value !== ''; });
+}
+
+function narniaSchedulePackageJobOptions() {
+    return Array.from(document.querySelectorAll('.sched-package-job-row')).map(function (row) {
+        return {
+            portableJobId: row.dataset.portableJobId,
+            taskName: row.querySelector('.sched-package-task-name').value.trim() || null,
+            allowDuplicate: row.querySelector('.sched-package-allow-duplicate').checked,
+            skip: row.querySelector('.sched-package-skip').checked,
+        };
+    });
+}
+
+function narniaSchedulePackagePreviewChanged() {
+    var importButton = document.getElementById('sched-package-import');
+    if (importButton) importButton.disabled = true;
+    var status = document.getElementById('sched-package-status');
+    if (status && _narniaSchedulePackagePreview) {
+        status.textContent = 'Destination values changed. Refresh the preview before importing.';
+    }
+}
+
+async function narniaScheduleRefreshPackagePreview() {
+    if (!_narniaSchedulePackageJson) return;
+    var status = document.getElementById('sched-package-status');
+    status.textContent = 'Inspecting package…';
+    try {
+        var resp = await fetch('/api/schedule-packages/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                packageJson: _narniaSchedulePackageJson,
+                bindings: narniaSchedulePackageBindings(),
+                jobs: narniaSchedulePackageJobOptions(),
+            }),
+        });
+        if (!resp.ok) throw new Error(await narniaScheduleResponseError(resp));
+        _narniaSchedulePackagePreview = await resp.json();
+        narniaScheduleRenderPackagePreview(_narniaSchedulePackagePreview);
+    } catch (e) {
+        _narniaSchedulePackagePreview = null;
+        status.textContent = 'Package preview failed: ' + e.message;
+        document.getElementById('sched-package-import').disabled = true;
+    }
+}
+
+function narniaScheduleRenderPackagePreview(data) {
+    var status = document.getElementById('sched-package-status');
+    var bindingsHost = document.getElementById('sched-package-bindings');
+    var jobsHost = document.getElementById('sched-package-jobs');
+    var refreshButton = document.getElementById('sched-package-refresh');
+    var importButton = document.getElementById('sched-package-import');
+    var previousOptions = {};
+    narniaSchedulePackageJobOptions().forEach(function (option) { previousOptions[option.portableJobId] = option; });
+    bindingsHost.replaceChildren();
+    jobsHost.replaceChildren();
+
+    status.textContent = 'Package ' + data.packageId + ' inspected. Review every finding and destination value.';
+    if ((data.bindings || []).length > 0) {
+        var grid = document.createElement('div');
+        grid.className = 'sched-package-bindings';
+        (data.bindings || []).forEach(function (binding) {
+            var label = document.createElement('label');
+            label.className = 'sched-package-binding-label';
+            label.textContent = binding.description + ' (' + binding.kind + ')' + (binding.required ? ' *' : '');
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'sched-package-binding-input';
+            input.dataset.bindingId = binding.id;
+            input.value = binding.resolvedValue || '';
+            input.placeholder = binding.sourceHint || binding.id;
+            if (binding.error) input.title = binding.error;
+            input.addEventListener('input', narniaSchedulePackagePreviewChanged);
+            grid.appendChild(label);
+            grid.appendChild(input);
+        });
+        bindingsHost.appendChild(grid);
+    }
+
+    var table = document.createElement('table');
+    table.className = 'sched-package-preview-table';
+    var head = document.createElement('thead');
+    var headRow = document.createElement('tr');
+    ['Job', 'Destination task name', 'Status', 'Rendered definition', 'Findings', 'Duplicate', 'Skip'].forEach(function (text) {
+        var th = document.createElement('th');
+        th.textContent = text;
+        headRow.appendChild(th);
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    var body = document.createElement('tbody');
+    (data.jobs || []).forEach(function (job) {
+        var row = document.createElement('tr');
+        row.className = 'sched-package-job-row';
+        row.dataset.portableJobId = job.portableJobId;
+
+        var nameCell = document.createElement('td');
+        nameCell.textContent = job.name;
+        row.appendChild(nameCell);
+
+        var taskCell = document.createElement('td');
+        var taskInput = document.createElement('input');
+        taskInput.type = 'text';
+        taskInput.className = 'sched-package-task-name';
+        taskInput.value = job.targetTaskName;
+        taskInput.addEventListener('input', narniaSchedulePackagePreviewChanged);
+        taskCell.appendChild(taskInput);
+        row.appendChild(taskCell);
+
+        var stateCell = document.createElement('td');
+        stateCell.textContent = job.status;
+        if (job.canImport) stateCell.className = 'sched-package-ready';
+        row.appendChild(stateCell);
+
+        var definitionCell = document.createElement('td');
+        if (job.renderedDefinition) {
+            var details = document.createElement('details');
+            var summary = document.createElement('summary');
+            summary.textContent = 'Review prompt and execution settings';
+            details.appendChild(summary);
+            var metadata = document.createElement('pre');
+            metadata.className = 'sched-package-definition-meta';
+            metadata.textContent =
+                'Working directory: ' + (job.renderedDefinition.workingDirectory || '(none)') + '\n' +
+                'Cadence: ' + job.renderedDefinition.cadence.kind + ' ' + job.renderedDefinition.cadence.timeOfDay + '\n' +
+                'Allow flags: ' + (job.renderedDefinition.allowFlags || '(none)') + '\n' +
+                'Copilot args: ' + (job.renderedDefinition.copilotArgs || '(none)');
+            details.appendChild(metadata);
+            var prompt = document.createElement('textarea');
+            prompt.className = 'sched-package-rendered-prompt';
+            prompt.readOnly = true;
+            prompt.value = job.renderedDefinition.prompt;
+            details.appendChild(prompt);
+            definitionCell.appendChild(details);
+        } else {
+            definitionCell.textContent = 'Resolve required bindings to render this job.';
+        }
+        row.appendChild(definitionCell);
+
+        var findingsCell = document.createElement('td');
+        if ((job.findings || []).length === 0) {
+            findingsCell.textContent = 'Ready';
+        } else {
+            var list = document.createElement('ul');
+            list.className = 'sched-package-findings';
+            job.findings.forEach(function (finding) {
+                var item = document.createElement('li');
+                item.textContent = finding.message;
+                item.className = finding.severity === 'Error'
+                    ? 'sched-package-finding-error'
+                    : finding.severity === 'Warning'
+                        ? 'sched-package-finding-warning'
+                        : '';
+                list.appendChild(item);
+            });
+            findingsCell.appendChild(list);
+        }
+        row.appendChild(findingsCell);
+
+        var duplicateCell = document.createElement('td');
+        var duplicate = document.createElement('input');
+        duplicate.type = 'checkbox';
+        duplicate.className = 'sched-package-allow-duplicate';
+        duplicate.title = 'Create another copy even when this portable job was imported before';
+        duplicate.checked = previousOptions[job.portableJobId]?.allowDuplicate || false;
+        duplicate.addEventListener('change', narniaSchedulePackagePreviewChanged);
+        duplicateCell.appendChild(duplicate);
+        row.appendChild(duplicateCell);
+
+        var skipCell = document.createElement('td');
+        var skip = document.createElement('input');
+        skip.type = 'checkbox';
+        skip.className = 'sched-package-skip';
+        skip.title = 'Exclude this job from the current import batch';
+        skip.checked = previousOptions[job.portableJobId]?.skip || !job.willImport;
+        skip.addEventListener('change', narniaSchedulePackagePreviewChanged);
+        skipCell.appendChild(skip);
+        row.appendChild(skipCell);
+        body.appendChild(row);
+    });
+    table.appendChild(body);
+    jobsHost.appendChild(table);
+
+    refreshButton.style.display = 'inline-block';
+    importButton.style.display = 'inline-block';
+    importButton.disabled = !data.jobs
+        || !data.jobs.some(function (job) { return job.willImport; })
+        || data.jobs.some(function (job) { return !job.canImport; });
+}
+
+async function narniaScheduleImportPackage() {
+    if (!_narniaSchedulePackagePreview || !_narniaSchedulePackageJson) return;
+    if (!confirm('Import these jobs as disabled Narnia schedules? Nothing will run until you enable it.')) return;
+
+    var status = document.getElementById('sched-package-status');
+    status.textContent = 'Importing disabled jobs…';
+    try {
+        var resp = await fetch('/api/schedule-packages/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                packageJson: _narniaSchedulePackageJson,
+                bindings: narniaSchedulePackageBindings(),
+                jobs: narniaSchedulePackageJobOptions(),
+                previewFingerprint: _narniaSchedulePackagePreview.previewFingerprint,
+            }),
+        });
+        if (!resp.ok) throw new Error(await narniaScheduleResponseError(resp));
+        var data = await resp.json();
+        narniaScheduleDownloadJson(
+            JSON.stringify(data.receipt, null, 2),
+            'narnia-schedule-import-receipt-' + data.receipt.packageId + '.json');
+        status.textContent = 'Imported ' + data.jobs.length + ' disabled job(s). Receipt downloaded.';
+        setTimeout(function () { location.reload(); }, 1200);
+    } catch (e) {
+        status.textContent = 'Package import failed: ' + e.message;
+    }
+}
+
 // btn is the clicked element carrying data-job-name (from a row action), or null (from a health
 // badge, which has no name handy) -- either way the id alone is enough to fetch the log.
 //

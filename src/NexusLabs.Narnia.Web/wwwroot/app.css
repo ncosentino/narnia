@@ -1144,6 +1144,26 @@ span.dashboard-item-title { color: var(--text); }
 .sched-command { grid-column: 1 / -1; width: 100%; min-height: 90px; font-family: var(--mono, monospace); font-size: .75rem; }
 .sched-log-panel { margin: 0 0 1.5rem; padding: .8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-alt); }
 .sched-log-panel textarea { width: 100%; min-height: 300px; font-family: var(--mono, monospace); font-size: .75rem; white-space: pre; }
+.schedule-package-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.schedule-package-toolbar h2 { margin-bottom: .5rem; }
+.schedule-package-toolbar button { margin-left: .35rem; }
+.schedule-select { width: 1.5rem; text-align: center !important; }
+.sched-package-panel { margin: 1rem 0 1.5rem; padding: .9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-alt); }
+.sched-package-panel h2 { margin-top: 0; }
+.sched-package-file-row { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
+.sched-package-bindings { display: grid; grid-template-columns: minmax(150px, .45fr) minmax(260px, 1fr); gap: .45rem .75rem; margin: .8rem 0; }
+.sched-package-binding-label { color: var(--text-subtle); font-size: .8rem; }
+.sched-package-binding-input { width: 100%; padding: .35rem; }
+.sched-package-preview-table { width: 100%; border-collapse: collapse; margin-top: .8rem; font-size: .82rem; }
+.sched-package-preview-table th, .sched-package-preview-table td { padding: .4rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; text-align: left; }
+.sched-package-preview-table input[type="text"] { width: 100%; min-width: 180px; padding: .3rem; }
+.sched-package-preview-table details { min-width: 260px; }
+.sched-package-definition-meta { margin: .45rem 0; white-space: pre-wrap; font-size: .72rem; color: var(--text-subtle); }
+.sched-package-rendered-prompt { width: 100%; min-height: 130px; padding: .35rem; font-family: var(--mono, monospace); font-size: .72rem; }
+.sched-package-findings { margin: .2rem 0 0; padding-left: 1.1rem; }
+.sched-package-finding-error { color: var(--status-danger); }
+.sched-package-finding-warning { color: #e0a000; }
+.sched-package-ready { color: var(--status-success); font-weight: 650; }
 .badge-fail-link { cursor: pointer; text-decoration: underline dotted; border: none; }
 .session-migration-link {
     display: flex;

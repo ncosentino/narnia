@@ -30,6 +30,8 @@ public static class ScheduledTaskRegistrationScript
         sb.Append("Register-ScheduledTask -TaskName '").Append(Esc(reg.Name)).Append('\'');
         sb.Append(" -TaskPath '").Append(Esc(reg.Folder)).Append('\'');
         sb.Append(" -Action $action -Trigger $trigger");
+        if (!reg.Enabled)
+            sb.Append(" -Settings (New-ScheduledTaskSettingsSet -Disable)");
         sb.Append(" -Description 'narnia-job:").Append(Esc(reg.JobId)).Append('\'');
         sb.Append(" -Force");
         return sb.ToString();
@@ -56,7 +58,7 @@ public static class ScheduledTaskRegistrationScript
             $"<ScheduleByMonth><DaysOfMonth><Day>{day}</Day></DaysOfMonth><Months>{months}</Months></ScheduleByMonth>" +
             "</CalendarTrigger></Triggers>" +
             "<Principals><Principal id=\"Author\"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>" +
-            "<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><StartWhenAvailable>true</StartWhenAvailable><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings>" +
+            $"<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><StartWhenAvailable>true</StartWhenAvailable><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>{reg.Enabled.ToString().ToLowerInvariant()}</Enabled></Settings>" +
             "<Actions Context=\"Author\"><Exec>" +
             $"<Command>{Xml(reg.Execute)}</Command><Arguments>{Xml(reg.Arguments)}</Arguments>{workingDir}" +
             "</Exec></Actions>" +

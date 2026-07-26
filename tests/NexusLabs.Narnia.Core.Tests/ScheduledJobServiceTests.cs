@@ -175,6 +175,52 @@ public sealed class ScheduledJobServiceTests
         Assert.Equal("wscript.exe", captured!.Execute);
         Assert.Contains(@"C:\narnia\", captured.Arguments);
         Assert.Contains("run.vbs", captured.Arguments);
+        Assert.True(captured.Enabled);
+    }
+
+    [Fact]
+    public async Task CreateDisabledAsync_RegistersDisabledTaskAtomically()
+    {
+        ScheduledTaskRegistration? captured = null;
+        _registrar
+            .Setup(r => r.RegisterAsync(It.IsAny<ScheduledTaskRegistration>(), It.IsAny<CancellationToken>()))
+            .Callback<ScheduledTaskRegistration, CancellationToken>((registration, _) => captured = registration)
+            .ReturnsAsync(ScheduledTaskCommandResult.Success);
+        _registry
+            .Setup(r => r.CreateWithIdAsync(
+                It.IsAny<string>(),
+                It.IsAny<ScheduledJobDraft>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string id, ScheduledJobDraft draft, DateTimeOffset now, CancellationToken _) =>
+                new ScheduledJob(
+                    id,
+                    draft.Name,
+                    draft.Description,
+                    draft.Cwd,
+                    draft.Cadence,
+                    draft.Args,
+                    draft.ScriptPath,
+                    draft.LogDir,
+                    draft.AllowFlags,
+                    draft.TaskFolder,
+                    draft.TaskName,
+                    draft.Notes,
+                    now,
+                    now,
+                    draft.Skills,
+                    draft.Prompt,
+                    draft.CadenceKind,
+                    draft.CadenceTime,
+                    draft.CadenceDays,
+                    draft.CopilotArgs));
+        var service = CreateService();
+
+        var result = await service.CreateDisabledAsync(Input(), Ct);
+
+        Assert.True(result.Ok);
+        Assert.NotNull(captured);
+        Assert.False(captured!.Enabled);
     }
 
     [Fact]
@@ -261,6 +307,42 @@ public sealed class ScheduledJobServiceTests
         _workspace.Verify(w => w.WriteLauncherAsync("job-1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         _registry.Verify(r => r.UpdateAsync("job-1", It.IsAny<ScheduledJobDraft>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
         _registrar.Verify(r => r.RegisterAsync(It.IsAny<ScheduledTaskRegistration>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_PreservesDisabledTaskState()
+    {
+        var existing = Job("job-1");
+        _registry.SetupSequence(r => r.GetByIdAsync("job-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing)
+            .ReturnsAsync(existing);
+        _taskProvider
+            .Setup(provider => provider.GetAsync(
+                existing.TaskFolder,
+                existing.TaskName,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ScheduledTaskStatus(
+                existing.TaskFolder,
+                existing.TaskName,
+                ScheduledTaskState.Disabled,
+                null,
+                null,
+                null,
+                null));
+        ScheduledTaskRegistration? captured = null;
+        _registrar
+            .Setup(registrar => registrar.RegisterAsync(
+                It.IsAny<ScheduledTaskRegistration>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ScheduledTaskRegistration, CancellationToken>((registration, _) => captured = registration)
+            .ReturnsAsync(ScheduledTaskCommandResult.Success);
+        var service = CreateService();
+
+        var result = await service.UpdateAsync("job-1", Input(), Ct);
+
+        Assert.True(result.Ok);
+        Assert.NotNull(captured);
+        Assert.False(captured!.Enabled);
     }
 
     [Fact]
@@ -353,6 +435,54 @@ public sealed class ScheduledJobServiceTests
         _registrar.Verify(r => r.DeleteAsync(@"\Narnia\", "Narnia - Sample", It.IsAny<CancellationToken>()), Times.Once);
         _workspace.Verify(w => w.Delete("job-1"), Times.Once);
         _registry.Verify(r => r.DeleteAsync("job-1", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_RegistrarFailure_PreservesWorkspaceAndCatalog()
+    {
+        var job = Job("job-1");
+        _registry.Setup(r => r.GetByIdAsync("job-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+        _registrar
+            .Setup(r => r.DeleteAsync(
+                job.TaskFolder,
+                job.TaskName,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ScheduledTaskCommandResult.Fail("locked"));
+        var service = CreateService();
+
+        var result = await service.DeleteAsync("job-1", Ct);
+
+        Assert.False(result.Ok);
+        Assert.Contains("locked", result.Error);
+        _workspace.Verify(workspace => workspace.Delete(It.IsAny<string>()), Times.Never);
+        _registry.Verify(repository => repository.DeleteAsync(
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_UnsupportedRegistrar_RemovesLocalCatalogAndWorkspace()
+    {
+        var job = Job("job-1");
+        _registry.Setup(repository => repository.GetByIdAsync(
+                "job-1",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+        _registrar.SetupGet(registrar => registrar.IsSupported).Returns(false);
+        var service = CreateService();
+
+        var result = await service.DeleteAsync("job-1", Ct);
+
+        Assert.True(result.Ok);
+        _registrar.Verify(registrar => registrar.DeleteAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _workspace.Verify(workspace => workspace.Delete("job-1"), Times.Once);
+        _registry.Verify(repository => repository.DeleteAsync(
+            "job-1",
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── List / Get ───────────────────────────────────────────────────────────

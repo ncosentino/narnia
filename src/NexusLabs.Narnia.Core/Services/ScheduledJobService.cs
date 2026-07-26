@@ -60,18 +60,30 @@ public sealed class ScheduledJobService(
     /// <inheritdoc />
     public async ValueTask<ScheduledJobCreateResult> CreateAsync(
         ScheduledJobInput input, bool register, CancellationToken ct = default)
+        => await CreateAsync(input, register, enabled: true, ct);
+
+    /// <inheritdoc />
+    public async ValueTask<ScheduledJobCreateResult> CreateDisabledAsync(
+        ScheduledJobInput input,
+        CancellationToken ct) =>
+        await CreateAsync(input, register: true, enabled: false, ct);
+
+    private async ValueTask<ScheduledJobCreateResult> CreateAsync(
+        ScheduledJobInput input,
+        bool register,
+        bool enabled,
+        CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(input.Name))
-            return ScheduledJobCreateResult.Failure("A job name is required.");
-        if (string.IsNullOrWhiteSpace(input.Prompt))
-            return ScheduledJobCreateResult.Failure("A prompt is required (it is what Copilot runs).");
+        var definitionResult = ScheduledJobDefinitions.FromInput(input);
+        if (definitionResult.Error is not null)
+            return ScheduledJobCreateResult.Failure(definitionResult.Error);
+        var definition = definitionResult.Definition!;
 
         var jobId = Guid.NewGuid().ToString();
-        var cadence = BuildCadence(input);
         var copilotCommand =
             await settingsRepository.GetAsync(CopilotSettingKeys.Command, ct) ??
             CopilotSettingKeys.DefaultCommand;
-        var (script, launcher, registration) = BuildOwnedJob(jobId, input, cadence, copilotCommand);
+        var (script, launcher, registration) = BuildOwnedJob(jobId, definition, copilotCommand, enabled);
 
         // Copy-paste mode: catalog nothing, just hand back the generated wrapper + registration command.
         if (!register)
@@ -83,7 +95,7 @@ public sealed class ScheduledJobService(
 
         await workspace.WriteScriptAsync(jobId, script, ct);
         await workspace.WriteLauncherAsync(jobId, launcher, ct);
-        var draft = BuildOwnedDraft(input, cadence, workspace.ScriptPath(jobId), workspace.LogDirectory(jobId));
+        var draft = BuildOwnedDraft(definition, workspace.ScriptPath(jobId), workspace.LogDirectory(jobId));
 
         // Create with the pre-chosen id so the workspace folder, marker, and catalog row all agree.
         var job = await registry.CreateWithIdAsync(jobId, draft, DateTimeOffset.UtcNow, ct);
@@ -105,22 +117,23 @@ public sealed class ScheduledJobService(
         var existing = await registry.GetByIdAsync(id, ct);
         if (existing is null)
             return ScheduledJobMutationResult.Missing;
-        if (string.IsNullOrWhiteSpace(input.Name))
-            return ScheduledJobMutationResult.Failure("A job name is required.");
-        if (string.IsNullOrWhiteSpace(input.Prompt))
-            return ScheduledJobMutationResult.Failure("A prompt is required.");
+        var definitionResult = ScheduledJobDefinitions.FromInput(input);
+        if (definitionResult.Error is not null)
+            return ScheduledJobMutationResult.Failure(definitionResult.Error);
+        var definition = definitionResult.Definition!;
         if (!registrar.IsSupported)
             return ScheduledJobMutationResult.Failure("Editing tasks is not supported on this platform.");
 
-        var cadence = BuildCadence(input);
+        var currentStatus = await taskProvider.GetAsync(existing.TaskFolder, existing.TaskName, ct);
+        var enabled = currentStatus?.State != ScheduledTaskState.Disabled;
         var copilotCommand =
             await settingsRepository.GetAsync(CopilotSettingKeys.Command, ct) ??
             CopilotSettingKeys.DefaultCommand;
-        var (script, launcher, registration) = BuildOwnedJob(id, input, cadence, copilotCommand);
+        var (script, launcher, registration) = BuildOwnedJob(id, definition, copilotCommand, enabled);
 
         await workspace.WriteScriptAsync(id, script, ct);
         await workspace.WriteLauncherAsync(id, launcher, ct);
-        var draft = BuildOwnedDraft(input, cadence, workspace.ScriptPath(id), workspace.LogDirectory(id));
+        var draft = BuildOwnedDraft(definition, workspace.ScriptPath(id), workspace.LogDirectory(id));
         await registry.UpdateAsync(id, draft, DateTimeOffset.UtcNow, ct);
 
         // Register with -Force overwrites the existing task in place (trigger/action refreshed).
@@ -164,9 +177,17 @@ public sealed class ScheduledJobService(
         if (job is null)
             return ScheduledJobMutationResult.Missing;
 
-        // Every job is first-class: it owns its scheduled task and generated script, so deleting a
-        // job always removes both alongside the catalog row.
-        await registrar.DeleteAsync(job.TaskFolder, job.TaskName, ct);
+        // Do not orphan a live task by deleting its catalog/workspace after a scheduler failure.
+        if (registrar.IsSupported)
+        {
+            var taskDeletion = await registrar.DeleteAsync(job.TaskFolder, job.TaskName, ct);
+            if (!taskDeletion.Ok)
+            {
+                return ScheduledJobMutationResult.Failure(
+                    taskDeletion.Error ?? "Failed to remove the scheduled task.");
+            }
+        }
+
         workspace.Delete(id);
         await registry.DeleteAsync(id, ct);
         return ScheduledJobMutationResult.Succeeded(job);
@@ -193,38 +214,37 @@ public sealed class ScheduledJobService(
         return ScheduledJobLogView.Of(path, truncated ? content[^MaxLogChars..] : content, truncated, isRunning);
     }
 
-    private static ScheduleCadence BuildCadence(ScheduledJobInput input)
-    {
-        var time = TimeOnly.TryParse(input.Time, out var t) ? t : new TimeOnly(5, 0);
-        var kind = input.CadenceKind?.ToLowerInvariant() switch
-        {
-            "weekly" => ScheduleCadenceKind.Weekly,
-            "monthly" => ScheduleCadenceKind.Monthly,
-            _ => ScheduleCadenceKind.Daily,
-        };
-        var days = (input.Days ?? [])
-            .Select(d => Enum.TryParse<DayOfWeek>(d, ignoreCase: true, out var dow) ? dow : (DayOfWeek?)null)
-            .Where(d => d is not null).Select(d => d!.Value).ToList();
-        var dayOfMonth = input.DayOfMonth is >= 1 and <= 31 ? input.DayOfMonth.Value : 1;
-        return new ScheduleCadence(kind, time, days, dayOfMonth);
-    }
-
     // Builds the generated wrapper script, the hidden-launcher shim, and the standardized task
     // registration for a Narnia-owned job. The task's action is wscript.exe running the launcher
     // (never a bare visible console), which in turn runs the wrapper script under the best
     // available PowerShell host.
     private (string Script, string Launcher, ScheduledTaskRegistration Registration) BuildOwnedJob(
-        string jobId, ScheduledJobInput input, ScheduleCadence cadence, string copilotCommand)
+        string jobId,
+        ScheduledJobDefinition definition,
+        string copilotCommand,
+        bool enabled)
     {
-        var taskName = string.IsNullOrWhiteSpace(input.TaskName) ? input.Name : input.TaskName!;
         var logDir = workspace.LogDirectory(jobId);
         var script = ScheduledJobScript.Build(
-            input.Name, input.Prompt ?? "", input.Cwd, input.AllowFlags, input.CopilotArgs, logDir, copilotCommand);
+            definition.Name,
+            definition.Prompt,
+            definition.WorkingDirectory,
+            definition.AllowFlags,
+            definition.CopilotArgs,
+            logDir,
+            copilotCommand);
         var scriptPath = workspace.ScriptPath(jobId);
         var launcher = ScheduledJobLauncherScript.Build(hostResolver.ResolveExecutable(), scriptPath);
         var launcherPath = workspace.LauncherPath(jobId);
         var registration = new ScheduledTaskRegistration(
-            jobId, NarniaFolder, taskName, "wscript.exe", $"\"{launcherPath}\"", input.Cwd, cadence);
+            jobId,
+            NarniaFolder,
+            definition.TaskName,
+            "wscript.exe",
+            $"\"{launcherPath}\"",
+            definition.WorkingDirectory,
+            definition.Cadence,
+            enabled);
         return (script, launcher, registration);
     }
 
@@ -236,33 +256,37 @@ public sealed class ScheduledJobService(
 
     // Builds the catalog draft for a Narnia-owned job, keyed to its generated script + log paths.
     private static ScheduledJobDraft BuildOwnedDraft(
-        ScheduledJobInput input, ScheduleCadence cadence, string scriptPath, string logDir)
+        ScheduledJobDefinition definition,
+        string scriptPath,
+        string logDir)
     {
-        var taskName = string.IsNullOrWhiteSpace(input.TaskName) ? input.Name : input.TaskName!;
-        var skills = (input.Skills ?? [])
-            .Where(s => !string.IsNullOrWhiteSpace(s.Skill))
-            .Select((s, i) => new ScheduledJobSkill(
-                s.Skill,
-                Enum.TryParse<SkillResolution>(s.Resolution, ignoreCase: true, out var r) ? r : SkillResolution.Unknown,
-                i))
-            .ToList();
-
         // Weekly stores its day names in cadence_days; monthly reuses the same column for its day
         // number, so both round-trip for edit prefill without a schema change.
-        var cadenceDays = cadence.Kind switch
+        var cadenceDays = definition.Cadence.Kind switch
         {
-            ScheduleCadenceKind.Weekly => string.Join(",", cadence.DaysOfWeek.Select(d => d.ToString())),
-            ScheduleCadenceKind.Monthly => cadence.DayOfMonth.ToString(),
+            ScheduleCadenceKind.Weekly => string.Join(",", definition.Cadence.DaysOfWeek.Select(d => d.ToString())),
+            ScheduleCadenceKind.Monthly => definition.Cadence.DayOfMonth.ToString(),
             _ => "",
         };
 
         return new ScheduledJobDraft(
-            Name: input.Name, Description: input.Description, Cwd: input.Cwd, Cadence: cadence.Describe(),
-            Args: null, ScriptPath: scriptPath, LogDir: logDir, AllowFlags: input.AllowFlags,
-            TaskFolder: NarniaFolder, TaskName: taskName, Notes: null, Skills: skills,
-            Prompt: input.Prompt, CadenceKind: cadence.Kind.ToString(),
-            CadenceTime: cadence.TimeOfDay.ToString("HH\\:mm"), CadenceDays: cadenceDays.Length > 0 ? cadenceDays : null,
-            CopilotArgs: input.CopilotArgs);
+            Name: definition.Name,
+            Description: definition.Description,
+            Cwd: definition.WorkingDirectory,
+            Cadence: definition.Cadence.Describe(),
+            Args: null,
+            ScriptPath: scriptPath,
+            LogDir: logDir,
+            AllowFlags: definition.AllowFlags,
+            TaskFolder: NarniaFolder,
+            TaskName: definition.TaskName,
+            Notes: null,
+            Skills: definition.Skills,
+            Prompt: definition.Prompt,
+            CadenceKind: definition.Cadence.Kind.ToString(),
+            CadenceTime: definition.Cadence.TimeOfDay.ToString("HH\\:mm"),
+            CadenceDays: cadenceDays.Length > 0 ? cadenceDays : null,
+            CopilotArgs: definition.CopilotArgs);
     }
 
     private static string TaskKey(string folder, string name) => $"{folder.Trim('\\')}|{name}";

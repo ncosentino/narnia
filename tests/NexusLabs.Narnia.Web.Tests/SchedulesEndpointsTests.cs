@@ -106,6 +106,33 @@ public sealed class SchedulesEndpointsTests
     }
 
     [Fact]
+    public async Task SchedulesPage_ShowsPortabilityControlsAndImportedProvenance()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var job = await factory.ScheduledJobRegistry.CreateAsync(
+            Draft("Imported", "Narnia - Imported"),
+            Now,
+            Ct);
+        await factory.ScheduledJobImports.AddAsync(
+            new ScheduledJobImportRecord(
+                job.Id,
+                "package-1",
+                "portable-1",
+                "fingerprint",
+                "source-1",
+                Now),
+            Ct);
+        var client = factory.CreateClient();
+
+        var html = await client.GetStringAsync("/schedules", Ct);
+
+        Assert.Contains("Export for transfer", html, StringComparison.Ordinal);
+        Assert.Contains("Export share template", html, StringComparison.Ordinal);
+        Assert.Contains("Preview package", html, StringComparison.Ordinal);
+        Assert.Contains("Imported from package package-1", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GetSchedules_AdoptedJobOutsideNarniaFolder_ResolvedViaGet()
     {
         using var factory = new NarniaWebAppFactory();
@@ -342,6 +369,30 @@ public sealed class SchedulesEndpointsTests
         Assert.Null(await factory.ScheduledJobRegistry.GetByIdAsync(job.Id, Ct));
         factory.ScheduledTaskRegistrar.Verify(r => r.DeleteAsync(@"\Narnia\", "Narnia - J", It.IsAny<CancellationToken>()), Times.Once);
         factory.ScheduledJobWorkspace.Verify(w => w.Delete(job.Id), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_RegistrarFailure_ReturnsBadRequestAndPreservesCatalog()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var job = await factory.ScheduledJobRegistry.CreateAsync(
+            Draft("J", "Narnia - J"),
+            Now,
+            Ct);
+        factory.ScheduledTaskRegistrar
+            .Setup(registrar => registrar.DeleteAsync(
+                job.TaskFolder,
+                job.TaskName,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ScheduledTaskCommandResult.Fail("task is locked"));
+        var client = factory.CreateClient();
+
+        var response = await client.DeleteAsync($"/api/schedules/{job.Id}", Ct);
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(await factory.ScheduledJobRegistry.GetByIdAsync(job.Id, Ct));
+        factory.ScheduledJobWorkspace.Verify(workspace => workspace.Delete(
+            It.IsAny<string>()), Times.Never);
     }
 
     private sealed record CreateResponse(bool Registered, string Id, string Command, string Script);
