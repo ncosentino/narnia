@@ -20,7 +20,7 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 - **Scheduled Jobs** — create, edit, monitor, export, share, and safely import Windows Task Scheduler-backed `copilot -p` jobs with hidden execution, live logs, portable file packages, and disabled-first destination registration
 - **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
 - **Session organization** — save exact, ordered Session Groups for reopening together and place related sessions in overlapping Collections that can span repositories
-- **Broken-session recovery** — detect incompatible Copilot event history, block unsafe launches, archive the broken stream, and have Copilot reseed the same session ID and folder
+- **Broken-session recovery** — detect malformed or oversized Copilot event history, block unsafe blank-session fallbacks, archive the original stream, and have Copilot reseed the same session ID and folder
 - **Session storage** — measure per-session disk usage and growth, identify stale or risky sessions, and delete validated local data through the official Copilot SDK
 - **Session workspace** — reads supplemental metadata from `~/.copilot/session-state/` including git root and session artifact files
 

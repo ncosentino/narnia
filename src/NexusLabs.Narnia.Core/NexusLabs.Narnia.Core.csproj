@@ -16,4 +16,8 @@
     <EmbeddedResource Include="Repositories\Migrations\*.sql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="NexusLabs.Narnia.Core.Tests" />
+  </ItemGroup>
+
 </Project>
