@@ -1,4 +1,6 @@
+using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
+using System.Text;
 using NexusLabs.Narnia.Core.Configuration;
 using NexusLabs.Narnia.Core.Models;
 using NexusLabs.Narnia.Core.Repositories;
@@ -42,6 +44,44 @@ public sealed class SessionResumeSafetyReaderTests
         });
         var workspaceReader = new WorkspaceReader(Options(), fileSystem);
         var reader = new SessionResumeSafetyReader(Options(), fileSystem, workspaceReader);
+
+        var result = reader.Inspect(SessionId);
+
+        Assert.Equal(SessionResumeSafety.Resumable, result.Safety);
+        Assert.Null(result.Reason);
+    }
+
+    [Fact]
+    public void Inspect_HistoryAboveCopilotStringLimit_IsIncompatible()
+    {
+        const long characterLimit = 128;
+        var content =
+            """{"type":"session.start","id":"event-1","data":{}}""" + "\n" +
+            new string('a', 200);
+        var reader = CreateReader(
+            content,
+            Encoding.UTF8.GetByteCount(content),
+            characterLimit);
+
+        var result = reader.Inspect(SessionId);
+
+        Assert.Equal(SessionResumeSafety.Incompatible, result.Safety);
+        Assert.Equal("session.start", result.FirstEventType);
+        Assert.Contains("128-character", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("blank session", result.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Inspect_MultibyteFileAboveRawByteLimitButBelowCharacterLimit_IsResumable()
+    {
+        const long characterLimit = 128;
+        var content =
+            """{"type":"session.start","id":"event-1","data":{}}""" + "\n" +
+            new string('界', 40);
+        var bytes = Encoding.UTF8.GetByteCount(content);
+        Assert.True(bytes > characterLimit);
+        Assert.True(content.Length < characterLimit);
+        var reader = CreateReader(content, bytes, characterLimit);
 
         var result = reader.Inspect(SessionId);
 
@@ -112,4 +152,35 @@ public sealed class SessionResumeSafetyReaderTests
     {
         SessionStatePath = Root,
     };
+
+    private static SessionResumeSafetyReader CreateReader(
+        string content,
+        long reportedLength,
+        long characterLimit)
+    {
+        var baseFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [$@"{SessionDirectory}\events.jsonl"] = new(content),
+        });
+        var lastWriteTimeUtc = new DateTime(2026, 7, 26, 12, 0, 0, DateTimeKind.Utc);
+        var fileInfo = new Mock<IFileInfo>();
+        fileInfo.SetupGet(candidate => candidate.Length).Returns(reportedLength);
+        fileInfo.SetupGet(candidate => candidate.LastWriteTimeUtc).Returns(lastWriteTimeUtc);
+        var fileInfoFactory = new Mock<IFileInfoFactory>();
+        fileInfoFactory
+            .Setup(candidate => candidate.New($@"{SessionDirectory}\events.jsonl"))
+            .Returns(fileInfo.Object);
+        var fileSystem = new Mock<IFileSystem>();
+        fileSystem.SetupGet(candidate => candidate.Path).Returns(baseFileSystem.Path);
+        fileSystem.SetupGet(candidate => candidate.File).Returns(baseFileSystem.File);
+        fileSystem.SetupGet(candidate => candidate.FileInfo).Returns(fileInfoFactory.Object);
+        var workspace = new Mock<IWorkspaceReader>();
+        workspace.Setup(candidate => candidate.ReadMetadata(SessionId))
+            .Returns(new WorkspaceInfo(SessionId, null, []));
+        return new SessionResumeSafetyReader(
+            Options(),
+            fileSystem.Object,
+            workspace.Object,
+            characterLimit);
+    }
 }
