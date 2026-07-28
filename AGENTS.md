@@ -49,3 +49,22 @@ still shutting down) it is left in place and the move is retried on a later laun
 ### Overrides pattern
 
 `session-store.db` values should **never be silently hidden**. Any UI that shows overridden values must also display the original `session-store` value so the user can see what the CLI recorded.
+
+## Pull Request Delivery
+
+- Deliver changes through feature branches and pull requests; never push directly to `main`.
+  Local checkpoint commits are unrestricted before the branch is ready.
+- Draft pull requests publish `Draft CI`. The default draft subset runs the Windows
+  build and test job but skips release-package and documentation validation. Marking
+  the pull request ready starts fresh full validation and publishes the stable `CI`
+  check.
+- Use a conventional pull request title of at most 72 characters. GitHub uses that
+  title as the squash commit subject and the pull request body as the squash message.
+- `GENESIS_REVIEW_POLICY=copilot-one-approval` requires a ready pull request authored
+  by Copilot to receive one OWNER, MEMBER, or COLLABORATOR approval on the current
+  head SHA. Pushing another commit requires approval of the new SHA.
+- Approval for an external fork workflow authorizes the proposed workflow as a whole,
+  including its runner selection. Review workflow changes and runner routing before
+  approving execution. Narnia's pull request validation uses GitHub-hosted runners.
+- Before marking a pull request ready, surface omitted behavior, implementation gaps,
+  test results, technical debt, missing coverage, weak assertions, and assumptions.
