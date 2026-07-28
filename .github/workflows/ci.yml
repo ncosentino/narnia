@@ -1,15 +1,59 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  validation-plan:
+    name: Validation plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+
+    steps:
+      - name: Resolve validation scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft || false }}
+          DRAFT_MODE: ${{ vars.CI_DRAFT_MODE || 'subset' }}
+        run: |
+          scope=full
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$IS_DRAFT" = "true" ]; then
+            scope="$DRAFT_MODE"
+          fi
+
+          case "$scope" in
+            full|subset|ready-only) ;;
+            *)
+              echo "::error::Unsupported validation scope '$scope'."
+              exit 1
+              ;;
+          esac
+
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "Validation scope: $scope"
+
   code:
     name: Build and test .NET
+    needs: validation-plan
+    if: >-
+      needs.validation-plan.outputs.scope == 'full' ||
+      needs.validation-plan.outputs.scope == 'subset'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -38,7 +82,10 @@ jobs:
   release-package:
     name: Validate Windows release package
     runs-on: windows-latest
-    needs: [code]
+    needs: [validation-plan, code]
+    if: >-
+      needs.validation-plan.outputs.scope == 'full' &&
+      needs.code.result == 'success'
     permissions:
       contents: read
 
@@ -83,7 +130,8 @@ jobs:
   docs:
     name: Build and deploy documentation
     runs-on: ubuntu-latest
-    needs: []
+    needs: validation-plan
+    if: needs.validation-plan.outputs.scope == 'full'
     permissions:
       contents: read
 
@@ -111,3 +159,65 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy site --project-name=narnia --branch=main
+
+  ci:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'Draft CI' || 'CI' }}
+    needs: [validation-plan, code, release-package, docs]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SCOPE: ${{ needs.validation-plan.outputs.scope }}
+      PLAN_RESULT: ${{ needs.validation-plan.result }}
+      CODE_RESULT: ${{ needs.code.result }}
+      PACKAGE_RESULT: ${{ needs.release-package.result }}
+      DOCS_RESULT: ${{ needs.docs.result }}
+
+    steps:
+      - name: Check validation results
+        shell: bash
+        run: |
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "::error::Validation planning failed."
+            exit 1
+          fi
+
+          for result in "$CODE_RESULT" "$PACKAGE_RESULT" "$DOCS_RESULT"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error::A validation job failed or was cancelled."
+              exit 1
+            fi
+          done
+
+          case "$SCOPE" in
+            full)
+              if [ "$CODE_RESULT" != "success" ] ||
+                 [ "$PACKAGE_RESULT" != "success" ] ||
+                 [ "$DOCS_RESULT" != "success" ]; then
+                echo "::error::Full validation did not complete successfully."
+                exit 1
+              fi
+              ;;
+            subset)
+              if [ "$CODE_RESULT" != "success" ] ||
+                 [ "$PACKAGE_RESULT" != "skipped" ] ||
+                 [ "$DOCS_RESULT" != "skipped" ]; then
+                echo "::error::Draft subset validation did not follow the expected job graph."
+                exit 1
+              fi
+              ;;
+            ready-only)
+              if [ "$CODE_RESULT" != "skipped" ] ||
+                 [ "$PACKAGE_RESULT" != "skipped" ] ||
+                 [ "$DOCS_RESULT" != "skipped" ]; then
+                echo "::error::Ready-only draft validation unexpectedly ran a validation job."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Validation plan produced unsupported scope '$SCOPE'."
+              exit 1
+              ;;
+          esac
+
+          echo "Validation scope '$SCOPE' passed."
