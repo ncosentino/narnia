@@ -121,6 +121,13 @@
                     {
                         <FavoriteButton SessionId="@sessionId" IsFavorite="@IsFavorite(sessionId, session)" />
                     }
+                    @if (!isClosed)
+                    {
+                        <a class="btn-refresh" href="/processes?q=@record.TerminalProcessId"
+                           title="Inspect this Windows Terminal process and its child processes">
+                            PID @record.TerminalProcessId
+                        </a>
+                    }
                     @if (isClosed)
                     {
                         <button class="launch-btn" onclick="narniaReopenWindow('@record.Id', this)" title="Reopen this session in a new terminal window">🚀 Reopen</button>

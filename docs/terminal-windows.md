@@ -26,12 +26,12 @@ already saved.
 
 !!! info "Detection is Windows Terminal–specific"
     Recording reconstructs a window by walking the process tree to the owning
-    `WindowsTerminal.exe` and reading `copilot --resume=<id>` from each tab's
-    command line. Only tabs started with `--resume` (for example, those launched
-    from Narnia's **Launch Selected**, or resumed on the command line) are
-    detected. Tabs added to a window after it launched are still recorded, but
-    their starting directory is only captured when it appears in the window's
-    launch command.
+    `WindowsTerminal.exe`. Resumed tabs are identified from
+    `copilot --resume=<id>` in their process chain. Fresh sessions, whose command
+    line has no session ID, are resolved through Copilot's live
+    `inuse.<pid>.lock` marker. Tabs added to a window after it launched are still
+    recorded, but their starting directory is only captured when it appears in
+    the window's launch command.
 
 ### Copilot tabs only
 

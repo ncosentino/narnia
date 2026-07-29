@@ -56,6 +56,7 @@ builder.Services.AddSingleton<ICopilotSessionLockReader, CopilotSessionLockReade
 builder.Services.AddSingleton<ICopilotSessionLockResolver, CopilotSessionLockResolver>();
 builder.Services.AddSingleton<ICopilotProcessProvider, CopilotProcessProvider>();
 builder.Services.AddSingleton<ICopilotSessionActivityReader, CopilotSessionActivityReader>();
+builder.Services.AddSingleton<IProcessDiagnosticsService, ProcessDiagnosticsService>();
 builder.Services.AddSingleton<ISessionOperationCoordinator, SessionOperationCoordinator>();
 builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
 builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredService<SqliteNarniaSettingsRepository>());
@@ -126,13 +127,20 @@ else
 
 if (OperatingSystem.IsWindows())
 {
+    builder.Services.AddSingleton<IProcessResourceSnapshotProvider, WindowsProcessResourceSnapshotProvider>();
     builder.Services.AddSingleton<IProcessSnapshotProvider, WmiProcessSnapshotProvider>();
     builder.Services.AddSingleton<ILiveWindowDetector, LiveWindowDetector>();
     builder.Services.AddSingleton<ITerminalWindowSnapshotter, TerminalWindowSnapshotter>();
     builder.Services.AddHostedService<WindowSnapshotterHostedService>();
 }
+else
+{
+    builder.Services.AddSingleton<IProcessResourceSnapshotProvider, UnsupportedProcessResourceSnapshotProvider>();
+}
 
 builder.Services.AddRazorComponents();
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.MaxDepth = 256);
 
 builder.Services
     .AddMcpServer()
@@ -214,13 +222,16 @@ if (!app.Environment.IsDevelopment())
 app.UseStaticFiles();
 app.UseAntiforgery();
 
-// DNS-rebinding defense for the MCP endpoint (MCP spec): the server binds loopback, but a
-// malicious web page could still cause a browser to POST here with an attacker Host header.
-// Reject /mcp requests whose Host is not a loopback name. Non-browser MCP clients send a
-// loopback Host and are unaffected.
+// DNS-rebinding defense for local surfaces that expose process or MCP data. The server binds
+// loopback, but a malicious web page could still issue browser requests with an attacker Host.
+// Legitimate clients use a loopback Host and are unaffected.
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.StartsWithSegments("/mcp"))
+    var requiresLoopbackHost =
+        context.Request.Path.StartsWithSegments("/mcp") ||
+        context.Request.Path.StartsWithSegments("/processes") ||
+        context.Request.Path.StartsWithSegments("/api/processes");
+    if (requiresLoopbackHost)
     {
         var host = context.Request.Host.Host;
         var isLoopback = host is "localhost" or "127.0.0.1" or "::1" or "[::1]";
@@ -535,6 +546,15 @@ app.MapPost("/api/windows/{id}/reopen", async (
     return outcome.Failures.Count == 0
         ? Results.Ok(new { reopened = true, tabs = outcome.LaunchedSessionIds.Count })
         : Results.BadRequest($"Failed to reopen window: {outcome.Failures[0].Reason}");
+});
+
+// ── Live process diagnostics API ────────────────────────────────────────────
+app.MapGet("/api/processes", async (
+    IProcessDiagnosticsService diagnostics,
+    CancellationToken ct) =>
+{
+    var snapshot = await diagnostics.GetSnapshotAsync(ct);
+    return Results.Ok(snapshot);
 });
 
 app.MapPost("/api/windows/reopen", async (

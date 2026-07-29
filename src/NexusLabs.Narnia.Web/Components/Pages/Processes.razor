@@ -1,0 +1,472 @@
+@page "/processes"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Services
+@inject IProcessDiagnosticsService Diagnostics
+
+<PageTitle>Processes — Narnia</PageTitle>
+
+<div class="page-actions">
+    <div>
+        <h1>🖥️ Live Process Diagnostics</h1>
+        <p class="settings-hint">
+            Attribute live Copilot runtimes to session, shell, and Windows Terminal PIDs, then
+            inspect every child process contributing CPU or memory. This view is read-only:
+            abruptly terminating a runtime can lose in-flight output or leave session state
+            incomplete.
+        </p>
+    </div>
+    <a href="@RefreshUrl" class="btn-refresh">↻ Refresh</a>
+</div>
+
+<form method="get" action="/processes" class="process-search">
+    <input type="search"
+           name="q"
+           value="@Query"
+           placeholder="PID, session GUID, repository, path, or process name"
+           aria-label="Filter live processes" />
+    <button type="submit">Find</button>
+    @if (!string.IsNullOrWhiteSpace(Query))
+    {
+        <a href="/processes" class="btn-refresh">Clear</a>
+    }
+</form>
+
+@if (_snapshot is null)
+{
+    <p>Loading live process diagnostics…</p>
+}
+else if (!_snapshot.IsAvailable)
+{
+    <div class="process-unavailable">
+        <strong>Process diagnostics unavailable</strong>
+        <p>@_snapshot.UnavailableReason</p>
+    </div>
+}
+else
+{
+    <div id="processes-root"
+         data-signature="@_snapshot.TopologySignature"
+         data-tree-identities="@string.Join("|", _snapshot.ProcessTreeIdentities)">
+        <div class="dashboard-summary process-summary">
+            @UsageCard(
+                "Sampled process CPU",
+                "sampled",
+                _snapshot.SampledProcessesUsage,
+                "Estimated from sampled non-idle processes; short-lived processes can be missed.")
+            @UsageCard(
+                "Copilot runtime trees",
+                "copilot",
+                _snapshot.CopilotRuntimeUsage,
+                $"{AllRuntimes.Count} runtimes · {_snapshot.MappedSessionCount} session locks")
+            @UsageCard(
+                "Windows Terminal trees",
+                "terminals",
+                _snapshot.TerminalUsage,
+                $"{_snapshot.Terminals.Count} terminal processes; includes non-Copilot tabs.")
+            <div class="dashboard-summary-card">
+                <span class="dashboard-summary-value" id="process-sampled-at">
+                    @_snapshot.CapturedAt.LocalDateTime.ToString("HH:mm:ss")
+                </span>
+                <span class="dashboard-summary-label">Latest sample</span>
+                <span class="dashboard-summary-detail" id="process-sample-duration">
+                    @SampleDurationText(_snapshot.SampleDurationSeconds)
+                </span>
+            </div>
+        </div>
+
+        <div class="process-notice">
+            CPU is normalized to total machine capacity across @_snapshot.LogicalProcessorCount
+            logical processors. Memory totals use private bytes so shared pages are not multiplied.
+            Terminal and Copilot totals overlap and should not be added together.
+            <span id="processes-live-indicator" class="windows-live">● live — updates while this tab is visible</span>
+        </div>
+
+        @if (VisibleTerminalCount == 0 && VisibleOrphanedRuntimes.Count == 0)
+        {
+            <p>No live process matched <code>@Query</code>.</p>
+        }
+
+        @foreach (var terminal in VisibleTerminals)
+        {
+            var runtimes = VisibleRuntimes(terminal).ToArray();
+            <section class="process-terminal" id="terminal-@terminal.TerminalProcessId">
+                <div class="process-terminal-header">
+                    <div>
+                        <h2>Windows Terminal <code>PID @terminal.TerminalProcessId</code></h2>
+                        <span class="process-age">@FormatAge(terminal.StartedAt)</span>
+                    </div>
+                    <div class="process-usage-inline">
+                        @UsageInline($"terminal-{terminal.TerminalProcessId}", terminal.ProcessTree.TreeUsage)
+                    </div>
+                </div>
+
+                <div class="process-terminal-other">
+                    Terminal, shells, launchers, and non-Copilot work:
+                    @UsageInline($"terminal-{terminal.TerminalProcessId}-other", terminal.OtherUsage)
+                </div>
+
+                @if (runtimes.Length == 0)
+                {
+                    <p class="process-empty">
+                        No mapped Copilot runtime matched this filter.
+                    </p>
+                }
+                else
+                {
+                    @foreach (var runtime in runtimes)
+                    {
+                        @RenderRuntime(runtime)
+                    }
+                }
+
+                <details class="process-tree-details">
+                    <summary>
+                        Complete terminal process tree
+                        (@(terminal.ProcessTree.TreeUsage.ProcessCount - 1) descendants)
+                    </summary>
+                    @RenderProcessTree(terminal.ProcessTree)
+                </details>
+            </section>
+        }
+
+        @if (VisibleOrphanedRuntimes.Count > 0)
+        {
+            <section class="process-terminal process-terminal--orphaned">
+                <div class="process-terminal-header">
+                    <div>
+                        <h2>Copilot runtimes outside Windows Terminal</h2>
+                        <span class="process-age">
+                            These can come from another terminal host, an IDE, or a detached process.
+                        </span>
+                    </div>
+                </div>
+                @foreach (var runtime in VisibleOrphanedRuntimes)
+                {
+                    @RenderRuntime(runtime)
+                }
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private ProcessDiagnosticsSnapshot? _snapshot;
+
+    /// <summary>
+    /// Gets or sets the PID, session, repository, path, or process-name filter.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? Query { get; set; }
+
+    private string RefreshUrl => string.IsNullOrWhiteSpace(Query)
+        ? "/processes"
+        : $"/processes?q={Uri.EscapeDataString(Query)}";
+
+    private IReadOnlyList<CopilotRuntimeDiagnostics> AllRuntimes =>
+        _snapshot is null
+            ? []
+            : _snapshot.Terminals
+                .SelectMany(terminal => terminal.Runtimes)
+                .Concat(_snapshot.OrphanedRuntimes)
+                .ToArray();
+
+    private IEnumerable<TerminalProcessDiagnostics> VisibleTerminals =>
+        _snapshot?.Terminals.Where(MatchesTerminal) ?? [];
+
+    private IReadOnlyList<CopilotRuntimeDiagnostics> VisibleOrphanedRuntimes =>
+        _snapshot?.OrphanedRuntimes.Where(MatchesRuntime).ToArray() ?? [];
+
+    private int VisibleTerminalCount => VisibleTerminals.Count();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _snapshot = await Diagnostics.GetSnapshotAsync();
+    }
+
+    private bool MatchesTerminal(TerminalProcessDiagnostics terminal)
+    {
+        if (string.IsNullOrWhiteSpace(Query))
+            return true;
+        return Contains(terminal.TerminalProcessId.ToString()) ||
+            TreeContains(terminal.ProcessTree) ||
+            terminal.Runtimes.Any(MatchesRuntime);
+    }
+
+    private IEnumerable<CopilotRuntimeDiagnostics> VisibleRuntimes(
+        TerminalProcessDiagnostics terminal)
+    {
+        if (string.IsNullOrWhiteSpace(Query) ||
+            Contains(terminal.TerminalProcessId.ToString()))
+        {
+            return terminal.Runtimes;
+        }
+
+        return terminal.Runtimes.Where(MatchesRuntime);
+    }
+
+    private bool MatchesRuntime(CopilotRuntimeDiagnostics runtime)
+    {
+        if (string.IsNullOrWhiteSpace(Query))
+            return true;
+
+        return Contains(runtime.CopilotProcessId.ToString()) ||
+            (runtime.ShellProcessId is not null &&
+                Contains(runtime.ShellProcessId.Value.ToString())) ||
+            (runtime.TerminalProcessId is not null &&
+                Contains(runtime.TerminalProcessId.Value.ToString())) ||
+            runtime.LaunchChain.Any(process =>
+                Contains(process.ProcessId.ToString()) || Contains(process.Name)) ||
+            runtime.Sessions.Any(session =>
+                Contains(session.SessionId) ||
+                Contains(session.Summary) ||
+                Contains(session.Repository) ||
+                Contains(session.Branch) ||
+                Contains(session.Cwd)) ||
+            TreeContains(runtime.RuntimeTree);
+    }
+
+    private bool TreeContains(ProcessTreeNode node) =>
+        Contains(node.ProcessId.ToString()) ||
+        Contains(node.Name) ||
+        node.Children.Any(TreeContains);
+
+    private bool Contains(string? value) =>
+        !string.IsNullOrWhiteSpace(Query) &&
+        value?.Contains(Query, StringComparison.OrdinalIgnoreCase) == true;
+
+    private RenderFragment UsageCard(
+        string label,
+        string metricKey,
+        ProcessUsage usage,
+        string detail) => __builder =>
+    {
+        <div class="dashboard-summary-card">
+            <span class="dashboard-summary-value process-summary-cpu"
+                  data-process-metric="@metricKey"
+                  data-process-value="cpu">@FormatCpu(usage.CpuPercent)</span>
+            <span class="dashboard-summary-label">@label</span>
+            <span class="dashboard-summary-detail">
+                <span data-process-metric="@metricKey"
+                      data-process-value="private">@FormatBytes(usage.PrivateBytes)</span>
+                private ·
+                <span data-process-metric="@metricKey"
+                      data-process-value="count">@usage.ProcessCount</span>
+                processes<br />
+                @detail
+            </span>
+        </div>
+    };
+
+    private RenderFragment UsageInline(string metricKey, ProcessUsage usage) => __builder =>
+    {
+        <span class="process-usage-chip">
+            <strong data-process-metric="@metricKey"
+                    data-process-value="cpu">@FormatCpu(usage.CpuPercent)</strong>
+            CPU
+        </span>
+        <span class="process-usage-chip">
+            <strong data-process-metric="@metricKey"
+                    data-process-value="private">@FormatBytes(usage.PrivateBytes)</strong>
+            private
+        </span>
+        <span class="process-usage-chip">
+            <strong data-process-metric="@metricKey"
+                    data-process-value="working">@FormatBytes(usage.WorkingSetBytes)</strong>
+            working set
+        </span>
+    };
+
+    private RenderFragment RenderRuntime(CopilotRuntimeDiagnostics runtime) => __builder =>
+    {
+        var primary = runtime.Sessions.FirstOrDefault(session => session.IsPrimary);
+        var additionalSessions = runtime.Sessions.Where(session => !session.IsPrimary).ToArray();
+        <article class="process-runtime" id="copilot-@runtime.CopilotProcessId">
+            <div class="process-runtime-header">
+                <div class="process-runtime-title">
+                    @if (primary is not null)
+                    {
+                        <a href="/sessions/@primary.SessionId">
+                            @(primary.Summary ?? Short(primary.SessionId))
+                        </a>
+                        @if (!string.IsNullOrWhiteSpace(primary.Repository))
+                        {
+                            <span>@primary.Repository</span>
+                        }
+                    }
+                    else
+                    {
+                        <strong>Unmapped Copilot runtime</strong>
+                        <span>No live session lock was found for this process.</span>
+                    }
+                    <span class="process-runtime-pid">PID @runtime.CopilotProcessId</span>
+                </div>
+                <div class="process-usage-inline">
+                    @UsageInline($"runtime-{runtime.CopilotProcessId}", runtime.RuntimeTree.TreeUsage)
+                </div>
+            </div>
+
+            <dl class="process-runtime-meta">
+                <dt>Copilot PID</dt>
+                <dd><code>@runtime.CopilotProcessId</code></dd>
+                <dt>Shell PID</dt>
+                <dd>@PidOrDash(runtime.ShellProcessId)</dd>
+                <dt>Terminal PID</dt>
+                <dd>@PidOrDash(runtime.TerminalProcessId)</dd>
+                <dt>Age</dt>
+                <dd>@FormatAge(runtime.StartedAt)</dd>
+                <dt>Copilot process only</dt>
+                <dd>@UsageInline($"process-{runtime.CopilotProcessId}-own", runtime.RuntimeTree.OwnUsage)</dd>
+                <dt>Launch chain</dt>
+                <dd class="process-launch-chain">
+                    @if (runtime.LaunchChain.Count == 0)
+                    {
+                        <span>Not available</span>
+                    }
+                    else
+                    {
+                        @foreach (var process in runtime.LaunchChain)
+                        {
+                            <span><code>@process.ProcessId</code> @process.Name</span>
+                        }
+                    }
+                </dd>
+            </dl>
+
+            @if (primary is not null)
+            {
+                <div class="process-session-path">
+                    <code>@primary.SessionId</code>
+                    @if (!string.IsNullOrWhiteSpace(primary.Cwd))
+                    {
+                        <span class="cwd">@primary.Cwd</span>
+                    }
+                </div>
+            }
+
+            @if (additionalSessions.Length > 0)
+            {
+                <details class="process-nested-sessions">
+                    <summary>
+                        @additionalSessions.Length additional session
+                        lock@(additionalSessions.Length == 1 ? "" : "s") share this runtime
+                    </summary>
+                    <p class="settings-hint">
+                        Additional locks can represent provisional resume state, nested agents,
+                        or background work; they do not prove another active conversation.
+                    </p>
+                    <ul>
+                        @foreach (var session in additionalSessions)
+                        {
+                            <li>
+                                <a href="/sessions/@session.SessionId">
+                                    @(session.Summary ?? Short(session.SessionId))
+                                </a>
+                                <code>@session.SessionId</code>
+                            </li>
+                        }
+                    </ul>
+                </details>
+            }
+
+            <details class="process-tree-details">
+                <summary>
+                    Copilot child process tree
+                    (@(runtime.RuntimeTree.TreeUsage.ProcessCount - 1) descendants)
+                </summary>
+                @RenderProcessTree(runtime.RuntimeTree)
+            </details>
+        </article>
+    };
+
+    private RenderFragment RenderProcessTree(ProcessTreeNode root) => __builder =>
+    {
+        <ul class="process-tree">
+            @RenderProcessNode(root)
+        </ul>
+    };
+
+    private RenderFragment RenderProcessNode(ProcessTreeNode node) => __builder =>
+    {
+        <li>
+            <div class="process-tree-row">
+                <span class="process-tree-name">
+                    <code>@node.ProcessId</code>
+                    @node.Name
+                </span>
+                <span class="process-tree-age">@FormatAge(node.StartedAt)</span>
+                <span class="process-tree-metrics">
+                    own
+                    <strong data-process-metric="process-@node.ProcessId-own"
+                            data-process-value="cpu">@FormatCpu(node.OwnUsage.CpuPercent)</strong>
+                    ·
+                    <strong data-process-metric="process-@node.ProcessId-own"
+                            data-process-value="private">@FormatBytes(node.OwnUsage.PrivateBytes)</strong>
+                    @if (node.TreeUsage.ProcessCount > 1)
+                    {
+                        <span>
+                            | tree
+                            <strong data-process-metric="process-@node.ProcessId-tree"
+                                    data-process-value="cpu">@FormatCpu(node.TreeUsage.CpuPercent)</strong>
+                            ·
+                            <strong data-process-metric="process-@node.ProcessId-tree"
+                                    data-process-value="private">@FormatBytes(node.TreeUsage.PrivateBytes)</strong>
+                        </span>
+                    }
+                </span>
+            </div>
+            @if (node.Children.Count > 0)
+            {
+                <ul>
+                    @foreach (var child in node.Children)
+                    {
+                        @RenderProcessNode(child)
+                    }
+                </ul>
+            }
+        </li>
+    };
+
+    private static string PidOrDash(int? processId) =>
+        processId is null ? "—" : processId.Value.ToString();
+
+    private static string FormatCpu(double? cpuPercent) =>
+        cpuPercent is null ? "sampling…" : $"{cpuPercent.Value:F1}%";
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
+        var value = Math.Max(0, bytes);
+        var size = (double)value;
+        var suffix = 0;
+        while (size >= 1024 && suffix < suffixes.Length - 1)
+        {
+            size /= 1024;
+            suffix++;
+        }
+
+        return suffix == 0 ? $"{value:N0} {suffixes[suffix]}" : $"{size:F1} {suffixes[suffix]}";
+    }
+
+    private static string FormatAge(DateTimeOffset? startedAt)
+    {
+        if (startedAt is null)
+            return "start time unavailable";
+
+        var age = DateTimeOffset.Now - startedAt.Value;
+        if (age < TimeSpan.Zero)
+            age = TimeSpan.Zero;
+        if (age.TotalDays >= 1)
+            return $"{(int)age.TotalDays}d {age.Hours}h old";
+        if (age.TotalHours >= 1)
+            return $"{(int)age.TotalHours}h {age.Minutes}m old";
+        return $"{Math.Max(0, age.Minutes)}m old";
+    }
+
+    private static string SampleDurationText(double? durationSeconds) =>
+        durationSeconds is null
+            ? "CPU needs a second sample"
+            : $"{durationSeconds.Value:F1}s CPU sample window";
+
+    private static string Short(string sessionId) =>
+        sessionId.Length >= 8 ? sessionId[..8] : sessionId;
+}

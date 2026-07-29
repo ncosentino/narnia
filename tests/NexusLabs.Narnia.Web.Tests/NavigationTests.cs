@@ -30,6 +30,7 @@ public sealed class NavigationTests
             "Favorites",
             "Collections",
             "Windows",
+            "Processes",
             "Session Groups",
             "Schedules",
             "Stats",
