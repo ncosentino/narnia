@@ -51,6 +51,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock active-session reader so tests never inspect real Copilot processes or locks.</summary>
     public Mock<ICopilotSessionActivityReader> SessionActivityReader { get; } = new();
 
+    /// <summary>Mock process diagnostics so tests never enumerate operating-system processes.</summary>
+    public Mock<IProcessDiagnosticsService> ProcessDiagnostics { get; } = new();
+
     /// <summary>Mock Git safety inspector so cleanup tests never execute Git against real paths.</summary>
     public Mock<IGitArtifactInspector> GitArtifactInspector { get; } = new();
 
@@ -109,6 +112,23 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         SessionActivityReader
             .Setup(reader => reader.GetActiveSessionIds())
             .Returns(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        ProcessDiagnostics
+            .Setup(service => service.GetSnapshotAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProcessDiagnosticsSnapshot(
+                false,
+                "Diagnostics are disabled in tests.",
+                DateTimeOffset.UtcNow,
+                null,
+                1,
+                string.Empty,
+                string.Empty,
+                [],
+                new ProcessUsage(null, 0, 0, 0, 0),
+                new ProcessUsage(null, 0, 0, 0, 0),
+                new ProcessUsage(null, 0, 0, 0, 0),
+                0,
+                [],
+                []));
         StorageMetadataSource
             .Setup(source => source.ListAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
@@ -229,6 +249,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<ICopilotSessionActivityReader>();
             services.AddSingleton(SessionActivityReader.Object);
+
+            services.RemoveAll<IProcessDiagnosticsService>();
+            services.AddSingleton(ProcessDiagnostics.Object);
 
             services.RemoveAll<IGitArtifactInspector>();
             services.AddSingleton(GitArtifactInspector.Object);

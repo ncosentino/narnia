@@ -166,6 +166,8 @@ else if (_session is not null)
         }
         <dt>Created</dt><dd>@_session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
         <dt>Updated</dt><dd>@_session.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
+        <dt>Live Processes</dt>
+        <dd><a href="/processes?q=@Uri.EscapeDataString(_session.Id)">Locate runtime, terminal, and child PIDs</a></dd>
         <dt>Local Storage</dt>
         <dd>
             @if (_storage is null)

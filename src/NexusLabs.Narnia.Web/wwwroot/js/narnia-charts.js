@@ -1941,3 +1941,176 @@ function narniaWindowsSignature(data) {
         startWindowsWatch();
     }
 })();
+
+// ── Live process diagnostics refresh ────────────────────────────────────────
+// Process ownership changes reload the static SSR page. Stable process trees update
+// resource values in place so expanded child details and the current filter are preserved.
+(function () {
+    var POLL_MS = 5000;
+    var pendingAdditions = new Map();
+    var pendingRemovals = new Map();
+
+    function formatCpu(value) {
+        return value == null ? 'sampling…' : value.toFixed(1) + '%';
+    }
+
+    function formatBytes(value) {
+        var suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        var size = Math.max(0, Number(value || 0));
+        var suffix = 0;
+        while (size >= 1024 && suffix < suffixes.length - 1) {
+            size /= 1024;
+            suffix++;
+        }
+        return suffix === 0
+            ? Math.round(size).toLocaleString() + ' ' + suffixes[suffix]
+            : size.toFixed(1) + ' ' + suffixes[suffix];
+    }
+
+    function addUsage(metrics, key, usage) {
+        if (!usage) return;
+        metrics[key] = usage;
+    }
+
+    function addProcessTree(metrics, node) {
+        if (!node) return;
+        addUsage(metrics, 'process-' + node.processId + '-own', node.ownUsage);
+        addUsage(metrics, 'process-' + node.processId + '-tree', node.treeUsage);
+        (node.children || []).forEach(function (child) {
+            addProcessTree(metrics, child);
+        });
+    }
+
+    function buildMetrics(data) {
+        var metrics = {};
+        addUsage(metrics, 'sampled', data.sampledProcessesUsage);
+        addUsage(metrics, 'copilot', data.copilotRuntimeUsage);
+        addUsage(metrics, 'terminals', data.terminalUsage);
+
+        (data.terminals || []).forEach(function (terminal) {
+            addUsage(metrics, 'terminal-' + terminal.terminalProcessId, terminal.processTree.treeUsage);
+            addUsage(metrics, 'terminal-' + terminal.terminalProcessId + '-other', terminal.otherUsage);
+            addProcessTree(metrics, terminal.processTree);
+            (terminal.runtimes || []).forEach(function (runtime) {
+                addUsage(metrics, 'runtime-' + runtime.copilotProcessId, runtime.runtimeTree.treeUsage);
+                addProcessTree(metrics, runtime.runtimeTree);
+            });
+        });
+
+        (data.orphanedRuntimes || []).forEach(function (runtime) {
+            addUsage(metrics, 'runtime-' + runtime.copilotProcessId, runtime.runtimeTree.treeUsage);
+            addProcessTree(metrics, runtime.runtimeTree);
+        });
+        return metrics;
+    }
+
+    function updateValues(data) {
+        var metrics = buildMetrics(data);
+        document.querySelectorAll('[data-process-metric][data-process-value]').forEach(function (element) {
+            var usage = metrics[element.getAttribute('data-process-metric')];
+            if (!usage) return;
+            var value = element.getAttribute('data-process-value');
+            if (value === 'cpu') element.textContent = formatCpu(usage.cpuPercent);
+            else if (value === 'private') element.textContent = formatBytes(usage.privateBytes);
+            else if (value === 'working') element.textContent = formatBytes(usage.workingSetBytes);
+            else if (value === 'count') element.textContent = usage.processCount;
+        });
+
+        var sampledAt = document.getElementById('process-sampled-at');
+        if (sampledAt && data.capturedAt) {
+            sampledAt.textContent = new Date(data.capturedAt).toLocaleTimeString();
+        }
+        var duration = document.getElementById('process-sample-duration');
+        if (duration) {
+            duration.textContent = data.sampleDurationSeconds == null
+                ? 'CPU needs a second sample'
+                : data.sampleDurationSeconds.toFixed(1) + 's CPU sample window';
+        }
+    }
+
+    function confirmTreeChanges(root, data) {
+        var baseline = new Set(
+            (root.getAttribute('data-tree-identities') || '')
+                .split('|')
+                .filter(function (identity) { return identity.length > 0; }));
+        var current = new Set(data.processTreeIdentities || []);
+        var pending = false;
+        var confirmed = false;
+
+        current.forEach(function (identity) {
+            if (baseline.has(identity)) return;
+            var samples = (pendingAdditions.get(identity) || 0) + 1;
+            pendingAdditions.set(identity, samples);
+            pending = true;
+            if (samples >= 2) confirmed = true;
+        });
+        Array.from(pendingAdditions.keys()).forEach(function (identity) {
+            if (!current.has(identity) || baseline.has(identity)) {
+                pendingAdditions.delete(identity);
+            }
+        });
+
+        baseline.forEach(function (identity) {
+            if (current.has(identity)) return;
+            var samples = (pendingRemovals.get(identity) || 0) + 1;
+            pendingRemovals.set(identity, samples);
+            pending = true;
+            if (samples >= 2) confirmed = true;
+        });
+        Array.from(pendingRemovals.keys()).forEach(function (identity) {
+            if (current.has(identity) || !baseline.has(identity)) {
+                pendingRemovals.delete(identity);
+            }
+        });
+
+        return { pending: pending, confirmed: confirmed };
+    }
+
+    async function poll(root) {
+        if (document.hidden) return;
+        var indicator = document.getElementById('processes-live-indicator');
+        try {
+            var response = await fetch('/api/processes', { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) return;
+            var data = await response.json();
+            if (!data.isAvailable) return;
+            if (data.topologySignature !== root.getAttribute('data-signature')) {
+                if (indicator) indicator.textContent = '↻ process ownership changed — updating…';
+                location.reload();
+                return;
+            }
+            var treeChanges = confirmTreeChanges(root, data);
+            if (treeChanges.confirmed) {
+                if (indicator) indicator.textContent = '↻ child process tree changed — updating…';
+                location.reload();
+                return;
+            }
+            if (treeChanges.pending) {
+                if (indicator) indicator.textContent = '◐ confirming child process changes…';
+            }
+            updateValues(data);
+            if (indicator && !treeChanges.pending) {
+                indicator.textContent = '● live — updates while this tab is visible';
+            }
+        } catch (e) {
+            if (indicator) indicator.textContent = '○ reconnecting…';
+        }
+    }
+
+    function startProcessWatch() {
+        var root = document.getElementById('processes-root');
+        if (!root) return;
+
+        async function tick() {
+            await poll(root);
+            setTimeout(tick, POLL_MS);
+        }
+        setTimeout(tick, POLL_MS);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startProcessWatch);
+    } else {
+        startProcessWatch();
+    }
+})();

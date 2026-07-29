@@ -51,6 +51,7 @@ nav:
   - Broken Session Recovery: session-recovery.md
   - Session Storage: session-storage.md
   - Terminal Window Recovery: terminal-windows.md
+  - Live Process Diagnostics: process-diagnostics.md
   - Portable Scheduled Jobs: schedule-portability.md
   - MCP Tools:
     - Overview: tools/index.md

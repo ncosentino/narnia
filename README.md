@@ -19,6 +19,7 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 - **Web UI** — Blazor Static SSR local web interface for browsing, searching, favoriting, and reading session details, checkpoints, and conversation turns, with persistent browser-local table column widths
 - **Scheduled Jobs** — create, edit, monitor, export, share, and safely import Windows Task Scheduler-backed `copilot -p` jobs with hidden execution, live logs, portable file packages, and disabled-first destination registration
 - **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
+- **Live process diagnostics** — map Copilot sessions to Copilot, shell, and Windows Terminal PIDs, then inspect sampled CPU, memory, and spawned child-process trees
 - **Session organization** — save exact, ordered Session Groups for reopening together and place related sessions in overlapping Collections that can span repositories
 - **Broken-session recovery** — detect malformed or oversized Copilot event history, block unsafe blank-session fallbacks, archive the original stream, and have Copilot reseed the same session ID and folder
 - **Session storage** — measure per-session disk usage and growth, identify stale or risky sessions, and delete validated local data through the official Copilot SDK
