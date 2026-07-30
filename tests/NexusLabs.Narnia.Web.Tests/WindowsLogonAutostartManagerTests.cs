@@ -1,11 +1,14 @@
 using System.IO.Abstractions;
 using System.Runtime.Versioning;
+using NexusLabs.Narnia.Core.Services;
 
 namespace NexusLabs.Narnia.Web.Tests;
 
 [SupportedOSPlatform("windows")]
 public sealed class WindowsLogonAutostartManagerTests : IDisposable
 {
+    private const string UserId = @"EXAMPLE\tester";
+
     private readonly string _localAppData = Path.Combine(
         Path.GetTempPath(),
         $"narnia_autostart_{Guid.NewGuid():N}");
@@ -17,53 +20,80 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     }
 
     [Fact]
-    public void Enable_RegistersWscriptAndCreatesHiddenLauncherOutsideAppDirectory()
+    public void Enable_RegistersLogonTaskAndCreatesHiddenLauncherOutsideAppDirectory()
     {
-        string? runValue = null;
-        var manager = CreateManager(() => runValue, value => runValue = value);
+        var scheduler = new FakeScheduler();
+        var manager = CreateManager(scheduler);
         var executablePath = CreatePublishedExecutable();
 
         manager.Enable();
 
         var launcherPath = Path.Combine(_localAppData, "narnia", "start-server-hidden.vbs");
-        Assert.Equal($"wscript.exe //B //Nologo \"{launcherPath}\"", runValue);
+        Assert.True(scheduler.Exists);
         Assert.True(File.Exists(launcherPath));
         Assert.False(launcherPath.StartsWith(
             Path.GetDirectoryName(executablePath)!,
             StringComparison.OrdinalIgnoreCase));
 
-        var launcher = File.ReadAllText(launcherPath);
+        var script = Assert.Single(scheduler.RegisterScripts);
+        Assert.Contains("New-ScheduledTaskTrigger -AtLogOn", script, StringComparison.Ordinal);
+        Assert.Contains($"-User '{UserId}'", script, StringComparison.Ordinal);
+        Assert.Contains($"-TaskPath '{LogonAutostartTask.Folder}'", script, StringComparison.Ordinal);
+        Assert.Contains($"-TaskName '{LogonAutostartTask.Name}'", script, StringComparison.Ordinal);
+        Assert.Contains("wscript.exe", script, StringComparison.Ordinal);
+        Assert.Contains(launcherPath, script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Enable_WritesUnicodeLauncherThatWaitsForTheServer()
+    {
+        var scheduler = new FakeScheduler();
+        var manager = CreateManager(scheduler);
+        var executablePath = CreatePublishedExecutable();
+
+        manager.Enable();
+
+        var launcherPath = Path.Combine(_localAppData, "narnia", "start-server-hidden.vbs");
         var launcherBytes = File.ReadAllBytes(launcherPath);
         Assert.Equal(0xFF, launcherBytes[0]);
         Assert.Equal(0xFE, launcherBytes[1]);
+
+        var launcher = File.ReadAllText(launcherPath);
         Assert.Contains($"\"\"{executablePath}\"\" --urls http://127.0.0.1:5244", launcher);
         Assert.Contains(
             $"shell.CurrentDirectory = \"{Path.GetDirectoryName(executablePath)}\"",
             launcher);
-        Assert.Contains(", 0, False)", launcher);
+        // Waiting keeps the task reported as Running so a dead server is visible in Task Scheduler.
+        Assert.Contains(", 0, True)", launcher);
     }
 
     [Fact]
-    public void EnsureConfigured_ReplacesLegacyDirectExecutableEntry()
+    public void EnsureConfigured_MigratesLegacyRunEntryToScheduledTask()
     {
         var executablePath = CreatePublishedExecutable();
-        string? runValue = $"\"{executablePath}\" --urls http://127.0.0.1:5244";
-        var manager = CreateManager(() => runValue, value => runValue = value);
+        var scheduler = new FakeScheduler();
+        string? legacyRunValue = $"wscript.exe //B //Nologo \"{executablePath}\"";
+        var manager = CreateManager(
+            scheduler,
+            () => legacyRunValue,
+            () => legacyRunValue = null);
 
         manager.EnsureConfigured();
 
-        Assert.StartsWith("wscript.exe //B //Nologo", runValue, StringComparison.Ordinal);
+        Assert.True(scheduler.Exists);
+        Assert.Null(legacyRunValue);
     }
 
     [Fact]
-    public void EnsureConfigured_WhenDisabled_DoesNotCreateLauncher()
+    public void EnsureConfigured_WhenDisabled_DoesNotRegisterTaskOrCreateLauncher()
     {
-        string? runValue = null;
-        var manager = CreateManager(() => runValue, value => runValue = value);
+        var scheduler = new FakeScheduler();
+        var manager = CreateManager(scheduler);
 
         manager.EnsureConfigured();
 
-        Assert.Null(runValue);
+        Assert.False(scheduler.Exists);
+        Assert.Empty(scheduler.RegisterScripts);
         Assert.False(File.Exists(Path.Combine(
             _localAppData,
             "narnia",
@@ -71,16 +101,29 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     }
 
     [Fact]
-    public void Disable_RemovesRunEntryAndGeneratedLauncher()
+    public void IsEnabled_ReportsEnabledWhileOnlyTheLegacyRunEntryRemains()
     {
-        string? runValue = null;
-        var manager = CreateManager(() => runValue, value => runValue = value);
+        var scheduler = new FakeScheduler();
+        string? legacyRunValue = "wscript.exe //B //Nologo \"legacy.vbs\"";
+        var manager = CreateManager(scheduler, () => legacyRunValue, () => legacyRunValue = null);
+
+        Assert.True(manager.IsEnabled());
+    }
+
+    [Fact]
+    public void Disable_RemovesTaskLegacyEntryAndGeneratedLauncher()
+    {
+        var scheduler = new FakeScheduler();
+        string? legacyRunValue = "wscript.exe //B //Nologo \"legacy.vbs\"";
+        var manager = CreateManager(scheduler, () => legacyRunValue, () => legacyRunValue = null);
         CreatePublishedExecutable();
         manager.Enable();
 
         manager.Disable();
 
-        Assert.Null(runValue);
+        Assert.False(scheduler.Exists);
+        Assert.Null(legacyRunValue);
+        Assert.False(manager.IsEnabled());
         Assert.False(File.Exists(Path.Combine(
             _localAppData,
             "narnia",
@@ -88,21 +131,21 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     }
 
     [Fact]
-    public void Enable_WhenPublishedServerIsMissing_FailsWithoutRunEntry()
+    public void Enable_WhenPublishedServerIsMissing_FailsWithoutRegisteringTask()
     {
-        string? runValue = null;
-        var manager = CreateManager(() => runValue, value => runValue = value);
+        var scheduler = new FakeScheduler();
+        var manager = CreateManager(scheduler);
 
         Assert.Throws<InvalidOperationException>(() => manager.Enable());
-        Assert.Null(runValue);
+        Assert.False(scheduler.Exists);
     }
 
     [Fact]
-    public void Enable_WhenRegistryWriteFails_RemovesGeneratedLauncher()
+    public void Enable_WhenTaskRegistrationFails_RemovesGeneratedLauncherAndKeepsLegacyEntry()
     {
-        var manager = CreateManager(
-            readRunValue: () => null,
-            writeRunValue: _ => throw new InvalidOperationException("registry unavailable"));
+        var scheduler = new FakeScheduler { FailRegistration = true };
+        string? legacyRunValue = "wscript.exe //B //Nologo \"legacy.vbs\"";
+        var manager = CreateManager(scheduler, () => legacyRunValue, () => legacyRunValue = null);
         CreatePublishedExecutable();
 
         Assert.Throws<InvalidOperationException>(() => manager.Enable());
@@ -110,10 +153,12 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             _localAppData,
             "narnia",
             "start-server-hidden.vbs")));
+        // The legacy entry is the only remaining autostart, so a failed migration must not clear it.
+        Assert.NotNull(legacyRunValue);
     }
 
     [Fact]
-    public void Enable_WhenRepairWriteFails_RestoresExistingLauncher()
+    public void Enable_WhenTaskRegistrationFails_RestoresExistingLauncher()
     {
         var launcherPath = Path.Combine(
             _localAppData,
@@ -121,9 +166,8 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "start-server-hidden.vbs");
         Directory.CreateDirectory(Path.GetDirectoryName(launcherPath)!);
         File.WriteAllText(launcherPath, "existing launcher");
-        var manager = CreateManager(
-            readRunValue: () => $"wscript.exe \"{launcherPath}\"",
-            writeRunValue: _ => throw new InvalidOperationException("registry unavailable"));
+        var scheduler = new FakeScheduler { FailRegistration = true };
+        var manager = CreateManager(scheduler);
         CreatePublishedExecutable();
 
         Assert.Throws<InvalidOperationException>(() => manager.Enable());
@@ -133,34 +177,39 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     [Fact]
     public void ConcurrentMutations_AreSerialized()
     {
-        var concurrentWrites = 0;
-        var maxConcurrentWrites = 0;
-        string? runValue = "legacy";
-        var manager = CreateManager(
-            readRunValue: () => runValue,
-            writeRunValue: value =>
+        var concurrentMutations = 0;
+        var maxConcurrentMutations = 0;
+        var scheduler = new FakeScheduler
+        {
+            OnMutate = () =>
             {
-                var concurrent = Interlocked.Increment(ref concurrentWrites);
-                maxConcurrentWrites = Math.Max(maxConcurrentWrites, concurrent);
+                var concurrent = Interlocked.Increment(ref concurrentMutations);
+                maxConcurrentMutations = Math.Max(maxConcurrentMutations, concurrent);
                 Thread.Sleep(50);
-                runValue = value;
-                Interlocked.Decrement(ref concurrentWrites);
-            });
+                Interlocked.Decrement(ref concurrentMutations);
+            },
+        };
+        var manager = CreateManager(scheduler);
         CreatePublishedExecutable();
 
         Parallel.Invoke(manager.Enable, manager.Disable);
 
-        Assert.Equal(1, maxConcurrentWrites);
+        Assert.Equal(1, maxConcurrentMutations);
     }
 
     private WindowsLogonAutostartManager CreateManager(
-        Func<string?> readRunValue,
-        Action<string?> writeRunValue) =>
+        FakeScheduler scheduler,
+        Func<string?>? readLegacyRunValue = null,
+        Action? clearLegacyRunValue = null) =>
         new(
             new FileSystem(),
             _localAppData,
-            readRunValue,
-            writeRunValue,
+            UserId,
+            () => scheduler.Exists,
+            scheduler.Register,
+            scheduler.Remove,
+            readLegacyRunValue ?? (() => null),
+            clearLegacyRunValue ?? (() => { }),
             $@"Local\Narnia.Autostart.Tests.{Guid.NewGuid():N}");
 
     private string CreatePublishedExecutable()
@@ -173,5 +222,31 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, "");
         return path;
+    }
+
+    private sealed class FakeScheduler
+    {
+        public bool Exists { get; private set; }
+
+        public bool FailRegistration { get; init; }
+
+        public Action? OnMutate { get; init; }
+
+        public List<string> RegisterScripts { get; } = [];
+
+        public void Register(string script)
+        {
+            OnMutate?.Invoke();
+            if (FailRegistration)
+                throw new InvalidOperationException("scheduler unavailable");
+            RegisterScripts.Add(script);
+            Exists = true;
+        }
+
+        public void Remove()
+        {
+            OnMutate?.Invoke();
+            Exists = false;
+        }
     }
 }

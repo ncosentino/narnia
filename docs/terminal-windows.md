@@ -78,8 +78,10 @@ relaunched at the start of every Copilot CLI session by the
 [`narnia-web-server`](skills/narnia-web-server.md) hook, so it is effectively
 always up once you start using Copilot. To have it running from the moment you
 sign in — even before your first session — enable **Start at Login** on the
-Settings page (Windows only, off by default). This adds a per-user
-`HKCU\…\CurrentVersion\Run` entry; no administrator rights are required.
+Settings page (Windows only, off by default).
+
+See [Logon Autostart](logon-autostart.md) for how the scheduled task works, how
+to verify that it actually ran, and how to troubleshoot it.
 
 ## Headless snapshot (optional)
 
