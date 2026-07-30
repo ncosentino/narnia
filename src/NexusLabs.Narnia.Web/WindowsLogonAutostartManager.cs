@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Runtime.Versioning;
 using System.Security.Principal;
@@ -8,32 +9,46 @@ using NexusLabs.Narnia.Core.Services;
 namespace NexusLabs.Narnia.Web;
 
 /// <summary>
-/// Manages per-user Windows logon autostart through <c>HKCU\...\CurrentVersion\Run</c>. The Run
-/// entry invokes <c>wscript.exe</c>, which launches the published Narnia server through a generated
-/// hidden VBScript shim so no console window is created or briefly flashed.
+/// Manages per-user Windows logon autostart through a Task Scheduler entry that launches the
+/// published Narnia server. The task runs a generated hidden VBScript shim so no console window is
+/// created or briefly flashed, and Task Scheduler records whether each logon launch actually ran.
 /// </summary>
+/// <remarks>
+/// Earlier versions used an <c>HKCU\...\CurrentVersion\Run</c> value. That mechanism reported
+/// nothing when it failed to launch, so a missed autostart was indistinguishable from one that
+/// never fired. Any surviving Run value is removed as part of enabling or repairing the task.
+/// </remarks>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
 {
-    private const string RunSubKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "Narnia";
+    private const string LegacyRunSubKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string LegacyValueName = "Narnia";
     private const string ServerUrl = "http://127.0.0.1:5244";
     private readonly IFileSystem _fileSystem;
     private readonly string _localAppData;
-    private readonly Func<string?> _readRunValue;
-    private readonly Action<string?> _writeRunValue;
+    private readonly string _userId;
+    private readonly Func<bool> _taskExists;
+    private readonly Action<string> _registerTask;
+    private readonly Action _removeTask;
+    private readonly Func<string?> _readLegacyRunValue;
+    private readonly Action _clearLegacyRunValue;
     private readonly string _mutationMutexName;
 
     /// <summary>
-    /// Creates the Windows autostart manager using the current user's LocalAppData and registry.
+    /// Creates the Windows autostart manager using the current user's LocalAppData, identity, and
+    /// Task Scheduler.
     /// </summary>
     /// <param name="fileSystem">Filesystem used to maintain the generated hidden launcher.</param>
     public WindowsLogonAutostartManager(IFileSystem fileSystem)
         : this(
             fileSystem,
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            ReadRunValue,
-            WriteRunValue,
+            ResolveCurrentUserId(),
+            TaskExists,
+            RegisterTask,
+            RemoveTask,
+            ReadLegacyRunValue,
+            ClearLegacyRunValue,
             BuildMutationMutexName())
     {
     }
@@ -41,14 +56,22 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
     internal WindowsLogonAutostartManager(
         IFileSystem fileSystem,
         string localAppData,
-        Func<string?> readRunValue,
-        Action<string?> writeRunValue,
+        string userId,
+        Func<bool> taskExists,
+        Action<string> registerTask,
+        Action removeTask,
+        Func<string?> readLegacyRunValue,
+        Action clearLegacyRunValue,
         string mutationMutexName)
     {
         _fileSystem = fileSystem;
         _localAppData = localAppData;
-        _readRunValue = readRunValue;
-        _writeRunValue = writeRunValue;
+        _userId = userId;
+        _taskExists = taskExists;
+        _registerTask = registerTask;
+        _removeTask = removeTask;
+        _readLegacyRunValue = readLegacyRunValue;
+        _clearLegacyRunValue = clearLegacyRunValue;
         _mutationMutexName = mutationMutexName;
     }
 
@@ -56,7 +79,11 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
     public bool IsSupported => true;
 
     /// <inheritdoc />
-    public bool IsEnabled() => _readRunValue() is not null;
+    /// <remarks>
+    /// A surviving legacy Run value still counts as enabled so an upgrade repairs it into a task
+    /// rather than silently turning the feature off.
+    /// </remarks>
+    public bool IsEnabled() => _taskExists() || _readLegacyRunValue() is not null;
 
     /// <inheritdoc />
     public void Enable()
@@ -69,7 +96,7 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
     {
         ExecuteExclusive(() =>
         {
-            if (_readRunValue() is not null)
+            if (_taskExists() || _readLegacyRunValue() is not null)
                 Configure();
         });
     }
@@ -79,7 +106,8 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
     {
         ExecuteExclusive(() =>
         {
-            _writeRunValue(null);
+            _removeTask();
+            _clearLegacyRunValue();
             var launcherPath = GetLauncherPath();
             if (_fileSystem.File.Exists(launcherPath))
                 _fileSystem.File.Delete(launcherPath);
@@ -93,10 +121,13 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
         var launcherPath = GetLauncherPath();
         var launcherDirectory = _fileSystem.Path.GetDirectoryName(launcherPath)!;
         var commandLine = $"\"{executablePath}\" --urls {ServerUrl}";
+
+        // Waiting for the server keeps the task reported as Running for its lifetime and records
+        // the real exit code, which is the signal the previous Run entry could never provide.
         var launcher = HiddenProcessLauncherScript.Build(
             commandLine,
             workingDirectory,
-            waitForExit: false);
+            waitForExit: true);
 
         _fileSystem.Directory.CreateDirectory(launcherDirectory);
         var previousLauncher = _fileSystem.File.Exists(launcherPath)
@@ -107,9 +138,14 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
             launcherPath,
             launcher,
             Encoding.Unicode);
+
         try
         {
-            _writeRunValue($"wscript.exe //B //Nologo \"{launcherPath}\"");
+            _registerTask(LogonAutostartTask.BuildRegisterScript(
+                _userId,
+                "wscript.exe",
+                $"//B //Nologo \"{launcherPath}\"",
+                workingDirectory));
         }
         catch
         {
@@ -123,6 +159,10 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
                     Encoding.Unicode);
             throw;
         }
+
+        // Only retire the legacy entry once the task is registered, so a failed migration never
+        // leaves the user with neither mechanism.
+        _clearLegacyRunValue();
     }
 
     private void ExecuteExclusive(Action action)
@@ -183,27 +223,85 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
         return $@"Global\Narnia.LogonAutostart.{sid}";
     }
 
-    private static string? ReadRunValue()
+    private static string ResolveCurrentUserId()
     {
-        using var key = Registry.CurrentUser.OpenSubKey(RunSubKey, writable: false);
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.Name;
+    }
+
+    private static bool TaskExists()
+    {
+        var result = RunPowerShell(LogonAutostartTask.BuildExistsScript());
+        return result.ExitCode == 0 &&
+            result.StandardOutput.Contains("true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void RegisterTask(string script)
+    {
+        var result = RunPowerShell(script);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Could not register the Narnia logon autostart task: {result.Failure}");
+        }
+    }
+
+    private static void RemoveTask()
+    {
+        var result = RunPowerShell(LogonAutostartTask.BuildRemoveScript());
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Could not remove the Narnia logon autostart task: {result.Failure}");
+        }
+    }
+
+    private static PowerShellResult RunPowerShell(string script)
+    {
+        var startInfo = new ProcessStartInfo("powershell.exe")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add("$ErrorActionPreference='Stop'; " + script);
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start powershell.exe.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        return new PowerShellResult(
+            process.ExitCode,
+            standardOutput,
+            string.IsNullOrWhiteSpace(standardError)
+                ? $"exit {process.ExitCode}"
+                : standardError.Trim());
+    }
+
+    private static string? ReadLegacyRunValue()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(LegacyRunSubKey, writable: false);
         return key?.GetValue(
-            ValueName,
+            LegacyValueName,
             defaultValue: null,
             RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
     }
 
-    private static void WriteRunValue(string? value)
+    private static void ClearLegacyRunValue()
     {
-        if (value is null)
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(RunSubKey, writable: true);
-            key?.DeleteValue(ValueName, throwOnMissingValue: false);
-            return;
-        }
-
-        using var writableKey = Registry.CurrentUser.CreateSubKey(RunSubKey, writable: true);
-        writableKey.SetValue(ValueName, value, RegistryValueKind.String);
+        using var key = Registry.CurrentUser.OpenSubKey(LegacyRunSubKey, writable: true);
+        key?.DeleteValue(LegacyValueName, throwOnMissingValue: false);
     }
+
+    private sealed record PowerShellResult(int ExitCode, string StandardOutput, string Failure);
 }
 
 /// <summary>

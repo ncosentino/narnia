@@ -1,9 +1,11 @@
 @page "/settings"
 @using NexusLabs.Narnia.Core.Configuration
+@using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Repositories
 @using NexusLabs.Narnia.Core.Services
 @inject INarniaSettingsRepository SettingsRepo
 @inject ILogonAutostartManager Autostart
+@inject IScheduledTaskProvider ScheduledTasks
 @inject NarniaOptions Options
 
 <PageTitle>Settings — Narnia</PageTitle>
@@ -142,6 +144,31 @@
                 Start Narnia when I sign in to Windows
             </label>
         </div>
+        @if (_autostartEnabled)
+        {
+            <dl class="session-meta">
+                <dt>Scheduled task</dt>
+                <dd><code>@LogonAutostartTask.Folder@LogonAutostartTask.Name</code></dd>
+                <dt>Registered</dt>
+                <dd>@(_autostartTask is null ? "Not found — re-enable to repair" : "Yes")</dd>
+                @if (_autostartTask is not null)
+                {
+                    <dt>State</dt>
+                    <dd>@_autostartTask.State</dd>
+                    <dt>Last run</dt>
+                    <dd>
+                        @(_autostartTask.LastRunTime?.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                            ?? "Never")
+                    </dd>
+                    <dt>Last result</dt>
+                    <dd>@(_autostartTask.LastResult?.ToString() ?? "—")</dd>
+                }
+            </dl>
+            <p class="settings-hint">
+                Task Scheduler records every logon launch, so a failed autostart is visible here
+                instead of failing silently.
+            </p>
+        }
     }
     else
     {
@@ -158,6 +185,7 @@
     private int _snapRetention = 50;
     private bool _autostartSupported;
     private bool _autostartEnabled;
+    private ScheduledTaskStatus? _autostartTask;
 
     protected override async Task OnInitializedAsync()
     {
@@ -177,5 +205,11 @@
 
         _autostartSupported = Autostart.IsSupported;
         _autostartEnabled = _autostartSupported && Autostart.IsEnabled();
+        if (_autostartEnabled && ScheduledTasks.IsSupported)
+        {
+            _autostartTask = await ScheduledTasks.GetAsync(
+                LogonAutostartTask.Folder,
+                LogonAutostartTask.Name);
+        }
     }
 }

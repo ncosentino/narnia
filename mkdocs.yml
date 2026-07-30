@@ -52,6 +52,7 @@ nav:
   - Session Storage: session-storage.md
   - Terminal Window Recovery: terminal-windows.md
   - Live Process Diagnostics: process-diagnostics.md
+  - Logon Autostart: logon-autostart.md
   - Portable Scheduled Jobs: schedule-portability.md
   - MCP Tools:
     - Overview: tools/index.md

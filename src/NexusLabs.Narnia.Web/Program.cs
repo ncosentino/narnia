@@ -1015,12 +1015,29 @@ app.MapPost("/api/schedule-packages/import", async (
 });
 
 // ── Logon autostart API ─────────────────────────────────────────────────────
-app.MapGet("/api/autostart", (ILogonAutostartManager autostart) =>
-    Results.Ok(new
+app.MapGet("/api/autostart", async (
+    ILogonAutostartManager autostart,
+    IScheduledTaskProvider taskProvider,
+    CancellationToken ct) =>
+{
+    var supported = autostart.IsSupported;
+    var enabled = supported && autostart.IsEnabled();
+    var status = enabled && taskProvider.IsSupported
+        ? await taskProvider.GetAsync(LogonAutostartTask.Folder, LogonAutostartTask.Name, ct)
+        : null;
+
+    return Results.Ok(new
     {
-        supported = autostart.IsSupported,
-        enabled = autostart.IsSupported && autostart.IsEnabled(),
-    }));
+        supported,
+        enabled,
+        taskFolder = LogonAutostartTask.Folder,
+        taskName = LogonAutostartTask.Name,
+        taskRegistered = status is not null,
+        state = status?.State.ToString().ToLowerInvariant(),
+        lastRunTime = status?.LastRunTime,
+        lastResult = status?.LastResult,
+    });
+});
 
 app.MapPost("/api/autostart", (AutostartRequest request, ILogonAutostartManager autostart) =>
 {
