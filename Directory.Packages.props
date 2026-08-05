@@ -23,8 +23,8 @@
     <PackageVersion Include="dbup-sqlite" Version="6.0.4" />
   </ItemGroup>
   <ItemGroup Label="MCP">
-    <PackageVersion Include="ModelContextProtocol" Version="1.4.0" />
-    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.1.0" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.1.0" />
   </ItemGroup>
   <ItemGroup Label="Testing">
     <PackageVersion Include="xunit.v3" Version="3.2.2" />

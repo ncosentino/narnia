@@ -67,6 +67,26 @@ description: Troubleshooting common Narnia issues including web server startup f
 
 ---
 
+## MCP Client Reports an Unsupported Protocol Version
+
+**Symptom:** The Narnia web server is running and `/health` returns 200, but your MCP client still fails to connect. GitHub Copilot CLI reports something like:
+
+```text
+Failed to start MCP client for narnia: failed to negotiate MCP lifecycle:
+JSON-RPC error: -32000: Bad Request:
+The MCP-Protocol-Version header value '2026-07-28' is not supported.
+```
+
+**Why it happens:** MCP clients periodically adopt newer revisions of the Model Context Protocol. When a client updates to a revision that is newer than the one your installed Narnia build understands, the handshake is rejected before any tool is exposed. The wording resembles an authorization failure, but Narnia's loopback endpoint requires no credentials — this is purely a version mismatch, and the client is the side that moved forward.
+
+**Fix:**
+
+1. Update Narnia to the latest release — see [Getting Started](getting-started.md).
+2. Restart the Narnia web server so the new build is the one listening on port 5244.
+3. Reconnect in your MCP client. Narnia negotiates down-level automatically, so clients still on older revisions keep working after the upgrade.
+
+---
+
 ## Database File Not Found
 
 **Symptom:** All MCP tools return errors mentioning "unable to open database file" or similar SQLite errors.
