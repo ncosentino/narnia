@@ -101,4 +101,25 @@ The practical workaround is [`mcp-remote`](https://www.npmjs.com/package/mcp-rem
 
 ---
 
+## Protocol compatibility
+
+Narnia's MCP server speaks the **2026-07-28** MCP revision and still negotiates down-level with
+clients on `2025-11-25`, `2025-06-18`, and `2025-03-26`. Version negotiation is automatic — there
+is nothing to configure.
+
+MCP clients periodically adopt newer revisions of the specification. If a client updates to a
+revision your installed Narnia predates, the connection fails at the handshake with an error like:
+
+```text
+failed to negotiate MCP lifecycle: JSON-RPC error: -32000:
+Bad Request: The MCP-Protocol-Version header value '2026-07-28' is not supported.
+```
+
+Despite the wording, this is **not** an authentication or network problem — Narnia's endpoint
+requires no credentials. It means the client is asking for a newer protocol revision than the
+running server understands. Fix it by updating Narnia to the latest release (see
+[Getting Started](getting-started.md)), then restarting the server so the new build is listening.
+
+---
+
 See [Configuration](configuration.md) for environment variable overrides to customize the database path and session state directory.
