@@ -1353,3 +1353,53 @@ span.dashboard-item-title { color: var(--text); }
     cursor: wait;
     opacity: .72;
 }
+
+.sidebar-tabs-count {
+    display: inline-block;
+    min-width: 1.5rem;
+    padding: .1rem .45rem;
+    margin-left: .4rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 70%, var(--bg));
+    border: 1px solid var(--border);
+    font-size: .8rem;
+    text-align: center;
+}
+
+.sidebar-tab-list {
+    margin: .75rem 0;
+    padding-left: 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+}
+
+.sidebar-tab {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem;
+}
+
+.sidebar-tab--current {
+    font-weight: 650;
+}
+
+.sidebar-tab-size {
+    font-size: .8rem;
+    opacity: .75;
+    font-variant-numeric: tabular-nums;
+}
+
+.sidebar-tab-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem;
+    margin-top: .75rem;
+}
+
+.sidebar-tab-note {
+    margin-top: .5rem;
+    font-size: .85rem;
+    opacity: .75;
+}

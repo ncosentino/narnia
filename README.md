@@ -115,6 +115,8 @@ This is exactly what this repo's own [`.mcp.json`](.mcp.json) contains, so a Cop
 | `preview_session_migration` | Inspect resume compatibility and recoverable history |
 | `migrate_broken_session` | Reseed a broken session in its existing folder and ID |
 | `get_session_recovery_packet` | Read archived recovery context in bounded chunks |
+| `list_sidebar_tabs` | Inspect Copilot's persisted per-workspace sidebar tab lists |
+| `repair_sidebar_tabs` | Remove tabs or clear a workspace's sidebar tab list, backing it up first |
 | `list_schedules` | All cataloged scheduled jobs joined to live task status |
 | `get_schedule` | A single scheduled job's full catalog entry by id |
 | `get_schedule_log` | Read the latest run log and whether the job is still running |
