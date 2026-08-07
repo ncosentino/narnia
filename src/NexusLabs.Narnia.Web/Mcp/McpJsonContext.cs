@@ -28,5 +28,6 @@ namespace NexusLabs.Narnia.Web.Mcp;
 [JsonSerializable(typeof(SessionRecoveryPacketChunk))]
 [JsonSerializable(typeof(CopilotSidebarWorkspace[]))]
 [JsonSerializable(typeof(CopilotSidebarRepairResult))]
+[JsonSerializable(typeof(SessionWorktreeAdvice))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal sealed partial class McpJsonContext : JsonSerializerContext;

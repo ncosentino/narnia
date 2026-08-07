@@ -103,6 +103,24 @@ See [Copilot Sidebar Tabs](sidebar-tabs.md) for details.
 
 ---
 
+## Two Sessions Show the Same Directory and Branch
+
+**Symptom:** Two Copilot sessions you set up to work on different worktrees both show the same path and branch in Copilot's header, for example `C:\dev\repo [⎇ feature/x]`, even though Narnia lists them with different branches.
+
+**Why it happens:** Copilot's header shows its own process working directory and the branch that directory currently has checked out — it is reporting reality. Narnia's **Branch** override is only a display label: the launch directory comes from the **Preferred Resume Directory** (`local_path`) override, falling back to the session store's working directory. If both sessions' resume directories point at the same repository, both launch there no matter what the branch labels say. A branch label that names no real branch will never be noticed on its own.
+
+**Fix:**
+
+1. Open the session in Narnia. A **Worktree mismatch** warning appears when the branch override disagrees with Git.
+2. If the branch exists in another worktree, press **Use this worktree**; otherwise pick the correct entry from the **Git Worktree** dropdown in the override editor.
+3. Press **Save**, then relaunch the session.
+
+Narnia also refuses a launch that would put two agents in one working tree, asking you to confirm first.
+
+See [Git Worktrees](worktrees.md) for details, including why Narnia will not run `git checkout` for you.
+
+---
+
 ## Database File Not Found
 
 **Symptom:** All MCP tools return errors mentioning "unable to open database file" or similar SQLite errors.

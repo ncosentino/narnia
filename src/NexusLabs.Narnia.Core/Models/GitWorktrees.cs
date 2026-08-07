@@ -1,0 +1,90 @@
+namespace NexusLabs.Narnia.Core.Models;
+
+/// <summary>
+/// A single Git worktree attached to a repository, as reported by
+/// <c>git worktree list --porcelain</c>.
+/// </summary>
+/// <param name="Path">Absolute worktree path, normalized to the host directory separator.</param>
+/// <param name="Branch">Short branch name (e.g. <c>feature/x</c>), or <c>null</c> when detached or bare.</param>
+/// <param name="Head">The commit the worktree points at, or <c>null</c> for a bare repository.</param>
+/// <param name="IsBare">Whether this entry is the bare repository rather than a checkout.</param>
+/// <param name="IsDetached">Whether the worktree is on a detached HEAD.</param>
+/// <param name="IsPrimary">Whether this is the repository's main worktree (the first entry Git reports).</param>
+/// <param name="Exists">Whether the path is still present on disk (a pruned worktree may not be).</param>
+public sealed record GitWorktree(
+    string Path,
+    string? Branch,
+    string? Head,
+    bool IsBare,
+    bool IsDetached,
+    bool IsPrimary,
+    bool Exists);
+
+/// <summary>Result of enumerating the worktrees reachable from a directory.</summary>
+/// <param name="IsRepository">Whether the directory resolved to a Git repository at all.</param>
+/// <param name="Worktrees">Every worktree Git reported, in Git's own order (primary first).</param>
+/// <param name="Error">Why enumeration failed, when <see cref="IsRepository"/> is <c>false</c>.</param>
+public sealed record GitWorktreeInspection(
+    bool IsRepository,
+    IReadOnlyList<GitWorktree> Worktrees,
+    string? Error);
+
+/// <summary>The kind of incoherence found between a session's overrides and real Git state.</summary>
+public enum WorktreeAdvisoryKind
+{
+    /// <summary>Git is not installed, or could not be executed.</summary>
+    GitUnavailable,
+
+    /// <summary>The resolved launch directory is not inside a Git repository.</summary>
+    NotARepository,
+
+    /// <summary>The branch override names a branch that is not checked out in any worktree.</summary>
+    BranchNotCheckedOut,
+
+    /// <summary>
+    /// The branch override is checked out, but in a different worktree than the one the
+    /// session will launch into — the launch would silently land on the wrong branch.
+    /// </summary>
+    BranchInDifferentWorktree,
+
+    /// <summary>
+    /// The launch directory's actual branch differs from the branch override, and the override
+    /// branch is not checked out anywhere to redirect to.
+    /// </summary>
+    DirectoryBranchMismatch,
+
+    /// <summary>
+    /// Another live Copilot session resolves to the same launch directory, so both agents would
+    /// share one working tree.
+    /// </summary>
+    SharedLaunchDirectory,
+}
+
+/// <summary>A single incoherence between a session's recorded intent and observable Git state.</summary>
+/// <param name="Kind">Which incoherence was found.</param>
+/// <param name="Message">Human-readable explanation, safe to render directly.</param>
+/// <param name="SuggestedPath">The worktree path that would resolve the advisory, when one exists.</param>
+/// <param name="SuggestedBranch">The branch that pairs with <paramref name="SuggestedPath"/>.</param>
+public sealed record WorktreeAdvisory(
+    WorktreeAdvisoryKind Kind,
+    string Message,
+    string? SuggestedPath,
+    string? SuggestedBranch);
+
+/// <summary>
+/// Everything the session detail page needs to offer a worktree picker and warn about an
+/// incoherent override pair.
+/// </summary>
+/// <param name="SessionId">The session this advice was computed for.</param>
+/// <param name="ResolvedDirectory">The directory this session would actually launch into today.</param>
+/// <param name="ResolvedBranch">The branch that directory currently has checked out.</param>
+/// <param name="BranchOverride">The branch override recorded in Narnia's settings database.</param>
+/// <param name="Worktrees">Selectable worktrees for the session's repository.</param>
+/// <param name="Advisories">Problems found; empty when the overrides are coherent.</param>
+public sealed record SessionWorktreeAdvice(
+    string SessionId,
+    string? ResolvedDirectory,
+    string? ResolvedBranch,
+    string? BranchOverride,
+    IReadOnlyList<GitWorktree> Worktrees,
+    IReadOnlyList<WorktreeAdvisory> Advisories);

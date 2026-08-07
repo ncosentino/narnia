@@ -53,6 +53,7 @@ nav:
   - Terminal Window Recovery: terminal-windows.md
   - Live Process Diagnostics: process-diagnostics.md
   - Copilot Sidebar Tabs: sidebar-tabs.md
+  - Git Worktrees: worktrees.md
   - Logon Autostart: logon-autostart.md
   - Portable Scheduled Jobs: schedule-portability.md
   - MCP Tools:
@@ -74,6 +75,7 @@ nav:
     - get_session_recovery_packet: tools/get-session-recovery-packet.md
     - list_sidebar_tabs: tools/list-sidebar-tabs.md
     - repair_sidebar_tabs: tools/repair-sidebar-tabs.md
+    - get_session_worktrees: tools/get-session-worktrees.md
     - list_schedules: tools/list-schedules.md
     - get_schedule: tools/get-schedule.md
     - get_schedule_log: tools/get-schedule-log.md

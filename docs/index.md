@@ -67,6 +67,12 @@ for file-based schedule portability.
 | [`list_sidebar_tabs`](tools/list-sidebar-tabs.md) | Inspect Copilot's persisted per-workspace sidebar tab lists |
 | [`repair_sidebar_tabs`](tools/repair-sidebar-tabs.md) | Remove tabs or clear a workspace's tab list, backing it up first |
 
+### Git Worktrees
+
+| Tool | Description |
+|------|-------------|
+| [`get_session_worktrees`](tools/get-session-worktrees.md) | List a session's worktrees and flag branch-override mismatches |
+
 ### Scheduled Jobs
 
 | Tool | Description |

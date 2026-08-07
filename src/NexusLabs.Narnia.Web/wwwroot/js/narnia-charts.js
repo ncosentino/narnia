@@ -65,6 +65,133 @@ function narniaCopyText(elementId, btn) {
     }
 })();
 
+// ── Git worktrees ────────────────────────────────────────────────────────────
+// Every value here originates from a filesystem path. Paths are only ever assigned through
+// `value`, `textContent`, or `dataset` — never interpolated into HTML or a JS string literal,
+// where a Windows backslash would be read as an escape sequence and silently corrupt the path.
+var narniaWorktreeData = null;
+
+async function narniaLoadWorktrees() {
+    var host = document.getElementById('worktree-advisories');
+    if (!host) return;
+
+    var sessionId = host.dataset.sessionId;
+    var select = document.getElementById('ov-worktree');
+    try {
+        var resp = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/worktrees');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        narniaWorktreeData = await resp.json();
+    } catch (e) {
+        if (select) {
+            select.textContent = '';
+            select.appendChild(new Option('Worktrees unavailable: ' + e.message, ''));
+        }
+        return;
+    }
+
+    narniaRenderWorktreeSelect(select, narniaWorktreeData);
+    narniaRenderWorktreeAdvisories(host, narniaWorktreeData);
+}
+
+function narniaRenderWorktreeSelect(select, data) {
+    if (!select) return;
+    select.textContent = '';
+
+    var usable = (data.worktrees || []).filter(function (w) { return w.exists && !w.isBare; });
+    if (usable.length === 0) {
+        select.appendChild(new Option('No Git worktrees found for this session', ''));
+        select.disabled = true;
+        return;
+    }
+
+    select.appendChild(new Option('— select a worktree —', ''));
+    usable.forEach(function (worktree) {
+        var branch = worktree.branch || (worktree.isDetached ? 'detached HEAD' : 'no branch');
+        var label = worktree.path + '  [' + branch + ']';
+        if (worktree.isPrimary) label += '  (main worktree)';
+        if (worktree.isCurrent) label += '  ← current';
+        var option = new Option(label, worktree.path);
+        option.dataset.branch = worktree.branch || '';
+        if (worktree.isCurrent) option.selected = true;
+        select.appendChild(option);
+    });
+    select.disabled = false;
+}
+
+function narniaRenderWorktreeAdvisories(host, data) {
+    host.textContent = '';
+    var advisories = data.advisories || [];
+    if (advisories.length === 0) {
+        host.hidden = true;
+        return;
+    }
+
+    advisories.forEach(function (advisory) {
+        var card = document.createElement('div');
+        card.className = 'worktree-advisory worktree-advisory-' + advisory.kind;
+
+        var title = document.createElement('strong');
+        title.textContent = '⚠️ Worktree mismatch';
+        card.appendChild(title);
+
+        var message = document.createElement('p');
+        message.textContent = advisory.message;
+        card.appendChild(message);
+
+        if (advisory.suggestedPath) {
+            var adopt = document.createElement('button');
+            adopt.className = 'btn-adopt-worktree';
+            adopt.textContent = 'Use this worktree';
+            adopt.dataset.path = advisory.suggestedPath;
+            adopt.dataset.branch = advisory.suggestedBranch || '';
+            adopt.addEventListener('click', function () { narniaAdoptWorktree(adopt); });
+            card.appendChild(adopt);
+        }
+
+        host.appendChild(card);
+    });
+    host.hidden = false;
+}
+
+function narniaApplyWorktree(select) {
+    var option = select.options[select.selectedIndex];
+    if (!option || !option.value) return;
+    narniaSetWorktreeFields(option.value, option.dataset.branch || '');
+}
+
+function narniaAdoptWorktree(btn) {
+    narniaSetWorktreeFields(btn.dataset.path, btn.dataset.branch || '');
+
+    var panel = document.querySelector('.overrides-panel');
+    if (panel) {
+        panel.open = true;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function narniaSetWorktreeFields(path, branch) {
+    var pathInput = document.getElementById('ov-local-path');
+    var branchInput = document.getElementById('ov-branch');
+    if (pathInput) pathInput.value = path;
+    if (branchInput) branchInput.value = branch;
+
+    var select = document.getElementById('ov-worktree');
+    if (select) {
+        for (var i = 0; i < select.options.length; i++) {
+            if (select.options[i].value === path) { select.selectedIndex = i; break; }
+        }
+    }
+
+    var save = document.querySelector('.btn-save');
+    if (save) save.classList.add('btn-save-pending');
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', narniaLoadWorktrees);
+} else {
+    narniaLoadWorktrees();
+}
+
 async function narniaSaveOverride(sessionId) {
     const repositoryInput = document.getElementById('ov-repo');
     if (!repositoryInput.checkValidity()) {
@@ -145,25 +272,44 @@ async function narniaLaunch(target, sessionId, btn) {
     btn.disabled = true;
     btn.textContent = '⏳ Launching…';
     try {
-        const resp = await fetch('/api/launch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: sessionId, target: target }),
-        });
-        if (resp.ok) {
-            btn.textContent = '✅ Launched!';
-            setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 3000);
-        } else {
-            var data = await resp.json().catch(function () { return null; });
-            alert('Launch failed: ' + (data?.message || data || 'HTTP ' + resp.status));
+        var launched = await narniaPostLaunch({ sessionId: sessionId, target: target }, false);
+        if (launched === 'cancelled') {
             btn.textContent = origText;
             btn.disabled = false;
+            return;
         }
+        btn.textContent = '✅ Launched!';
+        setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 3000);
     } catch (e) {
-        alert('Error launching: ' + e.message);
+        alert('Launch failed: ' + e.message);
         btn.textContent = origText;
         btn.disabled = false;
     }
+}
+
+// Posts a launch, turning a 409 directory collision into a confirmation and a single forced retry.
+// Returns 'launched' or 'cancelled'; throws on any other failure.
+async function narniaPostLaunch(payload, force) {
+    const resp = await fetch('/api/launch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({}, payload, { force: force })),
+    });
+    if (resp.ok) return 'launched';
+
+    var data = await resp.json().catch(function () { return null; });
+    if (resp.status === 409 && !force && data && data.error === 'directory-collision') {
+        if (!confirm(narniaCollisionPrompt(data))) return 'cancelled';
+        return await narniaPostLaunch(payload, true);
+    }
+    throw new Error(data?.message || data || 'HTTP ' + resp.status);
+}
+
+function narniaCollisionPrompt(data) {
+    return 'Two Copilot agents would share one working tree:\n\n' +
+        (data.collisions || []).map(function (c) { return '• ' + c.description; }).join('\n') +
+        '\n\nThey can overwrite each other\'s edits, and a Git command run by one reshapes the ' +
+        'other\'s working tree. Give this session its own worktree, or launch anyway?';
 }
 
 async function narniaMigrateSession(sessionId, btn) {
@@ -380,34 +526,44 @@ async function narniaLaunchSessions(ids, btn) {
     var originalText = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Launching…'; }
     try {
-        var resp = await fetch('/api/launch-bulk', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionIds: ids }),
-        });
-        if (resp.ok) {
-            var data = await resp.json();
-            var msg = '✅ Launched ' + data.launched.length + ' session(s)';
-            if (data.failed && data.failed.length > 0) {
-                msg += '\n⚠️ Failed: ' + data.failed.map(function (f) { return f.sessionId.substring(0, 8) + ': ' + f.reason; }).join(', ');
-            }
-            if (btn) { btn.textContent = '✅ Launched!'; }
-            setTimeout(function () {
-                if (btn) {
-                    btn.textContent = originalText;
-                    btn.disabled = false;
-                }
-            }, 3000);
-            if (data.failed && data.failed.length > 0) alert(msg);
-        } else {
-            var errData = await resp.json().catch(function () { return null; });
-            alert('Bulk launch failed: ' + (errData || 'HTTP ' + resp.status));
+        var data = await narniaPostBulkLaunch(ids, false);
+        if (data === 'cancelled') {
             if (btn) { btn.textContent = originalText; btn.disabled = false; }
+            return;
         }
+        var msg = '✅ Launched ' + data.launched.length + ' session(s)';
+        if (data.failed && data.failed.length > 0) {
+            msg += '\n⚠️ Failed: ' + data.failed.map(function (f) { return f.sessionId.substring(0, 8) + ': ' + f.reason; }).join(', ');
+        }
+        if (btn) { btn.textContent = '✅ Launched!'; }
+        setTimeout(function () {
+            if (btn) {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }, 3000);
+        if (data.failed && data.failed.length > 0) alert(msg);
     } catch (e) {
-        alert('Error launching: ' + e.message);
+        alert('Bulk launch failed: ' + e.message);
         if (btn) { btn.textContent = originalText; btn.disabled = false; }
     }
+}
+
+// Bulk equivalent of narniaPostLaunch. Returns the response body or 'cancelled'; throws otherwise.
+async function narniaPostBulkLaunch(ids, force) {
+    var resp = await fetch('/api/launch-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionIds: ids, force: force }),
+    });
+    if (resp.ok) return await resp.json();
+
+    var data = await resp.json().catch(function () { return null; });
+    if (resp.status === 409 && !force && data && data.error === 'directory-collision') {
+        if (!confirm(narniaCollisionPrompt(data))) return 'cancelled';
+        return await narniaPostBulkLaunch(ids, true);
+    }
+    throw new Error(data?.message || data || 'HTTP ' + resp.status);
 }
 
 function narniaLaunchBulk() {

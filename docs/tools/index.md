@@ -57,6 +57,12 @@ preview and survives `/restart`. Repairs back up the current list first and neve
 | [`list_sidebar_tabs`](list-sidebar-tabs.md) | Inspect every workspace's persisted tab list | — |
 | [`repair_sidebar_tabs`](repair-sidebar-tabs.md) | Remove tabs or clear a workspace's tab list | `cwd`, `sessionIds`, `force` |
 
+## Git Worktree Tools
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| [`get_session_worktrees`](get-session-worktrees.md) | List a session's worktrees and flag branch-override mismatches | `sessionId` |
+
 ## Session Storage Tools
 
 Storage tools use the same cached scanner and cleanup service as the web UI.
