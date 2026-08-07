@@ -192,19 +192,60 @@ public sealed class LaunchCollisionDetectorTests
         Assert.Single(collisions);
     }
 
-    // Occupancy is advisory. A process-inspection failure must degrade to "no collisions known"
-    // rather than blocking every launch on the machine.
-    [Fact]
-    public async Task DetectAsync_ActivityReaderThrows_DoesNotBlockLaunch()
+    // Occupancy is advisory. Enumerating processes throws InvalidOperationException when a process
+    // exits between enumeration and reading its id — a routine race on a busy machine. Letting it
+    // escape would 500 the launch endpoint, and the UI only offers a force retry on 409, so the
+    // user would be unable to launch at all.
+    [Theory]
+    [MemberData(nameof(NonFatalActivityFailures))]
+    public async Task DetectAsync_ActivityReaderThrows_DoesNotBlockLaunch(Exception failure)
     {
-        _activity.Setup(reader => reader.GetActiveSessionIds())
-            .Throws(new UnauthorizedAccessException("no process access"));
+        _activity.Setup(reader => reader.GetActiveSessionIds()).Throws(failure);
 
         var collisions = await Build().DetectAsync(
             [new TerminalLaunchTab(Launching, "Veritas", MainRepo)],
             Ct);
 
         Assert.Empty(collisions);
+    }
+
+    public static TheoryData<Exception> NonFatalActivityFailures() =>
+    [
+        new InvalidOperationException("process exited during enumeration"),
+        new System.ComponentModel.Win32Exception("access denied"),
+        new UnauthorizedAccessException("no process access"),
+        new IOException("lock directory unreadable"),
+    ];
+
+    // A repository failure must degrade the same way; it is still only occupancy information.
+    [Fact]
+    public async Task DetectAsync_SessionRepositoryThrows_DoesNotBlockLaunch()
+    {
+        _activity.Setup(reader => reader.GetActiveSessionIds())
+            .Returns(new HashSet<string>([LiveSession], StringComparer.OrdinalIgnoreCase));
+        _sessions.Setup(repo => repo.GetByIdAsync(LiveSession, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("database is locked"));
+
+        var collisions = await Build().DetectAsync(
+            [new TerminalLaunchTab(Launching, "Veritas", MainRepo)],
+            Ct);
+
+        Assert.Empty(collisions);
+    }
+
+    // Cancellation is not a degradable failure — it must still propagate to the caller.
+    [Fact]
+    public async Task DetectAsync_Cancelled_StillThrows()
+    {
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        _activity.Setup(reader => reader.GetActiveSessionIds())
+            .Returns(new HashSet<string>([LiveSession], StringComparer.OrdinalIgnoreCase));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Build().DetectAsync(
+                [new TerminalLaunchTab(Launching, "Veritas", MainRepo)],
+                cancelled.Token).AsTask());
     }
 
     [Fact]

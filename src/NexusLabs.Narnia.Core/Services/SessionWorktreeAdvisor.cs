@@ -59,7 +59,7 @@ public sealed class SessionWorktreeAdvisor(
                 null,
                 branchOverride,
                 [],
-                [BuildUnavailableAdvisory(directory, inspection.Error)]);
+                [BuildUnavailableAdvisory(directory, inspection)]);
         }
 
         var current = inspection.Worktrees.FirstOrDefault(
@@ -74,23 +74,37 @@ public sealed class SessionWorktreeAdvisor(
             BuildAdvisories(directory, branchOverride, current, inspection.Worktrees));
     }
 
-    private static WorktreeAdvisory BuildUnavailableAdvisory(string directory, string? error)
-    {
-        // "not a git repository" is a normal state for a session working outside version control,
-        // while a missing executable is an environment problem the user may want to fix.
-        var isMissingGit = error?.Contains("could not be started", StringComparison.OrdinalIgnoreCase) == true;
-        return isMissingGit
-            ? new WorktreeAdvisory(
-                WorktreeAdvisoryKind.GitUnavailable,
-                $"Git could not be run, so worktrees cannot be listed. {error}",
-                null,
-                null)
-            : new WorktreeAdvisory(
+    // Only a non-zero Git exit proves the directory is not a repository. A missing executable, a
+    // timeout, or a vanished directory means the check never ran — asserting "not a repository" in
+    // those cases states a falsehood as fact, and would tell a user to stop looking for exactly the
+    // misconfiguration this advisor exists to surface.
+    private static WorktreeAdvisory BuildUnavailableAdvisory(
+        string directory,
+        GitWorktreeInspection inspection) =>
+        inspection.Failure switch
+        {
+            GitWorktreeFailure.NotARepository => new WorktreeAdvisory(
                 WorktreeAdvisoryKind.NotARepository,
                 $"{directory} is not inside a Git repository, so there are no worktrees to choose from.",
                 null,
-                null);
-    }
+                null),
+            GitWorktreeFailure.TimedOut => new WorktreeAdvisory(
+                WorktreeAdvisoryKind.GitUnavailable,
+                $"Git did not finish listing the worktrees of {directory} in time, so this check did " +
+                "not complete. Reload to try again.",
+                null,
+                null),
+            GitWorktreeFailure.DirectoryUnavailable => new WorktreeAdvisory(
+                WorktreeAdvisoryKind.GitUnavailable,
+                $"{directory} could not be inspected, so this check did not complete. {inspection.Error}",
+                null,
+                null),
+            _ => new WorktreeAdvisory(
+                WorktreeAdvisoryKind.GitUnavailable,
+                $"Git could not be run, so worktrees cannot be listed. {inspection.Error}",
+                null,
+                null),
+        };
 
     private static IReadOnlyList<WorktreeAdvisory> BuildAdvisories(
         string directory,
@@ -146,8 +160,10 @@ public sealed class SessionWorktreeAdvisor(
         {
             workspaceGitRoot = workspaceReader.ReadWorkspace(sessionId)?.GitRoot;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            // Workspace metadata is a last-resort fallback. An unreadable or malformed workspace
+            // file must degrade to "no directory" rather than failing the whole advisory request.
         }
 
         var gitRoot = workspaceGitRoot ?? session?.GitRoot;

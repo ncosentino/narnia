@@ -26,6 +26,10 @@ out. See [Git Worktrees](../worktrees.md) for why.
 Advisory kinds are `BranchNotCheckedOut`, `BranchInDifferentWorktree`, `NotARepository`, and
 `GitUnavailable`. An empty `advisories` array means the overrides are coherent.
 
+`NotARepository` is only reported when Git ran and said so. A timeout, a missing Git executable, or
+an unreadable directory is reported as `GitUnavailable` — meaning the check did not complete, not
+that the directory is unversioned.
+
 ## Example
 
 ```json

@@ -20,22 +20,47 @@ public sealed record GitWorktree(
     bool IsPrimary,
     bool Exists);
 
+/// <summary>Why worktree enumeration failed.</summary>
+public enum GitWorktreeFailure
+{
+    /// <summary>Enumeration succeeded.</summary>
+    None,
+
+    /// <summary>Git is not installed, or could not be executed.</summary>
+    GitNotAvailable,
+
+    /// <summary>Git did not answer within the command timeout.</summary>
+    TimedOut,
+
+    /// <summary>The directory to inspect was missing or unusable.</summary>
+    DirectoryUnavailable,
+
+    /// <summary>Git ran and reported that the directory is not inside a repository.</summary>
+    NotARepository,
+}
+
 /// <summary>Result of enumerating the worktrees reachable from a directory.</summary>
 /// <param name="IsRepository">Whether the directory resolved to a Git repository at all.</param>
 /// <param name="Worktrees">Every worktree Git reported, in Git's own order (primary first).</param>
 /// <param name="Error">Why enumeration failed, when <see cref="IsRepository"/> is <c>false</c>.</param>
+/// <param name="Failure">
+/// Structured reason for the failure. Callers must branch on this rather than matching
+/// <paramref name="Error"/> text: "we could not check" and "we checked and it is not a repository"
+/// are different claims, and only the second one is safe to assert to a user.
+/// </param>
 public sealed record GitWorktreeInspection(
     bool IsRepository,
     IReadOnlyList<GitWorktree> Worktrees,
-    string? Error);
+    string? Error,
+    GitWorktreeFailure Failure = GitWorktreeFailure.None);
 
 /// <summary>The kind of incoherence found between a session's overrides and real Git state.</summary>
 public enum WorktreeAdvisoryKind
 {
-    /// <summary>Git is not installed, or could not be executed.</summary>
+    /// <summary>Git is not installed, timed out, or the directory could not be inspected.</summary>
     GitUnavailable,
 
-    /// <summary>The resolved launch directory is not inside a Git repository.</summary>
+    /// <summary>Git ran and reported that the launch directory is not inside a Git repository.</summary>
     NotARepository,
 
     /// <summary>The branch override names a branch that is not checked out in any worktree.</summary>

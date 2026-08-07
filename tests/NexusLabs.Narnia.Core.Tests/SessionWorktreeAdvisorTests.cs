@@ -134,9 +134,9 @@ public sealed class SessionWorktreeAdvisorTests
     [Fact]
     public async Task AdviseAsync_DirectoryIsNotARepository_ReportsThatAndOffersNoWorktrees()
     {
-        _worktrees.Setup(reader => reader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GitWorktreeInspection(
-                false, [], "fatal: not a git repository (or any of the parent directories): .git"));
+        GivenInspectionFailure(
+            GitWorktreeFailure.NotARepository,
+            "fatal: not a git repository (or any of the parent directories): .git");
 
         var advice = await Build().AdviseAsync(SessionId, Ct);
 
@@ -150,14 +150,57 @@ public sealed class SessionWorktreeAdvisorTests
     [Fact]
     public async Task AdviseAsync_GitExecutableMissing_IsDistinguishedFromNotARepository()
     {
-        _worktrees.Setup(reader => reader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GitWorktreeInspection(
-                false, [], "Git could not be started: The system cannot find the file specified."));
+        GivenInspectionFailure(
+            GitWorktreeFailure.GitNotAvailable,
+            "Git could not be started: The system cannot find the file specified.");
+
+        var advice = await Build().AdviseAsync(SessionId, Ct);
+
+        Assert.Equal(WorktreeAdvisoryKind.GitUnavailable, Assert.Single(advice.Advisories).Kind);
+    }
+
+    /// <summary>
+    /// Only a Git exit code proves a directory is not a repository. A timeout or a vanished
+    /// directory means the check never ran, and claiming "not a repository" would tell the user to
+    /// stop looking for exactly the misconfiguration this advisor exists to surface.
+    /// </summary>
+    [Theory]
+    [InlineData(GitWorktreeFailure.TimedOut, "Git timed out listing worktrees.")]
+    [InlineData(GitWorktreeFailure.DirectoryUnavailable, "Directory not found: C:\\gone")]
+    public async Task AdviseAsync_CheckDidNotComplete_IsNeverReportedAsNotARepository(
+        GitWorktreeFailure failure,
+        string error)
+    {
+        GivenInspectionFailure(failure, error);
 
         var advice = await Build().AdviseAsync(SessionId, Ct);
 
         var advisory = Assert.Single(advice.Advisories);
         Assert.Equal(WorktreeAdvisoryKind.GitUnavailable, advisory.Kind);
+        Assert.DoesNotContain("is not inside a Git repository", advisory.Message, StringComparison.Ordinal);
+        Assert.Contains("did not complete", advisory.Message, StringComparison.Ordinal);
+    }
+
+    private void GivenInspectionFailure(GitWorktreeFailure failure, string error) =>
+        _worktrees.Setup(reader => reader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GitWorktreeInspection(false, [], error, failure));
+
+    // Workspace metadata is only a last-resort fallback; a malformed workspace file must not fail
+    // the whole advisory request.
+    [Fact]
+    public async Task AdviseAsync_WorkspaceReaderThrows_StillReturnsAdvice()
+    {
+        _sessions.Setup(repo => repo.GetByIdAsync(SessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Session(
+                SessionId, null, null, null, "Veritas", null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        _workspaces.Setup(reader => reader.ReadWorkspace(It.IsAny<string>()))
+            .Throws(new InvalidOperationException("malformed workspace.yaml"));
+
+        var advice = await Build().AdviseAsync(SessionId, Ct);
+
+        Assert.Null(advice.ResolvedDirectory);
+        Assert.Equal(WorktreeAdvisoryKind.NotARepository, Assert.Single(advice.Advisories).Kind);
     }
 
     [Fact]

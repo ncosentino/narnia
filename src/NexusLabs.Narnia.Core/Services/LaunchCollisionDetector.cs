@@ -87,33 +87,35 @@ public sealed class LaunchCollisionDetector(
         CancellationToken ct)
     {
         var occupants = new List<LiveOccupant>();
-        IReadOnlySet<string> activeSessionIds;
         try
         {
-            activeSessionIds = activityReader.GetActiveSessionIds();
+            foreach (var sessionId in activityReader.GetActiveSessionIds())
+            {
+                ct.ThrowIfCancellationRequested();
+                if (launching.Contains(sessionId))
+                    continue;
+
+                var session = await sessionRepository.GetByIdAsync(sessionId, ct);
+                var overrideRecord = await overridesRepository.GetOverrideAsync(sessionId, ct);
+                var directory = ResolveDirectory(
+                    sessionId, session?.Cwd, session?.GitRoot, overrideRecord?.LocalPath);
+                if (directory is null)
+                    continue;
+
+                occupants.Add(new LiveOccupant(
+                    sessionId,
+                    directory,
+                    overrideRecord?.DisplayName ?? session?.Summary));
+            }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // Occupancy is advisory. Losing it must never block a launch.
+            // Occupancy is advisory, so any failure to compute it must degrade to "nothing known"
+            // rather than propagating. Enumerating processes alone can throw InvalidOperationException
+            // (a process exits between enumeration and reading its id) or Win32Exception; letting
+            // either escape would turn this warning into a 500 that blocks launching entirely, with
+            // no force retry available because the UI only offers that on a 409.
             return occupants;
-        }
-
-        foreach (var sessionId in activeSessionIds)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (launching.Contains(sessionId))
-                continue;
-
-            var session = await sessionRepository.GetByIdAsync(sessionId, ct);
-            var overrideRecord = await overridesRepository.GetOverrideAsync(sessionId, ct);
-            var directory = ResolveDirectory(sessionId, session?.Cwd, session?.GitRoot, overrideRecord?.LocalPath);
-            if (directory is null)
-                continue;
-
-            occupants.Add(new LiveOccupant(
-                sessionId,
-                directory,
-                overrideRecord?.DisplayName ?? session?.Summary));
         }
 
         return occupants;
@@ -131,7 +133,7 @@ public sealed class LaunchCollisionDetector(
         {
             workspaceGitRoot = workspaceReader.ReadWorkspace(sessionId)?.GitRoot;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
         }
 

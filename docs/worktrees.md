@@ -41,8 +41,8 @@ editor:
 | --- | --- |
 | `BranchNotCheckedOut` | The branch override names a branch no worktree has checked out, so it is only a label. |
 | `BranchInDifferentWorktree` | The branch is real but lives in another worktree; the session launches somewhere else. Offers a **Use this worktree** button. |
-| `NotARepository` | The launch directory is not inside a Git repository, so there is nothing to check. |
-| `GitUnavailable` | Git could not be run. |
+| `NotARepository` | Git ran and reported the launch directory is not inside a Git repository. |
+| `GitUnavailable` | The check did not complete — Git could not be run, timed out, or the directory could not be inspected. |
 
 `BranchInDifferentWorktree` is the actionable one — **Use this worktree** fills the override fields
 with the worktree that already holds the branch. Review the values and press **Save**; nothing is
