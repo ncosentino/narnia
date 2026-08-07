@@ -9,6 +9,14 @@ public sealed class NarniaOptions
     public string SessionStatePath { get; set; } = GetDefaultSessionStatePath();
 
     /// <summary>
+    /// Copilot's per-workspace sidebar tab list directory. Each file is named
+    /// <c>SHA256(UTF8(cwd))</c> in lowercase hex and records the session identifiers Copilot
+    /// restores as sidebar tabs the next time that folder is opened. Narnia only reads this
+    /// directory, and only rewrites a file when the user explicitly repairs a workspace.
+    /// </summary>
+    public string SidebarStatePath { get; set; } = GetDefaultSidebarStatePath();
+
+    /// <summary>
     /// Read-only Copilot plugin installation root used to validate package skill dependencies.
     /// Narnia never writes to this directory.
     /// </summary>
@@ -91,8 +99,12 @@ public sealed class NarniaOptions
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".copilot", "session-state");
 
-    private static string GetDefaultInstalledPluginsPath() =>
+    private static string GetDefaultSidebarStatePath() =>
         Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".copilot", "sidebar-sessions-state");
+
+    private static string GetDefaultInstalledPluginsPath() =>        Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".copilot", "installed-plugins");
 

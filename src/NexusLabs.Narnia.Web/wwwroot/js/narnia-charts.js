@@ -201,8 +201,71 @@ async function narniaMigrateSession(sessionId, btn) {
     }
 }
 
-async function narniaSaveSettings() {
-    var shellInput = document.getElementById('setting-shell-path');
+// The working directory arrives through data attributes rather than an inline JavaScript string.
+// Windows paths contain backslashes, which an interpolated JS literal would interpret as escape
+// sequences: 'C:\dev\narnia' silently becomes "C:dev" plus a newline, and 'C:\users\...' is an
+// outright SyntaxError.
+async function narniaRepairSidebar(btn) {
+    var cwd = btn.dataset.sidebarCwd;
+    var sessionId = btn.dataset.sidebarSession || null;
+    var clearingAll = !sessionId;
+    var prompt = clearingAll
+        ? 'Clear every Copilot sidebar tab for ' + cwd + '?\n\n' +
+          'Narnia backs up the current list first. No session is deleted — they stay ' +
+          'searchable in Narnia and resumable by ID.'
+        : 'Remove this session from the Copilot sidebar tab list for ' + cwd + '?\n\n' +
+          'Narnia backs up the current list first. The session itself is not deleted.';
+    if (!confirm(prompt)) {
+        return;
+    }
+
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Repairing sidebar…';
+    try {
+        var response = await fetch('/api/sidebar-tabs/repair', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cwd: cwd,
+                sessionIds: clearingAll ? null : [sessionId],
+                force: false,
+            }),
+        });
+        var body = await response.json().catch(function () { return null; });
+
+        // A live Copilot runtime rewrites the list on exit, so the repair is offered again
+        // as an explicit override rather than silently discarded.
+        if (response.status === 409 && body?.error) {
+            if (!confirm(body.error + '\n\nApply it anyway?')) {
+                throw new Error('Repair cancelled.');
+            }
+            response = await fetch('/api/sidebar-tabs/repair', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    cwd: cwd,
+                    sessionIds: clearingAll ? null : [sessionId],
+                    force: true,
+                }),
+            });
+            body = await response.json().catch(function () { return null; });
+        }
+
+        if (!response.ok) {
+            throw new Error(body?.error || 'HTTP ' + response.status);
+        }
+
+        btn.textContent = '✅ Sidebar repaired';
+        window.location.reload();
+    } catch (e) {
+        alert('Sidebar repair failed: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+async function narniaSaveSettings() {    var shellInput = document.getElementById('setting-shell-path');
     var copilotInput = document.getElementById('setting-copilot-command');
     if (!shellInput) return;
     var btn = document.querySelector('.btn-save-settings');

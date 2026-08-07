@@ -87,6 +87,22 @@ The MCP-Protocol-Version header value '2026-07-28' is not supported.
 
 ---
 
+## Copilot Sidebar Renders Incorrectly
+
+**Symptom:** A Copilot CLI session's sidebar renders wrapped, truncated, or overlapping text, and `/restart` does not clear it. The stored response itself is intact.
+
+**Why it happens:** Copilot remembers which sessions were open per folder and replays them as sidebar tabs, rendering a preview for each. A long tab list — especially one holding very large sessions — can break that rendering. The list is persisted, so `/restart` reloads the same state, and Copilot rewrites the file when it exits, so editing it under a running session is undone.
+
+**Fix:**
+
+1. Close the Copilot windows using that folder.
+2. Open any session from that folder in Narnia and expand **Copilot sidebar tabs for this folder**.
+3. Remove the offending session, or clear the folder's tab list. Narnia backs up the list first and never deletes a session.
+
+See [Copilot Sidebar Tabs](sidebar-tabs.md) for details.
+
+---
+
 ## Database File Not Found
 
 **Symptom:** All MCP tools return errors mentioning "unable to open database file" or similar SQLite errors.

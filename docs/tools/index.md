@@ -47,6 +47,16 @@ folder. Narnia does not modify Chronicle.
 | [`migrate_broken_session`](migrate-broken-session.md) | Reseed the same session ID and folder | `sessionId`, `confirmMigration` |
 | [`get_session_recovery_packet`](get-session-recovery-packet.md) | Read archived recovery context in chunks | `sessionId`, `offset`, `maxCharacters` |
 
+## Copilot Sidebar Tab Tools
+
+Sidebar tools read and repair Copilot's persisted per-workspace tab list, which drives the sidebar
+preview and survives `/restart`. Repairs back up the current list first and never delete a session.
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| [`list_sidebar_tabs`](list-sidebar-tabs.md) | Inspect every workspace's persisted tab list | — |
+| [`repair_sidebar_tabs`](repair-sidebar-tabs.md) | Remove tabs or clear a workspace's tab list | `cwd`, `sessionIds`, `force` |
+
 ## Session Storage Tools
 
 Storage tools use the same cached scanner and cleanup service as the web UI.
