@@ -41,13 +41,17 @@ public sealed class SessionWorktreeAdvisor(
                 null,
                 branchOverride,
                 [],
-                [
-                    new WorktreeAdvisory(
-                        WorktreeAdvisoryKind.NotARepository,
-                        "No launch directory could be resolved for this session, so its worktree cannot be checked.",
-                        null,
-                        null),
-                ]);
+                branchOverride is null
+                    ? []
+                    :
+                    [
+                        new WorktreeAdvisory(
+                            WorktreeAdvisoryKind.NotARepository,
+                            $"The branch override '{branchOverride}' cannot be checked: no launch " +
+                            "directory could be resolved for this session.",
+                            null,
+                            null),
+                    ]);
         }
 
         var inspection = await worktreeReader.ReadAsync(directory, ct);
@@ -59,7 +63,9 @@ public sealed class SessionWorktreeAdvisor(
                 null,
                 branchOverride,
                 [],
-                [BuildUnavailableAdvisory(directory, inspection)]);
+                branchOverride is null
+                    ? []
+                    : [BuildUnavailableAdvisory(directory, branchOverride, inspection)]);
         }
 
         var current = inspection.Worktrees.FirstOrDefault(
@@ -78,30 +84,38 @@ public sealed class SessionWorktreeAdvisor(
     // timeout, or a vanished directory means the check never ran — asserting "not a repository" in
     // those cases states a falsehood as fact, and would tell a user to stop looking for exactly the
     // misconfiguration this advisor exists to surface.
+    //
+    // Every branch here is reached only when a branch override exists. Working outside version
+    // control is an ordinary state (scheduled jobs run from the system directory, for instance), so
+    // a session that has claimed no branch has nothing incoherent to report and stays silent.
     private static WorktreeAdvisory BuildUnavailableAdvisory(
         string directory,
+        string branchOverride,
         GitWorktreeInspection inspection) =>
         inspection.Failure switch
         {
             GitWorktreeFailure.NotARepository => new WorktreeAdvisory(
                 WorktreeAdvisoryKind.NotARepository,
-                $"{directory} is not inside a Git repository, so there are no worktrees to choose from.",
+                $"The branch override '{branchOverride}' is only a label here: {directory} is not " +
+                "inside a Git repository, so there is no branch to match it against.",
                 null,
                 null),
             GitWorktreeFailure.TimedOut => new WorktreeAdvisory(
                 WorktreeAdvisoryKind.GitUnavailable,
-                $"Git did not finish listing the worktrees of {directory} in time, so this check did " +
-                "not complete. Reload to try again.",
+                $"Git did not finish listing the worktrees of {directory} in time, so the branch " +
+                $"override '{branchOverride}' could not be checked. Reload to try again.",
                 null,
                 null),
             GitWorktreeFailure.DirectoryUnavailable => new WorktreeAdvisory(
                 WorktreeAdvisoryKind.GitUnavailable,
-                $"{directory} could not be inspected, so this check did not complete. {inspection.Error}",
+                $"{directory} could not be inspected, so the branch override '{branchOverride}' " +
+                $"could not be checked. {inspection.Error}",
                 null,
                 null),
             _ => new WorktreeAdvisory(
                 WorktreeAdvisoryKind.GitUnavailable,
-                $"Git could not be run, so worktrees cannot be listed. {inspection.Error}",
+                $"Git could not be run, so the branch override '{branchOverride}' could not be " +
+                $"checked. {inspection.Error}",
                 null,
                 null),
         };

@@ -77,12 +77,6 @@ public enum WorktreeAdvisoryKind
     /// branch is not checked out anywhere to redirect to.
     /// </summary>
     DirectoryBranchMismatch,
-
-    /// <summary>
-    /// Another live Copilot session resolves to the same launch directory, so both agents would
-    /// share one working tree.
-    /// </summary>
-    SharedLaunchDirectory,
 }
 
 /// <summary>A single incoherence between a session's recorded intent and observable Git state.</summary>

@@ -131,7 +131,9 @@ function narniaRenderWorktreeAdvisories(host, data) {
         card.className = 'worktree-advisory worktree-advisory-' + advisory.kind;
 
         var title = document.createElement('strong');
-        title.textContent = '⚠️ Worktree mismatch';
+        title.textContent = advisory.kind === 'BranchNotCheckedOut' || advisory.kind === 'BranchInDifferentWorktree'
+            ? '⚠️ Worktree mismatch'
+            : '⚠️ Branch override could not be checked';
         card.appendChild(title);
 
         var message = document.createElement('p');

@@ -34,6 +34,11 @@ does not create one or move a branch. See [Why Narnia will not check out a branc
 
 ## Coherence warnings
 
+Warnings only appear when a session has a **branch override**. Working outside version control is an
+ordinary state — Narnia's own scheduled jobs run from the Windows system directory — so a session
+that has claimed no branch has nothing incoherent to report and stays silent. The worktree dropdown
+simply shows *No Git worktrees found for this session* and is disabled.
+
 When a session's branch override disagrees with reality, a warning appears above the override
 editor:
 
@@ -41,7 +46,7 @@ editor:
 | --- | --- |
 | `BranchNotCheckedOut` | The branch override names a branch no worktree has checked out, so it is only a label. |
 | `BranchInDifferentWorktree` | The branch is real but lives in another worktree; the session launches somewhere else. Offers a **Use this worktree** button. |
-| `NotARepository` | Git ran and reported the launch directory is not inside a Git repository. |
+| `NotARepository` | Git ran and reported the launch directory is not inside a repository, so the branch label cannot be matched against anything. |
 | `GitUnavailable` | The check did not complete — Git could not be run, timed out, or the directory could not be inspected. |
 
 `BranchInDifferentWorktree` is the actionable one — **Use this worktree** fills the override fields
@@ -102,6 +107,17 @@ independent ways:
 
 So the picker redirects the session to the worktree that already holds the branch, and the
 advisories tell you when they disagree.
+
+## Sessions outside a Git repository
+
+Nothing here requires a session to be in a repository. A session working in a plain directory:
+
+- produces **no warning** — there is nothing to be inconsistent with,
+- shows a disabled worktree dropdown reading *No Git worktrees found for this session*, and
+- is still covered by the shared-directory guard, which never runs Git.
+
+The only case that warns is a session that has a branch override *and* a launch directory that is
+not a repository — a label that cannot possibly match anything.
 
 ## MCP
 

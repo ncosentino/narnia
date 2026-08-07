@@ -131,9 +131,46 @@ public sealed class SessionWorktreeAdvisorTests
         Assert.Equal(MainRepo, advice.ResolvedDirectory);
     }
 
-    [Fact]
-    public async Task AdviseAsync_DirectoryIsNotARepository_ReportsThatAndOffersNoWorktrees()
+    /// <summary>
+    /// Working outside version control is an ordinary state — every Narnia scheduled job runs from
+    /// the Windows system directory, for instance. A session that has claimed no branch has nothing
+    /// incoherent to report, so it must produce no warning at all.
+    /// </summary>
+    [Theory]
+    [InlineData(GitWorktreeFailure.NotARepository, "fatal: not a git repository")]
+    [InlineData(GitWorktreeFailure.GitNotAvailable, "Git could not be started: not found")]
+    [InlineData(GitWorktreeFailure.TimedOut, "Git timed out listing worktrees.")]
+    [InlineData(GitWorktreeFailure.DirectoryUnavailable, "Directory not found: C:\\gone")]
+    public async Task AdviseAsync_NotARepositoryAndNoBranchClaimed_IsSilent(
+        GitWorktreeFailure failure,
+        string error)
     {
+        GivenInspectionFailure(failure, error);
+
+        var advice = await Build().AdviseAsync(SessionId, Ct);
+
+        Assert.Empty(advice.Advisories);
+        Assert.Empty(advice.Worktrees);
+    }
+
+    [Fact]
+    public async Task AdviseAsync_NoDirectoryAndNoBranchClaimed_IsSilent()
+    {
+        _sessions.Setup(repo => repo.GetByIdAsync(SessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Session?)null);
+
+        var advice = await Build().AdviseAsync(SessionId, Ct);
+
+        Assert.Null(advice.ResolvedDirectory);
+        Assert.Empty(advice.Advisories);
+    }
+
+    // A branch label on a session that is not in a repository is genuinely incoherent, so it is
+    // still reported — but as an unverifiable label, not as a worktree mismatch.
+    [Fact]
+    public async Task AdviseAsync_DirectoryIsNotARepositoryButABranchIsClaimed_ReportsIt()
+    {
+        GivenBranchOverride("worktree-art-a", localPath: MainRepo);
         GivenInspectionFailure(
             GitWorktreeFailure.NotARepository,
             "fatal: not a git repository (or any of the parent directories): .git");
@@ -142,6 +179,7 @@ public sealed class SessionWorktreeAdvisorTests
 
         var advisory = Assert.Single(advice.Advisories);
         Assert.Equal(WorktreeAdvisoryKind.NotARepository, advisory.Kind);
+        Assert.Contains("worktree-art-a", advisory.Message, StringComparison.Ordinal);
         Assert.Empty(advice.Worktrees);
     }
 
@@ -150,6 +188,7 @@ public sealed class SessionWorktreeAdvisorTests
     [Fact]
     public async Task AdviseAsync_GitExecutableMissing_IsDistinguishedFromNotARepository()
     {
+        GivenBranchOverride(ArtifactBranch, localPath: MainRepo);
         GivenInspectionFailure(
             GitWorktreeFailure.GitNotAvailable,
             "Git could not be started: The system cannot find the file specified.");
@@ -171,6 +210,7 @@ public sealed class SessionWorktreeAdvisorTests
         GitWorktreeFailure failure,
         string error)
     {
+        GivenBranchOverride(ArtifactBranch, localPath: MainRepo);
         GivenInspectionFailure(failure, error);
 
         var advice = await Build().AdviseAsync(SessionId, Ct);
@@ -178,7 +218,7 @@ public sealed class SessionWorktreeAdvisorTests
         var advisory = Assert.Single(advice.Advisories);
         Assert.Equal(WorktreeAdvisoryKind.GitUnavailable, advisory.Kind);
         Assert.DoesNotContain("is not inside a Git repository", advisory.Message, StringComparison.Ordinal);
-        Assert.Contains("did not complete", advisory.Message, StringComparison.Ordinal);
+        Assert.Contains("could not be checked", advisory.Message, StringComparison.Ordinal);
     }
 
     private void GivenInspectionFailure(GitWorktreeFailure failure, string error) =>
@@ -194,6 +234,10 @@ public sealed class SessionWorktreeAdvisorTests
             .ReturnsAsync(new Session(
                 SessionId, null, null, null, "Veritas", null,
                 DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        _overrides.Setup(repo => repo.GetOverrideAsync(SessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SessionOverride(
+                SessionId, null, null, ArtifactBranch, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
         _workspaces.Setup(reader => reader.ReadWorkspace(It.IsAny<string>()))
             .Throws(new InvalidOperationException("malformed workspace.yaml"));
 
@@ -206,6 +250,7 @@ public sealed class SessionWorktreeAdvisorTests
     [Fact]
     public async Task AdviseAsync_NoResolvableDirectory_ReportsWithoutThrowing()
     {
+        GivenBranchOverride(ArtifactBranch);
         _sessions.Setup(repo => repo.GetByIdAsync(SessionId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Session?)null);
 

@@ -24,7 +24,12 @@ out. See [Git Worktrees](../worktrees.md) for why.
 | `advisories[]` | Disagreements found: `kind`, `message`, `suggestedPath`, `suggestedBranch`. |
 
 Advisory kinds are `BranchNotCheckedOut`, `BranchInDifferentWorktree`, `NotARepository`, and
-`GitUnavailable`. An empty `advisories` array means the overrides are coherent.
+`GitUnavailable`. An empty `advisories` array means either that the overrides are coherent or that
+the session has no branch override to check.
+
+Advisories are only produced for a session that has a branch override. A session working outside
+version control — a scheduled job, for example — reports `worktrees: []` with no advisories, because
+claiming no branch cannot contradict anything.
 
 `NotARepository` is only reported when Git ran and said so. A timeout, a missing Git executable, or
 an unreadable directory is reported as `GitUnavailable` — meaning the check did not complete, not
