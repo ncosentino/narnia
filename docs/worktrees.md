@@ -34,17 +34,22 @@ does not create one or move a branch. See [Why Narnia will not check out a branc
 
 ## Coherence warnings
 
-Warnings only appear when a session has a **branch override**. Working outside version control is an
-ordinary state — Narnia's own scheduled jobs run from the Windows system directory — so a session
-that has claimed no branch has nothing incoherent to report and stays silent. The worktree dropdown
-simply shows *No Git worktrees found for this session* and is disabled.
+Warnings only appear when a session has a **branch override**, and only when that override actually
+misleads. Two things are deliberately **not** warned about:
 
-When a session's branch override disagrees with reality, a warning appears above the override
-editor:
+- **A session with no branch override.** Working outside version control is an ordinary state —
+  Narnia's own scheduled jobs run from the Windows system directory — so a session that has claimed
+  no branch has nothing incoherent to report.
+- **A real branch that simply is not checked out right now.** Switching branches in place is ordinary
+  Git use. A session labelled `main` in a repository currently on a feature branch is normal, and
+  warning about it would fire constantly and bury the cases that matter.
+
+When a session's branch override genuinely disagrees with reality, a warning appears above the
+override editor:
 
 | Warning | Meaning |
 | --- | --- |
-| `BranchNotCheckedOut` | The branch override names a branch no worktree has checked out, so it is only a label. |
+| `BranchNotFound` | The branch override names a branch that does not exist in the repository at all, so the label can never be satisfied. |
 | `BranchInDifferentWorktree` | The branch is real but lives in another worktree; the session launches somewhere else. Offers a **Use this worktree** button. |
 | `NotARepository` | Git ran and reported the launch directory is not inside a repository, so the branch label cannot be matched against anything. |
 | `GitUnavailable` | The check did not complete — Git could not be run, timed out, or the directory could not be inspected. |

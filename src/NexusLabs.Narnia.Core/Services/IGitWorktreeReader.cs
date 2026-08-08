@@ -14,4 +14,15 @@ public interface IGitWorktreeReader
     /// <see cref="GitWorktreeInspection.Error"/> — this is never signalled by throwing.
     /// </returns>
     ValueTask<GitWorktreeInspection> ReadAsync(string directory, CancellationToken ct);
+
+    /// <summary>Determines whether a local branch exists in the repository owning a directory.</summary>
+    /// <param name="directory">Any directory inside the repository.</param>
+    /// <param name="branch">Short branch name, for example <c>main</c> or <c>feature/x</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// Whether the branch was found. A failed or timed-out check yields
+    /// <see cref="GitBranchPresence.Unknown"/> rather than <see cref="GitBranchPresence.Missing"/>,
+    /// so that a caller can decline to warn without positive evidence.
+    /// </returns>
+    ValueTask<GitBranchPresence> FindBranchAsync(string directory, string branch, CancellationToken ct);
 }

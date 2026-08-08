@@ -52,4 +52,32 @@ public sealed class GitWorktreeReader(IFileSystem fileSystem) : IGitWorktreeRead
             GitWorktreePorcelain.Parse(result.Output, fileSystem.Directory.Exists),
             null);
     }
+
+    /// <inheritdoc />
+    public async ValueTask<GitBranchPresence> FindBranchAsync(
+        string directory,
+        string branch,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(directory) ||
+            string.IsNullOrWhiteSpace(branch) ||
+            !fileSystem.Directory.Exists(directory))
+        {
+            return GitBranchPresence.Unknown;
+        }
+
+        // A single ref lookup, not an enumeration: repositories here routinely carry hundreds of
+        // local branches, and this runs on a page load. `--verify --quiet` exits 1 with no output
+        // when the ref does not resolve, which is the "missing" answer rather than an error.
+        var result = await GitProcessRunner.RunAsync(
+            directory,
+            ["rev-parse", "--verify", "--quiet", $"refs/heads/{branch}"],
+            GitProcessRunner.DefaultTimeout,
+            ct);
+
+        if (!result.Started || result.TimedOut)
+            return GitBranchPresence.Unknown;
+
+        return result.ExitCode == 0 ? GitBranchPresence.Exists : GitBranchPresence.Missing;
+    }
 }

@@ -77,7 +77,7 @@ public sealed class SessionWorktreeAdvisor(
             current?.Branch,
             branchOverride,
             inspection.Worktrees,
-            BuildAdvisories(directory, branchOverride, current, inspection.Worktrees));
+            await BuildAdvisoriesAsync(directory, branchOverride, current, inspection.Worktrees, ct));
     }
 
     // Only a non-zero Git exit proves the directory is not a repository. A missing executable, a
@@ -120,11 +120,23 @@ public sealed class SessionWorktreeAdvisor(
                 null),
         };
 
-    private static IReadOnlyList<WorktreeAdvisory> BuildAdvisories(
+    /// <summary>
+    /// Decides whether a branch override is worth warning about.
+    /// </summary>
+    /// <remarks>
+    /// The question that matters is whether the branch <em>exists</em>, not whether it is currently
+    /// checked out. Switching branches in place is ordinary Git use, so a session labelled with a
+    /// real branch that simply is not checked out right now is not a defect and must stay silent —
+    /// otherwise the common case drowns the rare one. Only two situations mislead a user about where
+    /// their work will land: a label naming a branch that exists nowhere, and a label naming a branch
+    /// that lives in a worktree the session does not launch into.
+    /// </remarks>
+    private async ValueTask<IReadOnlyList<WorktreeAdvisory>> BuildAdvisoriesAsync(
         string directory,
         string? branchOverride,
         GitWorktree? current,
-        IReadOnlyList<GitWorktree> worktrees)
+        IReadOnlyList<GitWorktree> worktrees,
+        CancellationToken ct)
     {
         if (branchOverride is null)
             return [];
@@ -132,33 +144,40 @@ public sealed class SessionWorktreeAdvisor(
         var holder = worktrees.FirstOrDefault(
             worktree => string.Equals(worktree.Branch, branchOverride, StringComparison.Ordinal));
 
-        if (holder is null)
+        if (holder is not null)
         {
+            // Checked out where this session launches: the label matches reality.
+            if (current is not null && DirectoryPaths.AreSame(holder.Path, current.Path))
+                return [];
+
             return
             [
                 new WorktreeAdvisory(
-                    WorktreeAdvisoryKind.BranchNotCheckedOut,
-                    $"The branch override '{branchOverride}' is not checked out in any worktree of this " +
-                    $"repository, so it is only a label. This session launches into {directory}" +
-                    (current?.Branch is null ? "." : $", which is on '{current.Branch}'."),
-                    null,
-                    null),
+                    WorktreeAdvisoryKind.BranchInDifferentWorktree,
+                    $"The branch override '{branchOverride}' is checked out at {holder.Path}, but this " +
+                    $"session launches into {directory}" +
+                    (current?.Branch is null ? "." : $", which is on '{current.Branch}'.") +
+                    " Adopt that worktree to keep this session on its own branch.",
+                    holder.Path,
+                    holder.Branch),
             ];
         }
 
-        if (current is not null && DirectoryPaths.AreSame(holder.Path, current.Path))
+        // Not checked out anywhere. That is unremarkable for a real branch, so only a branch Git
+        // positively reports as missing is flagged; an inconclusive check says nothing.
+        var presence = await worktreeReader.FindBranchAsync(directory, branchOverride, ct);
+        if (presence != GitBranchPresence.Missing)
             return [];
 
         return
         [
             new WorktreeAdvisory(
-                WorktreeAdvisoryKind.BranchInDifferentWorktree,
-                $"The branch override '{branchOverride}' is checked out at {holder.Path}, but this " +
-                $"session launches into {directory}" +
-                (current?.Branch is null ? "." : $", which is on '{current.Branch}'.") +
-                " Adopt that worktree to keep this session on its own branch.",
-                holder.Path,
-                holder.Branch),
+                WorktreeAdvisoryKind.BranchNotFound,
+                $"The branch override '{branchOverride}' does not name a branch that exists in this " +
+                $"repository, so it is only a label. This session launches into {directory}" +
+                (current?.Branch is null ? "." : $", which is on '{current.Branch}'."),
+                null,
+                null),
         ];
     }
 

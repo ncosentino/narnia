@@ -23,13 +23,17 @@ out. See [Git Worktrees](../worktrees.md) for why.
 | `worktrees[]` | Every worktree of the repository: `path`, `branch`, `head`, `isBare`, `isDetached`, `isPrimary`, `exists`. |
 | `advisories[]` | Disagreements found: `kind`, `message`, `suggestedPath`, `suggestedBranch`. |
 
-Advisory kinds are `BranchNotCheckedOut`, `BranchInDifferentWorktree`, `NotARepository`, and
+Advisory kinds are `BranchNotFound`, `BranchInDifferentWorktree`, `NotARepository`, and
 `GitUnavailable`. An empty `advisories` array means either that the overrides are coherent or that
 the session has no branch override to check.
 
 Advisories are only produced for a session that has a branch override. A session working outside
 version control — a scheduled job, for example — reports `worktrees: []` with no advisories, because
 claiming no branch cannot contradict anything.
+
+A branch override that names a **real** branch which simply is not checked out anywhere right now is
+**not** reported. Switching branches in place is ordinary Git use, so warning about it would bury the
+cases that actually mislead.
 
 `NotARepository` is only reported when Git ran and said so. A timeout, a missing Git executable, or
 an unreadable directory is reported as `GitUnavailable` — meaning the check did not complete, not
@@ -59,8 +63,8 @@ that the directory is unversioned.
   ],
   "advisories": [
     {
-      "kind": "BranchNotCheckedOut",
-      "message": "The branch override 'worktree-art-a' is not checked out in any worktree of this repository, so it is only a label. This session launches into C:\\dev\\nexus-labs\\veritas, which is on 'feature/filesystem-evidence-architecture-496'.",
+      "kind": "BranchNotFound",
+      "message": "The branch override 'worktree-art-a' does not name a branch that exists in this repository, so it is only a label. This session launches into C:\\dev\\nexus-labs\\veritas, which is on 'feature/filesystem-evidence-architecture-496'.",
       "suggestedPath": null,
       "suggestedBranch": null
     }

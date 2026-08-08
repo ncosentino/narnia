@@ -34,6 +34,9 @@ public sealed class SessionWorktreeAdvisorTests
             .ReturnsAsync((SessionOverride?)null);
         _workspaces.Setup(reader => reader.ReadWorkspace(It.IsAny<string>()))
             .Returns((string id) => new WorkspaceInfo(id, null, []));
+        _worktrees.Setup(reader => reader.FindBranchAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(GitBranchPresence.Missing);
         GivenWorktrees(
             new GitWorktree(MainRepo, MainBranch, "aaa", false, false, true, true),
             new GitWorktree(ArtifactWorktree, ArtifactBranch, "bbb", false, false, false, true));
@@ -42,6 +45,13 @@ public sealed class SessionWorktreeAdvisorTests
     private void GivenWorktrees(params GitWorktree[] worktrees) =>
         _worktrees.Setup(reader => reader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GitWorktreeInspection(true, worktrees, null));
+
+    // Branches are assumed missing unless a test says otherwise, so a test that expects silence has
+    // to state the reason explicitly rather than getting it by default.
+    private void GivenBranchPresence(string branch, GitBranchPresence presence) =>
+        _worktrees.Setup(reader => reader.FindBranchAsync(
+                It.IsAny<string>(), branch, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(presence);
 
     private void GivenBranchOverride(string? branch, string? localPath = null) =>
         _overrides.Setup(repo => repo.GetOverrideAsync(SessionId, It.IsAny<CancellationToken>()))
@@ -76,10 +86,56 @@ public sealed class SessionWorktreeAdvisorTests
         var advice = await Build().AdviseAsync(SessionId, Ct);
 
         var advisory = Assert.Single(advice.Advisories);
-        Assert.Equal(WorktreeAdvisoryKind.BranchNotCheckedOut, advisory.Kind);
+        Assert.Equal(WorktreeAdvisoryKind.BranchNotFound, advisory.Kind);
         Assert.Contains("worktree-art-a", advisory.Message, StringComparison.Ordinal);
         Assert.Contains(MainBranch, advisory.Message, StringComparison.Ordinal);
         Assert.Null(advisory.SuggestedPath);
+    }
+
+    /// <summary>
+    /// Switching branches in place is ordinary Git use, so a label naming a real branch that simply
+    /// is not checked out anywhere right now must stay silent. This was the dominant case in
+    /// practice — 19 of 23 recorded branch overrides on the author's machine were <c>main</c>, in a
+    /// repository normally sitting on a feature branch — and warning about it buried the one real
+    /// misconfiguration.
+    /// </summary>
+    [Fact]
+    public async Task AdviseAsync_RealBranchThatIsSimplyNotCheckedOut_IsSilent()
+    {
+        GivenBranchOverride("main", localPath: MainRepo);
+        GivenBranchPresence("main", GitBranchPresence.Exists);
+
+        var advice = await Build().AdviseAsync(SessionId, Ct);
+
+        Assert.Empty(advice.Advisories);
+    }
+
+    // A warning needs positive evidence that the branch is missing. If the existence check could not
+    // answer — Git absent, or timed out — saying nothing is the honest outcome.
+    [Fact]
+    public async Task AdviseAsync_BranchPresenceUnknown_StaysSilentRatherThanGuessing()
+    {
+        GivenBranchOverride("main", localPath: MainRepo);
+        GivenBranchPresence("main", GitBranchPresence.Unknown);
+
+        var advice = await Build().AdviseAsync(SessionId, Ct);
+
+        Assert.Empty(advice.Advisories);
+    }
+
+    // Existence is only consulted when the branch is not checked out anywhere; a branch found in a
+    // worktree is proof enough, and the extra Git call would be wasted on every page load.
+    [Fact]
+    public async Task AdviseAsync_BranchCheckedOutSomewhere_DoesNotRunTheExistenceCheck()
+    {
+        GivenBranchOverride(ArtifactBranch, localPath: MainRepo);
+
+        await Build().AdviseAsync(SessionId, Ct);
+
+        _worktrees.Verify(
+            reader => reader.FindBranchAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     // The actionable case: the branch is real, just checked out somewhere the session never launches.

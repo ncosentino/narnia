@@ -20,7 +20,20 @@ public sealed record GitWorktree(
     bool IsPrimary,
     bool Exists);
 
-/// <summary>Why worktree enumeration failed.</summary>
+/// <summary>Whether a named local branch could be found in a repository.</summary>
+public enum GitBranchPresence
+{
+    /// <summary>The check could not be performed, so nothing is known either way.</summary>
+    Unknown,
+
+    /// <summary><c>refs/heads/&lt;branch&gt;</c> resolves.</summary>
+    Exists,
+
+    /// <summary>Git ran and reported no such branch.</summary>
+    Missing,
+}
+
+/// <summary>Whether worktree enumeration failed, and why.</summary>
 public enum GitWorktreeFailure
 {
     /// <summary>Enumeration succeeded.</summary>
@@ -63,8 +76,11 @@ public enum WorktreeAdvisoryKind
     /// <summary>Git ran and reported that the launch directory is not inside a Git repository.</summary>
     NotARepository,
 
-    /// <summary>The branch override names a branch that is not checked out in any worktree.</summary>
-    BranchNotCheckedOut,
+    /// <summary>
+    /// The branch override names a branch that does not exist in the repository at all, so the
+    /// label can never be satisfied.
+    /// </summary>
+    BranchNotFound,
 
     /// <summary>
     /// The branch override is checked out, but in a different worktree than the one the
