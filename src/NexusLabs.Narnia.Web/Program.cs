@@ -57,7 +57,6 @@ builder.Services.AddSingleton<ICopilotSessionLockResolver, CopilotSessionLockRes
 builder.Services.AddSingleton<ICopilotProcessProvider, CopilotProcessProvider>();
 builder.Services.AddSingleton<ICopilotSessionActivityReader, CopilotSessionActivityReader>();
 builder.Services.AddSingleton<IProcessDiagnosticsService, ProcessDiagnosticsService>();
-builder.Services.AddSingleton<ICopilotSidebarTabsService, CopilotSidebarTabsService>();
 builder.Services.AddSingleton<ISessionOperationCoordinator, SessionOperationCoordinator>();
 builder.Services.AddSingleton<SqliteNarniaSettingsRepository>();
 builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredService<SqliteNarniaSettingsRepository>());
@@ -150,8 +149,7 @@ builder.Services
     .WithTools<ScheduleTools>()
     .WithTools<SchedulePackageTools>()
     .WithTools<StorageTools>()
-    .WithTools<SessionMigrationTools>()
-    .WithTools<SidebarTabTools>();
+    .WithTools<SessionMigrationTools>();
 
 var app = builder.Build();
 
@@ -232,8 +230,7 @@ app.Use(async (context, next) =>
     var requiresLoopbackHost =
         context.Request.Path.StartsWithSegments("/mcp") ||
         context.Request.Path.StartsWithSegments("/processes") ||
-        context.Request.Path.StartsWithSegments("/api/processes") ||
-        context.Request.Path.StartsWithSegments("/api/sidebar-tabs");
+        context.Request.Path.StartsWithSegments("/api/processes");
     if (requiresLoopbackHost)
     {
         var host = context.Request.Host.Host;
@@ -558,43 +555,6 @@ app.MapGet("/api/processes", async (
 {
     var snapshot = await diagnostics.GetSnapshotAsync(ct);
     return Results.Ok(snapshot);
-});
-
-app.MapGet("/api/sidebar-tabs", async (
-    ICopilotSidebarTabsService sidebar,
-    CancellationToken ct) =>
-{
-    var workspaces = await sidebar.ListAsync(ct);
-    return Results.Ok(workspaces);
-});
-
-app.MapGet("/api/sidebar-tabs/workspace", async (
-    string cwd,
-    ICopilotSidebarTabsService sidebar,
-    CancellationToken ct) =>
-{
-    if (string.IsNullOrWhiteSpace(cwd))
-        return Results.BadRequest(new { error = "cwd is required." });
-
-    var workspace = await sidebar.GetAsync(cwd, ct);
-    return workspace is null
-        ? Results.NotFound(new { error = $"No sidebar tab list exists for {cwd}." })
-        : Results.Ok(workspace);
-});
-
-app.MapPost("/api/sidebar-tabs/repair", async (
-    SidebarRepairRequest request,
-    ICopilotSidebarTabsService sidebar,
-    CancellationToken ct) =>
-{
-    if (string.IsNullOrWhiteSpace(request.Cwd))
-        return Results.BadRequest(new { error = "cwd is required." });
-
-    var result = request.SessionIds is { Length: > 0 }
-        ? await sidebar.RemoveTabsAsync(request.Cwd, request.SessionIds, request.Force, ct)
-        : await sidebar.ResetAsync(request.Cwd, request.Force, ct);
-
-    return result.Succeeded ? Results.Ok(result) : Results.Conflict(result);
 });
 
 app.MapPost("/api/windows/reopen", async (
@@ -1249,11 +1209,6 @@ internal sealed record LaunchRequest(string SessionId, string Target);
 internal sealed record BulkLaunchRequest(string[] SessionIds, bool SeparateWindows = false);
 internal sealed record BulkReopenRequest(string[] Ids, bool SeparateWindows = false);
 
-/// <summary>
-/// Repairs a workspace's Copilot sidebar tab list. Omitting <c>SessionIds</c> clears the whole
-/// list; <c>Force</c> applies the repair even when a live Copilot runtime would rewrite it.
-/// </summary>
-internal sealed record SidebarRepairRequest(string Cwd, string[]? SessionIds, bool Force = false);
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);
 
 internal sealed record SessionGroupCreateRequest(string? Name, string[] SessionIds);

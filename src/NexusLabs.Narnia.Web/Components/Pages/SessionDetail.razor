@@ -12,7 +12,6 @@
 @inject ISessionStorageRepository StorageRepository
 @inject ISessionResumeSafetyReader ResumeSafetyReader
 @inject ISessionMigrationService MigrationService
-@inject ICopilotSidebarTabsService SidebarTabs
 
 <PageTitle>@(_session?.Summary ?? SessionId) — Narnia</PageTitle>
 
@@ -114,88 +113,6 @@ else if (_session is not null)
         <details class="session-recovery">
             <summary>Recover into a new successor session</summary>
             @RecoveryPlan
-        </details>
-    }
-
-    @if (_sidebar is not null)
-    {
-        <details class="session-recovery sidebar-tabs">
-            <summary>
-                Copilot sidebar tabs for this folder
-                <span class="sidebar-tabs-count">@_sidebar.TabCount</span>
-            </summary>
-            <div class="session-recovery-plan">
-                <p>
-                    Copilot restores these @_sidebar.TabCount session@(_sidebar.TabCount == 1 ? "" : "s")
-                    as sidebar tabs whenever <code>@_sidebar.Cwd</code> is opened, and it renders a
-                    preview for each one. A long or damaged tab list is a known cause of broken
-                    sidebar rendering, and it survives <code>/restart</code> because Copilot reloads
-                    the list from disk.
-                </p>
-                @if (_sidebar.ParseError is not null)
-                {
-                    <p class="session-recovery-error">@_sidebar.ParseError</p>
-                }
-                else
-                {
-                    <ol class="sidebar-tab-list">
-                        @foreach (var tab in _sidebar.Tabs)
-                        {
-                            var isCurrent = string.Equals(
-                                tab.SessionId, SessionId, StringComparison.OrdinalIgnoreCase);
-                            <li class="@(isCurrent ? "sidebar-tab sidebar-tab--current" : "sidebar-tab")">
-                                <a href="/sessions/@tab.SessionId">@(tab.Title ?? "(unnamed session)")</a>
-                                @if (isCurrent)
-                                {
-                                    <span class="badge-name-source">this session</span>
-                                }
-                                @if (tab.IsLive)
-                                {
-                                    <span class="badge-name-source">live</span>
-                                }
-                                @if (!tab.IsKnown)
-                                {
-                                    <span class="badge-name-source">not in session store</span>
-                                }
-                                @if (tab.EventStreamBytes is > 0)
-                                {
-                                    <span class="sidebar-tab-size">@FormatBytes(tab.EventStreamBytes.Value)</span>
-                                }
-                            </li>
-                        }
-                    </ol>
-
-                    @if (_sidebar.HasLiveRuntime)
-                    {
-                        <p class="session-recovery-error">
-                            Copilot is running @_sidebar.LiveTabCount of these session@(_sidebar.LiveTabCount == 1 ? "" : "s")
-                            and rewrites this list when it exits, so a repair will not stick until
-                            those sessions are closed.
-                        </p>
-                    }
-
-                    <div class="sidebar-tab-actions">
-                        @if (SidebarTabForThisSession is not null)
-                        {
-                            <button class="launch-btn"
-                                    data-sidebar-cwd="@_sidebar.Cwd"
-                                    data-sidebar-session="@SessionId"
-                                    onclick="narniaRepairSidebar(this)">
-                                Remove this session from the sidebar
-                            </button>
-                        }
-                        <button class="btn-archive"
-                                data-sidebar-cwd="@_sidebar.Cwd"
-                                onclick="narniaRepairSidebar(this)">
-                            Clear all sidebar tabs for this folder
-                        </button>
-                    </div>
-                    <p class="sidebar-tab-note">
-                        Narnia copies the current list beside itself before changing anything.
-                        Clearing tabs never deletes a session.
-                    </p>
-                }
-            </div>
         </details>
     }
 
@@ -464,7 +381,6 @@ else if (_session is not null)
     private SessionResumeAssessment? _resumeAssessment;
     private SessionMigrationPreview? _migrationPreview;
     private SessionMigration? _relatedMigration;
-    private CopilotSidebarWorkspace? _sidebar;
     private bool _loaded;
     private bool HasNarniaAlias => !string.IsNullOrWhiteSpace(_override?.DisplayName);
     private string? CopilotName => _workspace?.Name ?? _rawSession?.Summary;
@@ -485,16 +401,6 @@ else if (_session is not null)
             SessionId,
             StringComparison.OrdinalIgnoreCase);
     private bool IsInPlaceMigration => _relatedMigration?.IsInPlace == true;
-
-    /// <summary>
-    /// Copilot keys its sidebar tab list on the working directory byte-for-byte, so this must be
-    /// the raw store value rather than a Narnia local-path override.
-    /// </summary>
-    private string? SidebarCwd => _rawSession?.Cwd ?? _session?.Cwd;
-
-    private CopilotSidebarTab? SidebarTabForThisSession =>
-        _sidebar?.Tabs.FirstOrDefault(tab =>
-            string.Equals(tab.SessionId, SessionId, StringComparison.OrdinalIgnoreCase));
     private bool IsMigrationReplacement =>
         _relatedMigration is not null &&
         string.Equals(
@@ -523,12 +429,6 @@ else if (_session is not null)
             _relatedMigration = await MigrationService.GetRelatedAsync(
                 SessionId,
                 CancellationToken.None);
-            if (!string.IsNullOrWhiteSpace(SidebarCwd))
-            {
-                _sidebar = await SidebarTabs.GetAsync(
-                    SidebarCwd,
-                    CancellationToken.None);
-            }
             if (!IsMigrationReplacement)
             {
                 _migrationPreview = await MigrationService.PreviewAsync(

@@ -69,9 +69,6 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock scan coordinator so endpoint tests never queue a real filesystem scan.</summary>
     public Mock<ISessionStorageScanCoordinator> StorageScanCoordinator { get; } = new();
 
-    /// <summary>Mock sidebar tab-list service so tests never read or rewrite Copilot state files.</summary>
-    public Mock<ICopilotSidebarTabsService> SidebarTabs { get; } = new();
-
     /// <summary>Mock cleanup orchestrator for HTTP contract tests.</summary>
     public Mock<ISessionCleanupService> SessionCleanupService { get; } = new();
 
@@ -177,12 +174,6 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         StorageScanCoordinator
             .Setup(coordinator => coordinator.RequestScan())
             .Returns(true);
-        SidebarTabs
-            .Setup(service => service.ListAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<CopilotSidebarWorkspace>)[]);
-        SidebarTabs
-            .Setup(service => service.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((CopilotSidebarWorkspace?)null);
         SessionCleanupService
             .Setup(service => service.PreviewAsync(
                 It.IsAny<IReadOnlyCollection<string>>(),
@@ -279,9 +270,6 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<ISessionCleanupService>();
             services.AddSingleton(SessionCleanupService.Object);
-
-            services.RemoveAll<ICopilotSidebarTabsService>();
-            services.AddSingleton(SidebarTabs.Object);
         });
     }
 

@@ -60,13 +60,6 @@ for file-based schedule portability.
 | [`migrate_broken_session`](tools/migrate-broken-session.md) | Reseed the same session ID and folder |
 | [`get_session_recovery_packet`](tools/get-session-recovery-packet.md) | Read exact archived recovery context in chunks |
 
-### Copilot Sidebar Tabs
-
-| Tool | Description |
-|------|-------------|
-| [`list_sidebar_tabs`](tools/list-sidebar-tabs.md) | Inspect Copilot's persisted per-workspace sidebar tab lists |
-| [`repair_sidebar_tabs`](tools/repair-sidebar-tabs.md) | Remove tabs or clear a workspace's tab list, backing it up first |
-
 ### Scheduled Jobs
 
 | Tool | Description |
