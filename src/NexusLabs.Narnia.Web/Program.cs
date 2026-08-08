@@ -71,6 +71,9 @@ builder.Services.AddSingleton<ISessionStorageRepository>(sp => sp.GetRequiredSer
 builder.Services.AddSingleton<ISessionStorageScanner, SessionStorageScanner>();
 builder.Services.AddSingleton<ISessionStorageService, SessionStorageService>();
 builder.Services.AddSingleton<IGitArtifactInspector, GitArtifactInspector>();
+builder.Services.AddSingleton<IGitWorktreeReader, GitWorktreeReader>();
+builder.Services.AddSingleton<ISessionWorktreeAdvisor, SessionWorktreeAdvisor>();
+builder.Services.AddSingleton<ILaunchCollisionDetector, LaunchCollisionDetector>();
 builder.Services.AddSingleton<ICopilotSessionManager, CopilotSdkSessionManager>();
 builder.Services.AddSingleton<ISessionCleanupService, SessionCleanupService>();
 builder.Services.AddSingleton<SessionStorageScanCoordinator>();
@@ -149,7 +152,8 @@ builder.Services
     .WithTools<ScheduleTools>()
     .WithTools<SchedulePackageTools>()
     .WithTools<StorageTools>()
-    .WithTools<SessionMigrationTools>();
+    .WithTools<SessionMigrationTools>()
+    .WithTools<WorktreeTools>();
 
 var app = builder.Build();
 
@@ -290,6 +294,43 @@ app.MapDelete("/api/sessions/{id}/overrides", async (
     return Results.NoContent();
 });
 
+// Powers the worktree picker and the override-coherence warnings on the session detail page.
+// Read-only: Git is only ever queried, never asked to change a checkout.
+app.MapGet("/api/sessions/{id}/worktrees", async (
+    string id,
+    ISessionWorktreeAdvisor advisor,
+    CancellationToken ct) =>
+{
+    if (!Guid.TryParse(id, out _))
+        return Results.BadRequest("Invalid session ID format");
+
+    var advice = await advisor.AdviseAsync(id, ct);
+    return Results.Ok(new
+    {
+        sessionId = advice.SessionId,
+        resolvedDirectory = advice.ResolvedDirectory,
+        resolvedBranch = advice.ResolvedBranch,
+        branchOverride = advice.BranchOverride,
+        worktrees = advice.Worktrees.Select(worktree => new
+        {
+            path = worktree.Path,
+            branch = worktree.Branch,
+            isPrimary = worktree.IsPrimary,
+            isDetached = worktree.IsDetached,
+            isBare = worktree.IsBare,
+            exists = worktree.Exists,
+            isCurrent = DirectoryPaths.AreSame(worktree.Path, advice.ResolvedDirectory),
+        }),
+        advisories = advice.Advisories.Select(advisory => new
+        {
+            kind = advisory.Kind.ToString(),
+            message = advisory.Message,
+            suggestedPath = advisory.SuggestedPath,
+            suggestedBranch = advisory.SuggestedBranch,
+        }),
+    });
+});
+
 app.MapPost("/api/sessions/{id}/archive", async (
     string id,
     ArchiveRequest request,
@@ -341,6 +382,7 @@ app.MapPost("/api/launch", async (
     IWorkspaceReader workspaceReader,
     INarniaSettingsRepository settingsRepo,
     ITerminalLauncher launcher,
+    ILaunchCollisionDetector collisionDetector,
     CancellationToken ct) =>
 {
     if (!Guid.TryParse(request.SessionId, out _))
@@ -380,6 +422,13 @@ app.MapPost("/api/launch", async (
     var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
     var tab = new TerminalLaunchTab(request.SessionId, title, directory);
 
+    if (!request.Force)
+    {
+        var collisions = await collisionDetector.DetectAsync([tab], ct);
+        if (collisions.Count > 0)
+            return DescribeCollisions(collisions);
+    }
+
     // A single session opens in its own window; with one tab the mode is moot, but SeparateWindows
     // keeps the semantics explicit and consistent with the unified launcher.
     var outcome = launcher.Launch(shellPath, shellName, [tab], TerminalWindowMode.SeparateWindows, copilotCommand);
@@ -395,6 +444,7 @@ app.MapPost("/api/launch-bulk", async (
     IWorkspaceReader workspaceReader,
     INarniaSettingsRepository settingsRepo,
     ITerminalLauncher launcher,
+    ILaunchCollisionDetector collisionDetector,
     CancellationToken ct) =>
 {
     if (request.SessionIds is not { Length: > 0 })
@@ -452,6 +502,14 @@ app.MapPost("/api/launch-bulk", async (
     var mode = request.SeparateWindows
         ? TerminalWindowMode.SeparateWindows
         : TerminalWindowMode.SingleWindow;
+
+    if (!request.Force && tabs.Count > 0)
+    {
+        var collisions = await collisionDetector.DetectAsync(tabs, ct);
+        if (collisions.Count > 0)
+            return DescribeCollisions(collisions);
+    }
+
     var outcome = launcher.Launch(shellPath, shellName, tabs, mode, copilotCommand);
 
     var launched = outcome.LaunchedSessionIds.Select(id => new { sessionId = id }).ToList();
@@ -1131,6 +1189,26 @@ static string? DetectDefaultShell()
     return null;
 }
 
+// Turns launch collisions into a 409 the UI can turn into a confirm-and-retry prompt. 409 (not 400)
+// because the request is well-formed and becomes valid unchanged once the user opts in with force.
+static IResult DescribeCollisions(IReadOnlyList<LaunchDirectoryCollision> collisions) =>
+    Results.Json(
+        new
+        {
+            error = "directory-collision",
+            message = string.Join(" ", collisions.Select(collision => collision.Describe())),
+            collisions = collisions.Select(collision => new
+            {
+                sessionId = collision.SessionId,
+                directory = collision.Directory,
+                occupyingSessionId = collision.OccupyingSessionId,
+                occupyingSessionName = collision.OccupyingSessionName,
+                occupyingIsLive = collision.OccupyingIsLive,
+                description = collision.Describe(),
+            }),
+        },
+        statusCode: StatusCodes.Status409Conflict);
+
 static string? ResolveReopenDirectory(
     string? capturedDirectory,
     SessionOverride? ov,
@@ -1204,9 +1282,9 @@ internal sealed record FavoriteRequest(bool Favorite);
 
 internal sealed record SettingRequest(string Key, string? Value);
 
-internal sealed record LaunchRequest(string SessionId, string Target);
+internal sealed record LaunchRequest(string SessionId, string Target, bool Force = false);
 
-internal sealed record BulkLaunchRequest(string[] SessionIds, bool SeparateWindows = false);
+internal sealed record BulkLaunchRequest(string[] SessionIds, bool SeparateWindows = false, bool Force = false);
 internal sealed record BulkReopenRequest(string[] Ids, bool SeparateWindows = false);
 
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);

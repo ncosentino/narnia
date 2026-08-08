@@ -774,6 +774,41 @@ span.dashboard-item-title { color: var(--text); }
 .override-field input:focus,
 .override-field textarea:focus { outline: 2px solid var(--accent-2); outline-offset: 1px; }
 .ov-original { font-size: .78rem; color: var(--text-faint); font-style: italic; }
+
+/* Git worktree picker + override coherence advisories */
+.override-field select {
+    background: var(--bg-input, var(--bg-2));
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: .4rem .5rem;
+    color: var(--text);
+    width: 100%;
+    max-width: 560px;
+    font-family: inherit;
+}
+.override-field select:focus { outline: 2px solid var(--accent-2); outline-offset: 1px; }
+.override-field select:disabled { opacity: .6; cursor: not-allowed; }
+.worktree-advisories { display: flex; flex-direction: column; gap: .6rem; margin: 1rem 0; }
+.worktree-advisory {
+    background: var(--warn-bg, rgba(224, 168, 0, .10));
+    border: 1px solid var(--warn-border, rgba(224, 168, 0, .45));
+    border-left-width: 4px;
+    border-radius: 6px;
+    padding: .7rem .9rem;
+}
+.worktree-advisory strong { display: block; margin-bottom: .3rem; }
+.worktree-advisory p { margin: 0 0 .5rem; font-size: .88rem; line-height: 1.45; overflow-wrap: anywhere; }
+.btn-adopt-worktree {
+    background: var(--accent-2);
+    color: var(--on-accent);
+    border: none;
+    border-radius: 4px;
+    padding: .35rem .8rem;
+    cursor: pointer;
+    font-size: .82rem;
+}
+.btn-adopt-worktree:hover { filter: brightness(1.1); }
+.btn-save-pending { box-shadow: 0 0 0 2px var(--warn-border, rgba(224, 168, 0, .75)); }
 .override-actions { display: flex; gap: .6rem; margin-top: .5rem; flex-wrap: wrap; }
 .btn-save {
     background: var(--accent-2);

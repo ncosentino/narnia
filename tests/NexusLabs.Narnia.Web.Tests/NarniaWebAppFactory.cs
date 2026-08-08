@@ -69,6 +69,12 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock scan coordinator so endpoint tests never queue a real filesystem scan.</summary>
     public Mock<ISessionStorageScanCoordinator> StorageScanCoordinator { get; } = new();
 
+    /// <summary>Mock worktree advisor so endpoint tests never shell out to Git.</summary>
+    public Mock<ISessionWorktreeAdvisor> WorktreeAdvisor { get; } = new();
+
+    /// <summary>Mock collision detector; by default reports no shared launch directories.</summary>
+    public Mock<ILaunchCollisionDetector> LaunchCollisionDetector { get; } = new();
+
     /// <summary>Mock cleanup orchestrator for HTTP contract tests.</summary>
     public Mock<ISessionCleanupService> SessionCleanupService { get; } = new();
 
@@ -174,6 +180,15 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         StorageScanCoordinator
             .Setup(coordinator => coordinator.RequestScan())
             .Returns(true);
+        WorktreeAdvisor
+            .Setup(advisor => advisor.AdviseAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string sessionId, CancellationToken _) =>
+                new SessionWorktreeAdvice(sessionId, null, null, null, [], []));
+        LaunchCollisionDetector
+            .Setup(detector => detector.DetectAsync(
+                It.IsAny<IReadOnlyList<TerminalLaunchTab>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<LaunchDirectoryCollision>)[]);
         SessionCleanupService
             .Setup(service => service.PreviewAsync(
                 It.IsAny<IReadOnlyCollection<string>>(),
@@ -270,6 +285,12 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<ISessionCleanupService>();
             services.AddSingleton(SessionCleanupService.Object);
+
+            services.RemoveAll<ISessionWorktreeAdvisor>();
+            services.AddSingleton(WorktreeAdvisor.Object);
+
+            services.RemoveAll<ILaunchCollisionDetector>();
+            services.AddSingleton(LaunchCollisionDetector.Object);
         });
     }
 

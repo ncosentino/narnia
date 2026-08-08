@@ -52,6 +52,7 @@ nav:
   - Session Storage: session-storage.md
   - Terminal Window Recovery: terminal-windows.md
   - Live Process Diagnostics: process-diagnostics.md
+  - Git Worktrees: worktrees.md
   - Logon Autostart: logon-autostart.md
   - Portable Scheduled Jobs: schedule-portability.md
   - MCP Tools:
@@ -71,6 +72,7 @@ nav:
     - preview_session_migration: tools/preview-session-migration.md
     - migrate_broken_session: tools/migrate-broken-session.md
     - get_session_recovery_packet: tools/get-session-recovery-packet.md
+    - get_session_worktrees: tools/get-session-worktrees.md
     - list_schedules: tools/list-schedules.md
     - get_schedule: tools/get-schedule.md
     - get_schedule_log: tools/get-schedule-log.md
