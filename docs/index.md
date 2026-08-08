@@ -60,6 +60,12 @@ for file-based schedule portability.
 | [`migrate_broken_session`](tools/migrate-broken-session.md) | Reseed the same session ID and folder |
 | [`get_session_recovery_packet`](tools/get-session-recovery-packet.md) | Read exact archived recovery context in chunks |
 
+### Git Worktrees
+
+| Tool | Description |
+|------|-------------|
+| [`get_session_worktrees`](tools/get-session-worktrees.md) | List a session's worktrees and flag branch-override mismatches |
+
 ### Scheduled Jobs
 
 | Tool | Description |

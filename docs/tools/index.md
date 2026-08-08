@@ -47,6 +47,12 @@ folder. Narnia does not modify Chronicle.
 | [`migrate_broken_session`](migrate-broken-session.md) | Reseed the same session ID and folder | `sessionId`, `confirmMigration` |
 | [`get_session_recovery_packet`](get-session-recovery-packet.md) | Read archived recovery context in chunks | `sessionId`, `offset`, `maxCharacters` |
 
+## Git Worktree Tools
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| [`get_session_worktrees`](get-session-worktrees.md) | List a session's worktrees and flag branch-override mismatches | `sessionId` |
+
 ## Session Storage Tools
 
 Storage tools use the same cached scanner and cleanup service as the web UI.

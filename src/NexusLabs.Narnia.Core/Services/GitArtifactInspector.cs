@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Security;
 using NexusLabs.Narnia.Core.Models;
@@ -9,7 +7,7 @@ namespace NexusLabs.Narnia.Core.Services;
 /// <summary>Performs bounded, read-only Git checks for repositories stored in session artifacts.</summary>
 public sealed class GitArtifactInspector(IFileSystem fileSystem) : IGitArtifactInspector
 {
-    private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CommandTimeout = GitProcessRunner.DefaultTimeout;
 
     /// <inheritdoc />
     public async ValueTask<GitArtifactInspection> InspectAsync(
@@ -153,76 +151,12 @@ public sealed class GitArtifactInspector(IFileSystem fileSystem) : IGitArtifactI
             reasons.Add($"Git repository has {ahead} unpushed commit(s): {repositoryRoot}");
     }
 
-    private static async Task<GitCommandResult> RunGitAsync(
+    private static Task<GitCommandResult> RunGitAsync(
         string workingDirectory,
         IReadOnlyList<string> arguments,
-        CancellationToken ct)
-    {
-        using var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "git",
-                WorkingDirectory = workingDirectory,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            },
-        };
-        foreach (var argument in arguments)
-            process.StartInfo.ArgumentList.Add(argument);
-
-        try
-        {
-            if (!process.Start())
-                return new GitCommandResult(false, false, -1, "", "Git did not start.");
-        }
-        catch (Win32Exception exception)
-        {
-            return new GitCommandResult(false, false, -1, "", exception.Message);
-        }
-
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(CommandTimeout);
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            if (!process.HasExited)
-                process.Kill(true);
-            await process.WaitForExitAsync(CancellationToken.None);
-            await Task.WhenAll(outputTask, errorTask);
-            return new GitCommandResult(true, true, -1, "", "Timed out.");
-        }
-        catch (OperationCanceledException)
-        {
-            if (!process.HasExited)
-                process.Kill(true);
-            await process.WaitForExitAsync(CancellationToken.None);
-            await Task.WhenAll(outputTask, errorTask);
-            throw;
-        }
-
-        return new GitCommandResult(
-            true,
-            false,
-            process.ExitCode,
-            await outputTask,
-            (await errorTask).Trim());
-    }
+        CancellationToken ct) =>
+        GitProcessRunner.RunAsync(workingDirectory, arguments, CommandTimeout, ct);
 
     private static bool IsFilesystemException(Exception exception) =>
         exception is IOException or UnauthorizedAccessException or SecurityException;
-
-    private sealed record GitCommandResult(
-        bool Started,
-        bool TimedOut,
-        int ExitCode,
-        string Output,
-        string Error);
 }

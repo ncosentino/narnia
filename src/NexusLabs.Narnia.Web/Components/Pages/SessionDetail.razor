@@ -207,6 +207,11 @@ else if (_session is not null)
         </dd>
     </dl>
 
+    <div id="worktree-advisories"
+         class="worktree-advisories"
+         data-session-id="@_session.Id"
+         hidden></div>
+
     <details class="overrides-panel">
         <summary>✏️ Edit Session Overrides @(HasMetadataOverrides ? "(active)" : "")</summary>
         <div class="overrides-body">
@@ -240,16 +245,31 @@ else if (_session is not null)
                 <input id="ov-branch" type="text" value="@(_override?.Branch ?? "")"
                        placeholder="@(_rawSession?.Branch ?? "(none)")" />
                 <span class="ov-original">session-store branch: @(_rawSession?.Branch ?? "(none)")</span>
+                <span class="ov-original">
+                    A label only — it does not select which branch a launch lands on. Use the worktree
+                    picker below to change that.
+                </span>
             </div>
             <div class="override-field">
                 <label for="ov-notes">Notes</label>
                 <textarea id="ov-notes" rows="3" placeholder="Personal notes about this session…">@(_override?.Notes ?? "")</textarea>
             </div>
             <div class="override-field">
+                <label for="ov-worktree">Git Worktree</label>
+                <select id="ov-worktree" onchange="narniaApplyWorktree(this)" disabled>
+                    <option value="">Checking for worktrees…</option>
+                </select>
+                <span class="ov-original">
+                    Sets the resume directory and branch together, so the two cannot drift apart.
+                    Narnia never checks a branch out — it only points this session at a worktree that
+                    already exists.
+                </span>
+            </div>
+            <div class="override-field">
                 <label for="ov-local-path">Preferred Resume Directory</label>
                 <input id="ov-local-path" type="text" value="@(_override?.LocalPath ?? "")"
                        placeholder="Preferred directory for launching this session" />
-                <span class="ov-original">Used as the "Preferred Path" resume command</span>
+                <span class="ov-original">Used as the "Preferred Path" resume command, and preferred over the session-store working directory when launching</span>
             </div>
             <div class="override-field">
                 <label for="ov-terminal-title">Terminal Title</label>
