@@ -44,7 +44,7 @@ public sealed class ScheduledRunOutcomeReader(
             return ScheduledRunOutcome.Indeterminate;
 
         var logTail = await ReadTailAsync(logPath, LogTailBytes, ct);
-        var sessionId = ScheduledRunLog.FindSessionId(logTail);
+        var sessionId = ScheduledRunLog.FindSessionId(logTail?.Text);
         if (sessionId is null)
             return ScheduledRunOutcome.Indeterminate;
 
@@ -52,24 +52,25 @@ public sealed class ScheduledRunOutcomeReader(
             return ScheduledRunOutcome.Indeterminate;
 
         var eventsPath = fileSystem.Path.Combine(sessionDirectory, "events.jsonl");
-        var eventTail = await ReadTailAsync(eventsPath, EventTailBytes, ct);
-        if (eventTail is null)
+        var events = await ReadTailAsync(eventsPath, EventTailBytes, ct);
+        if (events is null)
             return new ScheduledRunOutcome(ScheduledRunCompletion.Unknown, sessionId, null);
 
-        var termination = SessionTerminationParser.Classify(WholeLines(eventTail));
+        var termination = SessionTerminationParser.Classify(WholeLines(events.Value));
         return new ScheduledRunOutcome(termination.Completion, sessionId, termination.AbortReason);
     }
 
-    // Drops the first line, which a tail read can cut in half. A tail that contains no line break
-    // at all yields nothing rather than a fragment that would parse as garbage.
-    private static IEnumerable<string> WholeLines(string tail)
+    // A truncated tail can start mid-line (and mid-UTF-8-sequence), so its first line is discarded.
+    // A file read in full has no such fragment and must keep every line.
+    private static IEnumerable<string> WholeLines(FileTail tail)
     {
-        var lines = tail.Split('\n');
-        for (var i = 1; i < lines.Length; i++)
+        var lines = tail.Text.Split('\n');
+        var first = tail.Truncated ? 1 : 0;
+        for (var i = first; i < lines.Length; i++)
             yield return lines[i].TrimEnd('\r');
     }
 
-    private async ValueTask<string?> ReadTailAsync(string path, int maxBytes, CancellationToken ct)
+    private async ValueTask<FileTail?> ReadTailAsync(string path, int maxBytes, CancellationToken ct)
     {
         try
         {
@@ -83,17 +84,20 @@ public sealed class ScheduledRunOutcomeReader(
                 FileAccess.Read,
                 FileShare.ReadWrite);
 
-            if (stream.Length > maxBytes)
+            var truncated = stream.Length > maxBytes;
+            if (truncated)
                 stream.Seek(-maxBytes, SeekOrigin.End);
 
             using var reader = new StreamReader(stream);
-            return await reader.ReadToEndAsync(ct);
+            return new FileTail(await reader.ReadToEndAsync(ct), truncated);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return null;
         }
     }
+
+    private readonly record struct FileTail(string Text, bool Truncated);
 
     private bool TryResolveSessionDirectory(string sessionId, out string sessionDirectory)
     {

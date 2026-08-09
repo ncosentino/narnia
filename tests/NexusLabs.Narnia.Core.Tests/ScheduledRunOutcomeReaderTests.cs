@@ -138,6 +138,32 @@ public sealed class ScheduledRunOutcomeReaderTests
     }
 
     [Fact]
+    public async Task ReadLatestAsync_ShortEventStreamReadWhole_KeepsItsFirstLine()
+    {
+        // Only a truncated tail can start mid-line. Discarding the first line of a file that was
+        // read in full would throw away a real event -- and for a single-event stream, all of them.
+        var fs = FileSystemWith(
+            log: RunLog(SessionId),
+            events: """{"type":"abort","data":{"reason":"user_initiated"}}""");
+
+        var outcome = await Create(fs).ReadLatestAsync("job-1", Ct);
+
+        Assert.Equal(ScheduledRunCompletion.Interrupted, outcome.Completion);
+        Assert.Equal("user_initiated", outcome.AbortReason);
+    }
+
+    [Fact]
+    public async Task ReadLatestAsync_EmptyEventStream_IsUnknown()
+    {
+        var fs = FileSystemWith(RunLog(SessionId), string.Empty);
+
+        var outcome = await Create(fs).ReadLatestAsync("job-1", Ct);
+
+        Assert.Equal(ScheduledRunCompletion.Unknown, outcome.Completion);
+        Assert.Equal(SessionId, outcome.SessionId);
+    }
+
+    [Fact]
     public async Task ReadLatestAsync_UsesTheNewestRunLog()
     {
         var fs = new MockFileSystem(new Dictionary<string, MockFileData>
