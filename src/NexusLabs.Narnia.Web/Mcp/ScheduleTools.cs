@@ -25,7 +25,16 @@ internal sealed class ScheduleTools(IScheduledJobService jobService)
             var dto = new ScheduleListMcpDto(
                 view.SchedulerSupported,
                 view.Jobs.Select(v => new ScheduleJobStatusMcpDto(
-                    ToDto(v.Job), v.TaskFound, v.Status is null ? null : ToDto(v.Status))).ToList(),
+                    ToDto(v.Job),
+                    v.TaskFound,
+                    v.Status is null ? null : ToDto(v.Status),
+                    v.Status.GetHealthKind(v.LastRun).ToString().ToLowerInvariant(),
+                    v.LastRun is null
+                        ? null
+                        : new ScheduleRunOutcomeMcpDto(
+                            v.LastRun.Completion.ToString().ToLowerInvariant(),
+                            v.LastRun.SessionId,
+                            v.LastRun.AbortReason))).ToList(),
                 view.Untracked.Select(ToDto).ToList());
             return JsonSerializer.Serialize(dto, McpJsonContext.Default.ScheduleListMcpDto);
         }
@@ -280,7 +289,21 @@ internal sealed record ScheduleStatusMcpDto(
     string? ActionSummary);
 
 /// <summary>A cataloged job joined to its live task status, as returned by list_schedules.</summary>
-internal sealed record ScheduleJobStatusMcpDto(ScheduleJobMcpDto Job, bool TaskFound, ScheduleStatusMcpDto? Status);
+internal sealed record ScheduleJobStatusMcpDto(
+    ScheduleJobMcpDto Job,
+    bool TaskFound,
+    ScheduleStatusMcpDto? Status,
+    string Health,
+    ScheduleRunOutcomeMcpDto? LastRun);
+
+/// <summary>
+/// How a job's most recent run ended. A scheduler exit code of 0 does not prove the agent finished:
+/// the Copilot CLI shuts down gracefully when it is interrupted.
+/// </summary>
+internal sealed record ScheduleRunOutcomeMcpDto(
+    string Completion,
+    string? SessionId,
+    string? AbortReason);
 
 /// <summary>The full result of list_schedules: cataloged jobs joined to status, plus untracked tasks.</summary>
 internal sealed record ScheduleListMcpDto(

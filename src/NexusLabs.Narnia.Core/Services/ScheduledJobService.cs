@@ -15,7 +15,8 @@ public sealed class ScheduledJobService(
     IScheduledJobWorkspace workspace,
     IScheduledTaskProvider taskProvider,
     IPowerShellHostResolver hostResolver,
-    INarniaSettingsRepository settingsRepository) : IScheduledJobService
+    INarniaSettingsRepository settingsRepository,
+    IScheduledRunOutcomeReader runOutcomeReader) : IScheduledJobService
 {
     private const string NarniaFolder = @"\Narnia\";
     private const int MaxLogChars = 100_000;
@@ -43,7 +44,14 @@ public sealed class ScheduledJobService(
             if (status is not null)
                 matchedKeys.Add(key);
 
-            views.Add(new ScheduledJobStatusView(job, status, status is not null));
+            // Only a run the scheduler already called successful can be hiding an interrupted
+            // session; every other classification is surfaced as-is, so there is nothing to
+            // recover and no reason to pay for the file reads.
+            var lastRun = status.GetHealthKind() == ScheduledTaskHealthKind.Succeeded
+                ? await runOutcomeReader.ReadLatestAsync(job.Id, ct)
+                : null;
+
+            views.Add(new ScheduledJobStatusView(job, status, status is not null, lastRun));
         }
 
         var untracked = narniaTasks

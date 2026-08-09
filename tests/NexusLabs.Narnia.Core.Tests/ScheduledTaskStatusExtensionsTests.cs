@@ -44,6 +44,7 @@ public sealed class ScheduledTaskStatusExtensionsTests
     [Theory]
     [InlineData(ScheduledTaskHealthKind.Drift, true)]
     [InlineData(ScheduledTaskHealthKind.Failed, true)]
+    [InlineData(ScheduledTaskHealthKind.Interrupted, true)]
     [InlineData(ScheduledTaskHealthKind.Running, false)]
     [InlineData(ScheduledTaskHealthKind.Succeeded, false)]
     public void RequiresAttention_OnlyFlagsFailuresAndDrift(
@@ -52,6 +53,74 @@ public sealed class ScheduledTaskStatusExtensionsTests
     {
         Assert.Equal(expected, health.RequiresAttention());
     }
+
+    [Fact]
+    public void GetHealthKind_SuccessfulExitCodeWithAnInterruptedSession_IsInterrupted()
+    {
+        // The Copilot CLI shuts down gracefully when it is interrupted, so the scheduler records a
+        // successful exit for a run that never finished its work.
+        var status = Status(ScheduledTaskState.Ready, lastResult: 0);
+
+        var health = status.GetHealthKind(Interrupted());
+
+        Assert.Equal(ScheduledTaskHealthKind.Interrupted, health);
+        Assert.True(health.RequiresAttention());
+    }
+
+    [Fact]
+    public void GetHealthKind_SuccessfulExitCodeWithACompletedSession_StaysSucceeded()
+    {
+        var status = Status(ScheduledTaskState.Ready, lastResult: 0);
+
+        Assert.Equal(
+            ScheduledTaskHealthKind.Succeeded,
+            status.GetHealthKind(new ScheduledRunOutcome(ScheduledRunCompletion.Completed, "s", null)));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(ScheduledRunCompletion.Unknown)]
+    public void GetHealthKind_WithoutEvidenceOfAnInterruption_StaysSucceeded(
+        ScheduledRunCompletion? completion)
+    {
+        // An unreadable or absent run must never be downgraded: a false alarm on a healthy job
+        // hides the real ones.
+        var outcome = completion is null
+            ? null
+            : new ScheduledRunOutcome(completion.Value, null, null);
+
+        Assert.Equal(
+            ScheduledTaskHealthKind.Succeeded,
+            Status(ScheduledTaskState.Ready, lastResult: 0).GetHealthKind(outcome));
+    }
+
+    [Fact]
+    public void GetHealthKind_RunningTask_IsNotDowngradedByThePreviousRunsAbort()
+    {
+        // LastResult still describes the previous run while a new one is executing.
+        var status = Status(ScheduledTaskState.Running, lastResult: 0);
+
+        Assert.Equal(ScheduledTaskHealthKind.Running, status.GetHealthKind(Interrupted()));
+    }
+
+    [Fact]
+    public void GetHealthKind_FailedTask_KeepsItsFailureRatherThanBecomingInterrupted()
+    {
+        var status = Status(ScheduledTaskState.Ready, lastResult: 1);
+
+        Assert.Equal(ScheduledTaskHealthKind.Failed, status.GetHealthKind(Interrupted()));
+    }
+
+    [Fact]
+    public void GetHealthKind_MissingTaskWithAnInterruptedRun_StaysDrift()
+    {
+        ScheduledTaskStatus? status = null;
+
+        Assert.Equal(ScheduledTaskHealthKind.Drift, status.GetHealthKind(Interrupted()));
+    }
+
+    private static ScheduledRunOutcome Interrupted() =>
+        new(ScheduledRunCompletion.Interrupted, "1b7cf2d0-9d2b-4f0d-9d8f-6b0f1e2a3c4d", "user_initiated");
 
     private static ScheduledTaskStatus Status(ScheduledTaskState state, int? lastResult) =>
         new(@"\Narnia\", "Example", state, null, lastResult, null, null);

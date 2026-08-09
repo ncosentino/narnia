@@ -1345,6 +1345,8 @@ async function narniaRemoveSelectedCollectionSessions(collectionId, btn) {
             case 'succeeded':
                 if (!job.status?.nextRunTime) return 'Healthy';
                 break;
+            case 'interrupted':
+                return 'Interrupted before finishing';
         }
 
         var nextRun = formatTime(job.status?.nextRunTime);

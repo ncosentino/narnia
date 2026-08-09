@@ -55,6 +55,7 @@ nav:
   - Git Worktrees: worktrees.md
   - Logon Autostart: logon-autostart.md
   - Portable Scheduled Jobs: schedule-portability.md
+  - Scheduled Job Health: schedule-health.md
   - MCP Tools:
     - Overview: tools/index.md
     - list_recent_sessions: tools/list-recent-sessions.md

@@ -48,6 +48,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock job workspace so tests never write generated scripts to the real filesystem.</summary>
     public Mock<IScheduledJobWorkspace> ScheduledJobWorkspace { get; } = new();
 
+    /// <summary>Controls how the most recent run of a scheduled job is reported to have ended.</summary>
+    public Mock<IScheduledRunOutcomeReader> ScheduledRunOutcomeReader { get; } = new();
+
     /// <summary>Mock active-session reader so tests never inspect real Copilot processes or locks.</summary>
     public Mock<ICopilotSessionActivityReader> SessionActivityReader { get; } = new();
 
@@ -89,6 +92,11 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         ScheduledTaskProvider
             .Setup(p => p.GetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ScheduledTaskStatus?)null);
+
+        // Nothing is known about how a run ended unless a test says so.
+        ScheduledRunOutcomeReader
+            .Setup(r => r.ReadLatestAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ScheduledRunOutcome.Indeterminate);
 
         ScheduledTaskRegistrar.SetupGet(r => r.IsSupported).Returns(true);
         ScheduledTaskRegistrar
@@ -261,6 +269,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<IScheduledJobWorkspace>();
             services.AddSingleton(ScheduledJobWorkspace.Object);
+
+            services.RemoveAll<IScheduledRunOutcomeReader>();
+            services.AddSingleton(ScheduledRunOutcomeReader.Object);
 
             services.RemoveAll<ICopilotSessionActivityReader>();
             services.AddSingleton(SessionActivityReader.Object);

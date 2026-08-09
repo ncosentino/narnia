@@ -16,6 +16,7 @@ public sealed class ScheduledJobServiceTests
     private readonly Mock<IScheduledTaskProvider> _taskProvider = new();
     private readonly Mock<IPowerShellHostResolver> _hostResolver = new();
     private readonly Mock<INarniaSettingsRepository> _settingsRepository = new();
+    private readonly Mock<IScheduledRunOutcomeReader> _runOutcomeReader = new();
 
     public ScheduledJobServiceTests()
     {
@@ -49,10 +50,21 @@ public sealed class ScheduledJobServiceTests
             .ReturnsAsync((IReadOnlyList<ScheduledTaskStatus>)[]);
 
         _hostResolver.Setup(h => h.ResolveExecutable()).Returns("pwsh.exe");
+
+        _runOutcomeReader
+            .Setup(r => r.ReadLatestAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ScheduledRunOutcome.Indeterminate);
     }
 
     private ScheduledJobService CreateService() =>
-        new(_registry.Object, _registrar.Object, _workspace.Object, _taskProvider.Object, _hostResolver.Object, _settingsRepository.Object);
+        new(
+            _registry.Object,
+            _registrar.Object,
+            _workspace.Object,
+            _taskProvider.Object,
+            _hostResolver.Object,
+            _settingsRepository.Object,
+            _runOutcomeReader.Object);
 
     private static ScheduledJobInput Input(
         string name = "Sample",
@@ -551,6 +563,48 @@ public sealed class ScheduledJobServiceTests
         Assert.Empty(view.Jobs);
         var untracked = Assert.Single(view.Untracked);
         Assert.Equal("Hand-made", untracked.TaskName);
+    }
+
+    [Fact]
+    public async Task ListAsync_SuccessfulRunThatWasActuallyInterrupted_CarriesTheOutcome()
+    {
+        var job = Job("job-1", taskFolder: @"\Narnia\", taskName: "Narnia - Sample");
+        _registry.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<ScheduledJob>)[job]);
+        var status = new ScheduledTaskStatus(@"\Narnia\", "Narnia - Sample", ScheduledTaskState.Ready, null, 0, Now.AddDays(1), "powershell.exe");
+        _taskProvider
+            .Setup(p => p.ListInFolderAsync(@"\Narnia\", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ScheduledTaskStatus>)[status]);
+        _runOutcomeReader
+            .Setup(r => r.ReadLatestAsync("job-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ScheduledRunOutcome(ScheduledRunCompletion.Interrupted, "s", "user_initiated"));
+        var service = CreateService();
+
+        var view = await service.ListAsync(Ct);
+
+        var jobView = Assert.Single(view.Jobs);
+        Assert.True(jobView.LastRun?.WasInterrupted);
+        Assert.Equal(ScheduledTaskHealthKind.Interrupted, jobView.Status.GetHealthKind(jobView.LastRun));
+    }
+
+    [Fact]
+    public async Task ListAsync_TaskTheSchedulerAlreadyCallsFailed_IsNotInspectedForAnInterruption()
+    {
+        // Reading the run log and the session event stream costs file I/O on every listing, and a
+        // failure the scheduler already reports needs no second opinion.
+        var job = Job("job-1", taskFolder: @"\Narnia\", taskName: "Narnia - Sample");
+        _registry.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<ScheduledJob>)[job]);
+        var status = new ScheduledTaskStatus(@"\Narnia\", "Narnia - Sample", ScheduledTaskState.Ready, null, 1, null, null);
+        _taskProvider
+            .Setup(p => p.ListInFolderAsync(@"\Narnia\", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ScheduledTaskStatus>)[status]);
+        var service = CreateService();
+
+        var view = await service.ListAsync(Ct);
+
+        Assert.Null(Assert.Single(view.Jobs).LastRun);
+        _runOutcomeReader.Verify(
+            r => r.ReadLatestAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

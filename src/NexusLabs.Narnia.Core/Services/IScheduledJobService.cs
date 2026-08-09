@@ -91,7 +91,15 @@ public sealed record ScheduledJobMutationResult(
 /// <param name="Job">The cataloged job.</param>
 /// <param name="Status">The live task status, or <c>null</c> when no matching task was found.</param>
 /// <param name="TaskFound">Whether a live task was found for the job.</param>
-public sealed record ScheduledJobStatusView(ScheduledJob Job, ScheduledTaskStatus? Status, bool TaskFound);
+/// <param name="LastRun">
+/// How the job's most recent run ended, when the scheduler reported success and the run could be
+/// inspected. <c>null</c> whenever the run was not inspected, which asserts nothing about it.
+/// </param>
+public sealed record ScheduledJobStatusView(
+    ScheduledJob Job,
+    ScheduledTaskStatus? Status,
+    bool TaskFound,
+    ScheduledRunOutcome? LastRun = null);
 
 /// <summary>The full scheduled-job listing: cataloged jobs joined to status, plus untracked tasks.</summary>
 /// <param name="SchedulerSupported">Whether the OS scheduler can be inspected on this platform.</param>
