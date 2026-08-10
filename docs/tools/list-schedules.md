@@ -46,6 +46,12 @@ None.
         "lastResult": 0,
         "nextRunTime": "2026-07-02T05:00:00-07:00",
         "actionSummary": "powershell.exe -File run.ps1"
+      },
+      "health": "interrupted",
+      "lastRun": {
+        "completion": "interrupted",
+        "sessionId": "00000000-0000-4000-8000-000000000000",
+        "abortReason": "user_initiated"
       }
     }
   ],
@@ -58,7 +64,19 @@ None.
 - "List all my scheduled Copilot jobs"
 - "Show me every Narnia schedule and whether it's actually registered"
 - "Are any of my scheduled jobs failing?"
+- "Did any scheduled job get cut off before it finished?"
 
 ## Notes
 
 `taskFound: false` means the catalog entry has no matching live task — the OS task was deleted or renamed outside Narnia. Use [`get_schedule`](get-schedule.md) for full detail on a single job, or [`create_schedule`](create-schedule.md)/[`update_schedule`](update-schedule.md) to re-register it.
+
+### Do not read `lastResult: 0` as "the job did its work"
+
+The Copilot CLI shuts down gracefully when it is interrupted, so a run that was killed part-way through still exits `0` and Windows Task Scheduler still records success. `health` and `lastRun` exist because of that: they come from the run's own Copilot session rather than from the exit code.
+
+- `health: "interrupted"` — the scheduler reported success, but the session was aborted before it finished. Whatever the job was supposed to do at the end (write to a database, send a notification, open a pull request) probably never happened.
+- `lastRun.completion` is `completed`, `interrupted`, or `unknown`. `unknown` asserts nothing: the log may be missing, name no session, or the session may have been cleaned up. It is never treated as a problem.
+- `lastRun.abortReason` is the reason the session recorded. `user_initiated` is the CLI's interrupt path, which covers a `Ctrl+C` as well as the process being terminated by something else.
+- `lastRun` is only present when the scheduler already reported success — every other health value comes from the scheduler itself and needs no second opinion.
+
+See [Scheduled job health](../schedule-health.md) for the full classification.

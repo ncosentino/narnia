@@ -91,5 +91,9 @@ verification, and handoff workflows.
 
 These tools are backed by the same service as the web UI's Schedules page — creating or editing a job through either surface is immediately visible in the other.
 
+`list_schedules` reports a `health` per job. A scheduler exit code of `0` does not prove the run
+finished its work, because the Copilot CLI exits cleanly when it is interrupted — see
+[Scheduled Job Health](../schedule-health.md).
+
 See [Portable Scheduled Jobs](../schedule-portability.md) for the complete transfer and handoff
 workflow.

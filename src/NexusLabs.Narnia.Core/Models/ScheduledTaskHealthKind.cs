@@ -37,4 +37,10 @@ public enum ScheduledTaskHealthKind
 
     /// <summary>The task's most recent run returned a failure code.</summary>
     Failed,
+
+    /// <summary>
+    /// The scheduler recorded success, but the run's Copilot session was interrupted before it
+    /// finished, so the job's remaining work never happened.
+    /// </summary>
+    Interrupted,
 }

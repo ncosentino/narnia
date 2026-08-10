@@ -105,6 +105,25 @@ See [Git Worktrees](worktrees.md) for details, including why Narnia will not run
 
 ---
 
+## A Scheduled Job Reports Success But Did Not Do Its Work
+
+**Symptom:** A scheduled job shows `ok` on the Schedules page and Windows Task Scheduler records `Last Run Result: 0x0`, but the thing the job was supposed to produce never appeared — no database write, no email, no pull request. Its log stops part-way through with no error.
+
+**Why it happens:** The Copilot CLI shuts down gracefully when it is interrupted. It records an `abort` event, writes its usage checkpoint, and exits `0`. The wrapper script passes that exit code straight through, so the scheduler records a successful run. The exit code cannot distinguish a run that finished from one that was cut off.
+
+**Fix:**
+
+1. Look at the job's health on the Schedules page. `interrupted` means Narnia found an abort at the end of that run's Copilot session — the scheduler's success is contradicted by the session itself.
+2. Open the run log from the badge. The last thing in it is where the run stopped; anything the prompt asked for after that point did not happen.
+3. Finish the interrupted work by hand, or re-run the job with **Run now** if it is safe to repeat.
+4. If the health is `ok` but you still suspect a cut-off run, the session may have been cleaned up or the log may name no session — Narnia reports `unknown` in that case and does not guess. Check the log's last line directly.
+
+Narnia can tell you a run was cut short. It cannot tell you what cut it short: the session records the abort, not its origin. Look for an external cause around the timestamp of the last log line.
+
+See [Scheduled Job Health](schedule-health.md) for the full classification and what Narnia deliberately stays quiet about.
+
+---
+
 ## Database File Not Found
 
 **Symptom:** All MCP tools return errors mentioning "unable to open database file" or similar SQLite errors.

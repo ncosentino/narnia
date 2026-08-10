@@ -96,6 +96,7 @@ builder.Services.AddSingleton<SqliteScheduledJobImportRepository>();
 builder.Services.AddSingleton<IScheduledJobImportRepository>(
     sp => sp.GetRequiredService<SqliteScheduledJobImportRepository>());
 builder.Services.AddSingleton<IScheduledJobWorkspace, ScheduledJobWorkspace>();
+builder.Services.AddSingleton<IScheduledRunOutcomeReader, ScheduledRunOutcomeReader>();
 builder.Services.AddSingleton<IScheduledJobService, ScheduledJobService>();
 builder.Services.AddSingleton<IScheduledJobPackageService, ScheduledJobPackageService>();
 builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
@@ -863,7 +864,7 @@ app.MapGet("/api/schedules", async (
 
     var projectedJobs = view.Jobs.Select(v =>
     {
-        var health = v.Status.GetHealthKind();
+        var health = v.Status.GetHealthKind(v.LastRun);
         return (object)new
         {
             id = v.Job.Id,
@@ -894,6 +895,12 @@ app.MapGet("/api/schedules", async (
             taskFound = v.TaskFound,
             health = health.ToString().ToLowerInvariant(),
             requiresAttention = health.RequiresAttention(),
+            lastRun = v.LastRun is null ? null : (object)new
+            {
+                completion = v.LastRun.Completion.ToString().ToLowerInvariant(),
+                sessionId = v.LastRun.SessionId,
+                abortReason = v.LastRun.AbortReason,
+            },
         };
     }).ToList();
 

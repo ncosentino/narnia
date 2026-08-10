@@ -78,7 +78,7 @@
                         </div>
                     </td>
                     <td>@(view.Job.Cadence ?? "—")</td>
-                    <td>@RenderHealth(view.Job.Id, view.Status)</td>
+                    <td>@RenderHealth(view.Job.Id, view.Status, view.LastRun)</td>
                     <td>@FormatTime(view.Status?.LastRunTime)</td>
                     <td>@FormatTime(view.Status?.NextRunTime)</td>
                     <td class="cwd">@(view.Job.Cwd ?? "—")</td>
@@ -191,7 +191,7 @@
                 <tr>
                     <td class="schedule-task">@task.TaskFolder@task.TaskName</td>
                     <td>@task.State.ToString().ToLowerInvariant()</td>
-                    <td>@RenderHealth(null, task)</td>
+                    <td>@RenderHealth(null, task, null)</td>
                     <td>@FormatTime(task.LastRunTime)</td>
                     <td>@FormatTime(task.NextRunTime)</td>
                     <td class="cwd">@(task.ActionSummary ?? "—")</td>
@@ -223,9 +223,12 @@
     private static string FormatTime(DateTimeOffset? time) =>
         time?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—";
 
-    private RenderFragment RenderHealth(string? jobId, ScheduledTaskStatus? status) => __builder =>
+    private RenderFragment RenderHealth(
+        string? jobId,
+        ScheduledTaskStatus? status,
+        ScheduledRunOutcome? lastRun) => __builder =>
     {
-        var health = status.GetHealthKind();
+        var health = status.GetHealthKind(lastRun);
         if (health == ScheduledTaskHealthKind.Drift)
         {
             <span class="badge-health badge-drift" title="No matching scheduled task found">drift</span>
@@ -239,7 +242,11 @@
         }
 
         var (cssClass, label) = HealthPresentation(health, status?.LastResult);
-        if (jobId is not null && health == ScheduledTaskHealthKind.Failed)
+        if (jobId is not null && health == ScheduledTaskHealthKind.Interrupted)
+        {
+            <button type="button" class="badge-health @cssClass badge-fail-link" onclick="narniaScheduleViewLog('@jobId', null)" title="@InterruptedTitle(lastRun)">@label</button>
+        }
+        else if (jobId is not null && health == ScheduledTaskHealthKind.Failed)
         {
             <button type="button" class="badge-health @cssClass badge-fail-link" onclick="narniaScheduleViewLog('@jobId', null)" title="Click to see why it failed">@label</button>
         }
@@ -248,6 +255,16 @@
             <span class="badge-health @cssClass">@label</span>
         }
     };
+
+    // The exit code says success, so the badge has to explain why it is being contradicted.
+    private static string InterruptedTitle(ScheduledRunOutcome? lastRun)
+    {
+        var reason = string.IsNullOrWhiteSpace(lastRun?.AbortReason)
+            ? "The run's Copilot session was aborted"
+            : $"The run's Copilot session was aborted ({lastRun!.AbortReason})";
+        return $"{reason} before it finished, so the rest of the job never ran. "
+            + "The task still exited successfully. Click to see the log.";
+    }
 
     private static (string CssClass, string Label) HealthPresentation(
         ScheduledTaskHealthKind health,
@@ -262,6 +279,7 @@
         ScheduledTaskHealthKind.NoValidTriggers => ("badge-neutral", "no valid triggers"),
         ScheduledTaskHealthKind.EventTrigger => ("badge-neutral", "event trigger"),
         ScheduledTaskHealthKind.Failed => ("badge-fail", $"failed (0x{lastResult!.Value:X})"),
+        ScheduledTaskHealthKind.Interrupted => ("badge-fail", "interrupted"),
         _ => ("badge-neutral", health.ToString().ToLowerInvariant()),
     };
 }

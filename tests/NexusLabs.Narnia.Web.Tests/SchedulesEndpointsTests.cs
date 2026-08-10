@@ -69,6 +69,60 @@ public sealed class SchedulesEndpointsTests
     }
 
     [Fact]
+    public async Task GetSchedules_SuccessfulExitCodeWithAnInterruptedSession_IsReportedAsInterrupted()
+    {
+        // The Copilot CLI exits 0 when it is killed, so the scheduler records success for a run
+        // that never did its work. Without the session's own account of how it ended, this job is
+        // indistinguishable from a healthy one.
+        using var factory = new NarniaWebAppFactory();
+        var created = await factory.ScheduledJobRegistry.CreateAsync(
+            Draft("Weekly Draft", "Narnia - Weekly Draft"), Now, Ct);
+
+        factory.ScheduledTaskProvider
+            .Setup(p => p.ListInFolderAsync(@"\Narnia\", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ScheduledTaskStatus>)[Status(@"\Narnia\", "Narnia - Weekly Draft")]);
+        factory.ScheduledRunOutcomeReader
+            .Setup(r => r.ReadLatestAsync(created.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ScheduledRunOutcome(
+                ScheduledRunCompletion.Interrupted,
+                "1b7cf2d0-9d2b-4f0d-9d8f-6b0f1e2a3c4d",
+                "user_initiated"));
+
+        var client = factory.CreateClient();
+        var response = await client.GetFromJsonAsync<SchedulesResponse>("/api/schedules", Ct);
+
+        var job = Assert.Single(response!.Jobs);
+        Assert.Equal(0, job.Status!.LastResult);
+        Assert.Equal("interrupted", job.Health);
+        Assert.True(job.RequiresAttention);
+        Assert.Equal("interrupted", job.LastRun!.Completion);
+        Assert.Equal("1b7cf2d0-9d2b-4f0d-9d8f-6b0f1e2a3c4d", job.LastRun.SessionId);
+        Assert.Equal("user_initiated", job.LastRun.AbortReason);
+    }
+
+    [Fact]
+    public async Task GetSchedules_RunThatCannotBeInspected_StaysSucceeded()
+    {
+        // An unreadable log or a cleaned-up session proves nothing, and a false alarm on a healthy
+        // job hides the real ones.
+        using var factory = new NarniaWebAppFactory();
+        await factory.ScheduledJobRegistry.CreateAsync(
+            Draft("Weekly Draft", "Narnia - Weekly Draft"), Now, Ct);
+
+        factory.ScheduledTaskProvider
+            .Setup(p => p.ListInFolderAsync(@"\Narnia\", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ScheduledTaskStatus>)[Status(@"\Narnia\", "Narnia - Weekly Draft")]);
+
+        var client = factory.CreateClient();
+        var response = await client.GetFromJsonAsync<SchedulesResponse>("/api/schedules", Ct);
+
+        var job = Assert.Single(response!.Jobs);
+        Assert.Equal("succeeded", job.Health);
+        Assert.False(job.RequiresAttention);
+        Assert.Equal("unknown", job.LastRun!.Completion);
+    }
+
+    [Fact]
     public async Task GetSchedules_SurfacesUntrackedNarniaTasks()
     {
         using var factory = new NarniaWebAppFactory();
@@ -406,7 +460,10 @@ public sealed class SchedulesEndpointsTests
         List<SkillDto> Skills,
         StatusDto? Status,
         string Health,
-        bool RequiresAttention);
+        bool RequiresAttention,
+        RunOutcomeDto? LastRun);
+
+    private sealed record RunOutcomeDto(string Completion, string? SessionId, string? AbortReason);
 
     private sealed record SkillDto(string Skill, string Resolution);
 
