@@ -107,10 +107,15 @@ internal static class RepositoryLayout
         }
     }
 
-    private static IReadOnlyList<string> FromDirectoryWalk()
+    /// <summary>
+    /// Fallback enumeration for a checkout without Git. Exposed so the fallback path is covered
+    /// even though the Git path is what normally runs.
+    /// </summary>
+    internal static IReadOnlyList<string> FromDirectoryWalk()
     {
         var results = new List<string>();
         Collect(new DirectoryInfo(Root), results);
+        results.Sort(StringComparer.Ordinal);
         return results;
     }
 
