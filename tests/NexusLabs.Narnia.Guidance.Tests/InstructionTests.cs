@@ -122,7 +122,9 @@ public sealed partial class InstructionTests
     {
         foreach (var instruction in RepositoryLayout.InstructionFiles())
         {
-            var body = RepositoryLayout.ReadText(instruction);
+            // FrontmatterBlock reports a newline-normalized slice, so the body has to be
+            // normalized too or the removal silently does nothing on a CRLF checkout.
+            var body = RepositoryLayout.ReadText(instruction).Replace("\r\n", "\n");
             var frontmatter = GuidanceContract.FrontmatterBlock(body);
             if (frontmatter is not null)
                 body = body.Replace(frontmatter, string.Empty, StringComparison.Ordinal);

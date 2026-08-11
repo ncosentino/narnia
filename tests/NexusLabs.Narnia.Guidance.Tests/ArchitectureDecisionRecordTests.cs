@@ -25,6 +25,12 @@ public sealed partial class ArchitectureDecisionRecordTests
                 !path.Equals("docs/adr/index.md", StringComparison.Ordinal))];
 
     [Fact]
+    public void RecordsExist()
+    {
+        Assert.NotEmpty(Records());
+    }
+
+    [Fact]
     public void RecordsAreIndexed()
     {
         var index = RepositoryLayout.ReadText("docs/adr/index.md");

@@ -69,7 +69,12 @@ public sealed class DocumentationMapTests
         var sources = RepositoryLayout
             .DocumentationFiles()
             .Concat(RepositoryLayout.InstructionFiles())
-            .Concat([".github/skills/review-changes/SKILL.md", "AGENTS.md"])
+            .Concat([
+                ".github/skills/review-changes/SKILL.md",
+                ".github/copilot-instructions.md",
+                "AGENTS.md",
+                "CLAUDE.md",
+            ])
             .Where(RepositoryLayout.Exists)
             .ToList();
 

@@ -10,6 +10,7 @@ internal static class RepositoryLayout
     private static readonly string[] ExcludedDirectories =
     [
         ".git",
+        ".venv",
         ".wrangler",
         "artifacts",
         "bin",
@@ -18,9 +19,11 @@ internal static class RepositoryLayout
         "node_modules",
         "obj",
         "site",
+        "venv",
     ];
 
     private static readonly Lazy<string> LazyRoot = new(Locate);
+    private static readonly Lazy<IReadOnlyList<string>> LazyFiles = new(Enumerate);
 
     public static string Root => LazyRoot.Value;
 
@@ -34,15 +37,11 @@ internal static class RepositoryLayout
         File.ReadAllText(System.IO.Path.Combine(Root, Normalize(relativePath)));
 
     /// <summary>
-    /// Repository-relative, forward-slashed paths of every file outside build output.
+    /// Repository-relative, forward-slashed paths of every file Git considers part of the
+    /// working tree. Ignored files are excluded, so a contributor's local scratch notes cannot
+    /// fail a structural test. Falls back to a filtered directory walk when Git is unavailable.
     /// </summary>
-    public static IReadOnlyList<string> AllFiles()
-    {
-        var results = new List<string>();
-        Collect(new DirectoryInfo(Root), results);
-        results.Sort(StringComparer.Ordinal);
-        return results;
-    }
+    public static IReadOnlyList<string> AllFiles() => LazyFiles.Value;
 
     public static IReadOnlyList<string> DocumentationFiles() =>
         [.. AllFiles()
@@ -63,20 +62,79 @@ internal static class RepositoryLayout
     private static string Normalize(string relativePath) =>
         relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar);
 
+    private static IReadOnlyList<string> Enumerate()
+    {
+        var results = FromGit() ?? FromDirectoryWalk();
+        var ordered = results.ToList();
+        ordered.Sort(StringComparer.Ordinal);
+        return ordered;
+    }
+
+    private static IReadOnlyList<string>? FromGit()
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                ArgumentList = { "-C", Root, "ls-files", "--cached", "--others", "--exclude-standard" },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            });
+
+            if (process is null)
+                return null;
+
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+                return null;
+
+            var files = output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim().Replace('\\', '/'))
+                .Where(line => line.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            return files.Count == 0 ? null : files;
+        }
+        catch (Exception exception) when (
+            exception is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<string> FromDirectoryWalk()
+    {
+        var results = new List<string>();
+        Collect(new DirectoryInfo(Root), results);
+        return results;
+    }
+
     private static void Collect(DirectoryInfo directory, List<string> results)
     {
-        foreach (var file in directory.EnumerateFiles())
-            results.Add(ToRelative(file.FullName));
-
-        foreach (var child in directory.EnumerateDirectories())
+        try
         {
-            if (ExcludedDirectories.Contains(child.Name, StringComparer.OrdinalIgnoreCase))
-                continue;
+            foreach (var file in directory.EnumerateFiles())
+                results.Add(ToRelative(file.FullName));
 
-            if (child.Attributes.HasFlag(FileAttributes.ReparsePoint))
-                continue;
+            foreach (var child in directory.EnumerateDirectories())
+            {
+                if (ExcludedDirectories.Contains(child.Name, StringComparer.OrdinalIgnoreCase))
+                    continue;
 
-            Collect(child, results);
+                if (child.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    continue;
+
+                Collect(child, results);
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A directory the test process cannot read contributes nothing to the contract.
         }
     }
 
