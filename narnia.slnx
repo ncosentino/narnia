@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NexusLabs.Narnia.Core.Tests/NexusLabs.Narnia.Core.Tests.csproj" />
+    <Project Path="tests/NexusLabs.Narnia.Guidance.Tests/NexusLabs.Narnia.Guidance.Tests.csproj" />
     <Project Path="tests/NexusLabs.Narnia.Web.Tests/NexusLabs.Narnia.Web.Tests.csproj" />
   </Folder>
 </Solution>
