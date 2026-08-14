@@ -12,4 +12,6 @@ the recovery archive and integrity hash. Narnia never modifies Chronicle directl
 | `sessionId` | Source Copilot session GUID |
 | `confirmMigration` | Must be `true`; acknowledges creation of a new session and one bootstrap model response |
 
-The operation is idempotent after completed recovery and returns the same session ID.
+The operation returns the same session ID. If a previously recovered session later becomes
+incompatible again, a new recovery generation preserves the earlier migration record, recovery
+packet, and archived event stream.

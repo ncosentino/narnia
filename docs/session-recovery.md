@@ -14,11 +14,12 @@ Failed to resume session: Error: Session file is corrupted or incompatible
 Launching such a session can leave you in an unrelated blank session. Narnia inspects the minimum resume contract before every terminal launch and blocks sessions that
 are known to be incompatible.
 
-Copilot 1.0.75 also loads the entire `events.jsonl` file as one in-memory string. Once the decoded
-stream exceeds V8's 536,870,888-character ceiling, `--resume` can silently create a new blank
-session even when the stream begins with a valid `session.start`. For files large enough to be at
-risk, Narnia counts decoded characters with a bounded streaming read, caches the result until the
-file changes, blocks normal launch, and offers the same in-place recovery workflow.
+Copilot loads the entire `events.jsonl` file as one in-memory string. Once the decoded stream
+exceeds V8's 536,870,888-character ceiling, current releases reject the session; earlier releases
+could silently create a new blank session even when the stream began with a valid `session.start`.
+For files large enough to be at risk, Narnia counts decoded characters with a bounded streaming
+read, caches the result until the file changes, blocks normal launch, and offers the same in-place
+recovery workflow.
 
 ## Recovering in Place
 
@@ -57,6 +58,10 @@ only by Copilot.
 Sessions with recorded recovery state are protected from normal Storage cleanup review. The
 recovery packet can be downloaded from the session detail page or read in chunks through
 `get_session_recovery_packet`.
+
+If a recovered session later grows beyond Copilot's loader ceiling again, Narnia can recover it
+again. Every completed recovery retains its own migration record, recovery packet, and archived
+event stream.
 
 ## Limits
 

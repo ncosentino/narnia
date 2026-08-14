@@ -26,12 +26,15 @@ public sealed class SessionRecoveryPacketBuilder(
     public async ValueTask<SessionRecoveryPacketBuildResult> BuildAsync(
         string sourceSessionId,
         string replacementSessionId,
+        string migrationId,
         CancellationToken ct)
     {
         if (!Guid.TryParse(sourceSessionId, out _) ||
-            !Guid.TryParse(replacementSessionId, out _))
+            !Guid.TryParse(replacementSessionId, out _) ||
+            !Guid.TryParse(migrationId, out _))
         {
-            return Failure("Source and replacement session identifiers must be GUIDs.");
+            return Failure(
+                "Source, replacement, and migration identifiers must be GUIDs.");
         }
 
         try
@@ -68,14 +71,21 @@ public sealed class SessionRecoveryPacketBuilder(
                 .TrimEnd(
                     fileSystem.Path.DirectorySeparatorChar,
                     fileSystem.Path.AltDirectorySeparatorChar);
-            var recoveryDirectory = fileSystem.Path.GetFullPath(
+            var replacementDirectory = fileSystem.Path.GetFullPath(
                 fileSystem.Path.Combine(recoveryRoot, replacementSessionId));
+            var recoveryDirectory = fileSystem.Path.GetFullPath(
+                fileSystem.Path.Combine(replacementDirectory, migrationId));
+            var pathComparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
             if (!string.Equals(
-                    fileSystem.Path.GetDirectoryName(recoveryDirectory),
+                    fileSystem.Path.GetDirectoryName(replacementDirectory),
                     recoveryRoot,
-                    OperatingSystem.IsWindows()
-                        ? StringComparison.OrdinalIgnoreCase
-                        : StringComparison.Ordinal))
+                    pathComparison) ||
+                !string.Equals(
+                    fileSystem.Path.GetDirectoryName(recoveryDirectory),
+                    replacementDirectory,
+                    pathComparison))
             {
                 return Failure("The recovery packet path does not resolve beneath Narnia's recovery directory.");
             }

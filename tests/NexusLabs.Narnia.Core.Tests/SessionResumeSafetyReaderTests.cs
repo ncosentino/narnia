@@ -68,7 +68,7 @@ public sealed class SessionResumeSafetyReaderTests
         Assert.Equal(SessionResumeSafety.Incompatible, result.Safety);
         Assert.Equal("session.start", result.FirstEventType);
         Assert.Contains("128-character", result.Reason, StringComparison.Ordinal);
-        Assert.Contains("blank session", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("cannot load this history as one string", result.Reason, StringComparison.Ordinal);
     }
 
     [Fact]

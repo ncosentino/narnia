@@ -176,6 +176,52 @@ public sealed class SqliteSessionMigrationRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task RepeatedInPlaceMigrations_AreRetainedAndLatestIsReturned()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var repository = new SqliteSessionMigrationRepository(_options);
+        var first = new SessionMigration(
+            "first-in-place",
+            SourceId,
+            SourceId,
+            SessionMigrationStatus.Completed,
+            @"C:\narnia\recoveries\first\recovery.md",
+            100,
+            false,
+            null,
+            now.AddMinutes(-10),
+            now.AddMinutes(-9),
+            now.AddMinutes(-9));
+        var second = new SessionMigration(
+            "second-in-place",
+            SourceId,
+            SourceId,
+            SessionMigrationStatus.Preparing,
+            @"C:\narnia\recoveries\second\recovery.md",
+            200,
+            false,
+            null,
+            now,
+            now,
+            null);
+
+        await repository.AddAsync(first, Ct);
+        await repository.AddAsync(second, Ct);
+
+        var latestSource = await repository.GetLatestBySourceAsync(SourceId, Ct);
+        var latestReplacement = await repository.GetByReplacementAsync(SourceId, Ct);
+        Assert.Equal(second.Id, latestSource!.Id);
+        Assert.Equal(second.Id, latestReplacement!.Id);
+
+        await using var connection = new SqliteConnection($"Data Source={_databasePath}");
+        await connection.OpenAsync(Ct);
+        Assert.Equal(2L, await ScalarAsync(
+            connection,
+            "SELECT COUNT(*) FROM session_migrations WHERE replacement_session_id = @id",
+            SourceId));
+    }
+
+    [Fact]
     public async Task CompleteAndResetAsync_InPlaceMigration_PreservesExistingReferences()
     {
         var now = DateTimeOffset.UtcNow;

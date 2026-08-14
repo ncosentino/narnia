@@ -74,6 +74,7 @@ public sealed class SessionMigrationServiceTests
         fixture.PacketBuilder.Verify(builder => builder.BuildAsync(
             It.IsAny<string>(),
             It.IsAny<string>(),
+            It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Never);
         fixture.Copilot.Verify(manager => manager.CreateRecoverySessionAsync(
             It.IsAny<CopilotRecoverySessionRequest>(),
@@ -150,6 +151,109 @@ public sealed class SessionMigrationServiceTests
 
         Assert.False(preview.CanMigrate);
         Assert.Contains("already being prepared", preview.BlockingReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_CompletedInPlaceMigration_AllowsRepeatRecovery()
+    {
+        var fixture = CreateFixture();
+        var now = new DateTimeOffset(2026, 7, 24, 12, 0, 0, TimeSpan.Zero);
+        var completed = new SessionMigration(
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            SourceId,
+            SourceId,
+            SessionMigrationStatus.Completed,
+            @"C:\narnia\recoveries\first\recovery.md",
+            100,
+            false,
+            null,
+            now.AddDays(-1),
+            now.AddDays(-1),
+            now.AddDays(-1));
+        fixture.Migrations
+            .Setup(repository => repository.GetLatestBySourceAsync(
+                SourceId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(completed);
+
+        var preview = await fixture.Service.PreviewAsync(SourceId, Ct);
+
+        Assert.True(preview.CanMigrate);
+        Assert.Same(completed, preview.ExistingMigration);
+    }
+
+    [Fact]
+    public async Task MigrateAsync_CompletedInPlaceMigration_CreatesNewRecoveryGeneration()
+    {
+        var fixture = CreateFixture();
+        var now = new DateTimeOffset(2026, 7, 24, 12, 0, 0, TimeSpan.Zero);
+        var completed = new SessionMigration(
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            SourceId,
+            SourceId,
+            SessionMigrationStatus.Completed,
+            @"C:\narnia\recoveries\first\recovery.md",
+            100,
+            false,
+            null,
+            now.AddDays(-1),
+            now.AddDays(-1),
+            now.AddDays(-1));
+        SessionMigration? added = null;
+        fixture.Migrations
+            .Setup(repository => repository.GetLatestBySourceAsync(
+                SourceId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(completed);
+        fixture.Migrations
+            .Setup(repository => repository.AddAsync(
+                It.IsAny<SessionMigration>(),
+                It.IsAny<CancellationToken>()))
+            .Callback((SessionMigration migration, CancellationToken _) => added = migration)
+            .Returns(ValueTask.CompletedTask);
+        fixture.Migrations
+            .Setup(repository => repository.MarkSessionCreatedAsync(
+                It.IsAny<string>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.CompletedTask);
+        fixture.Migrations
+            .Setup(repository => repository.CompleteAsync(
+                It.IsAny<string>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        fixture.Migrations
+            .Setup(repository => repository.GetByIdAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => added is null
+                ? null
+                : added with
+                {
+                    Status = SessionMigrationStatus.Completed,
+                    CompletedAt = now,
+                });
+
+        var result = await fixture.Service.MigrateAsync(SourceId, Ct);
+
+        Assert.True(result.Migrated);
+        Assert.NotNull(result.Migration);
+        Assert.NotEqual(completed.Id, result.Migration!.Id);
+        fixture.Migrations.Verify(repository => repository.AddAsync(
+            It.Is<SessionMigration>(migration =>
+                migration.SourceSessionId == SourceId &&
+                migration.ReplacementSessionId == SourceId &&
+                migration.Id != completed.Id),
+            It.IsAny<CancellationToken>()), Times.Once);
+        fixture.Migrations.Verify(repository => repository.RestartAsync(
+            It.IsAny<SessionMigration>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        fixture.PacketBuilder.Verify(builder => builder.BuildAsync(
+            SourceId,
+            SourceId,
+            result.Migration.Id,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -326,7 +430,7 @@ public sealed class SessionMigrationServiceTests
     }
 
     [Fact]
-    public async Task MigrateAsync_FailedInPlaceRecovery_ReusesUniqueMigrationRecord()
+    public async Task MigrateAsync_FailedInPlaceRecovery_ReusesMigrationRecord()
     {
         var fixture = CreateFixture();
         var now = new DateTimeOffset(2026, 7, 24, 12, 0, 0, TimeSpan.Zero);
@@ -455,6 +559,7 @@ public sealed class SessionMigrationServiceTests
         packetBuilder
             .Setup(builder => builder.BuildAsync(
                 SourceId,
+                It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionRecoveryPacketBuildResult(

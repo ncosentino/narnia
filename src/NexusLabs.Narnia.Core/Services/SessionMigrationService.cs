@@ -55,8 +55,6 @@ public sealed class SessionMigrationService(
         string? blockingReason = null;
         if (active)
             blockingReason = "The source session is currently owned by a live Copilot process.";
-        else if (existing?.Status == SessionMigrationStatus.Completed)
-            blockingReason = "A recovered successor already exists for this source session.";
         else if (existing is { Status: SessionMigrationStatus.Preparing } &&
                  !IsStale(existing, now))
             blockingReason = "A migration for this source session is already being prepared.";
@@ -101,11 +99,12 @@ public sealed class SessionMigrationService(
                 ct);
             var preview = await PreviewAsync(sourceSessionId, ct);
             var resetExistingMigration = false;
-            if (preview.ExistingMigration is { Status: SessionMigrationStatus.Completed } completed)
+            if (preview.ExistingMigration is
+                {
+                    Status: SessionMigrationStatus.Completed,
+                    IsInPlace: false,
+                } completed)
             {
-                if (completed.IsInPlace)
-                    return new SessionMigrationResult(true, completed, null);
-
                 var resetError = await ResetIncompleteMigrationAsync(
                     completed,
                     "Successor migration was reset before same-folder recovery.",
@@ -164,9 +163,18 @@ public sealed class SessionMigrationService(
                     "The source session disappeared before recovery could begin.");
             }
 
+            var reusableMigration = preview.ExistingMigration is
+                {
+                    Status: SessionMigrationStatus.Failed,
+                    IsInPlace: true,
+                }
+                ? preview.ExistingMigration
+                : null;
+            var migrationId = reusableMigration?.Id ?? Guid.NewGuid().ToString();
             var packet = await packetBuilder.BuildAsync(
                 sourceSessionId,
                 replacementSessionId,
+                migrationId,
                 ct);
             if (!packet.Succeeded ||
                 string.IsNullOrWhiteSpace(packet.PacketPath) ||
@@ -179,14 +187,6 @@ public sealed class SessionMigrationService(
             }
 
             var now = timeProvider.GetUtcNow();
-            var reusableMigration = preview.ExistingMigration is
-                {
-                    Status: SessionMigrationStatus.Failed,
-                    IsInPlace: true,
-                }
-                ? preview.ExistingMigration
-                : null;
-            var migrationId = reusableMigration?.Id ?? Guid.NewGuid().ToString();
             var archivePlan = await eventStreamRecovery.PlanAsync(
                 sourceSessionId,
                 migrationId,

@@ -13,7 +13,7 @@ public interface ISessionMigrationRepository
         string sourceSessionId,
         CancellationToken ct);
 
-    /// <summary>Gets the migration that created the requested replacement session.</summary>
+    /// <summary>Gets the most recent migration that created the requested replacement session.</summary>
     /// <param name="replacementSessionId">Replacement Copilot session identifier.</param>
     /// <param name="ct">Cancellation token for the operation.</param>
     /// <returns>The migration, or <c>null</c>.</returns>
@@ -40,7 +40,7 @@ public interface ISessionMigrationRepository
     /// <param name="ct">Cancellation token for the operation.</param>
     ValueTask AddAsync(SessionMigration migration, CancellationToken ct);
 
-    /// <summary>Restarts a failed in-place migration using its existing unique record.</summary>
+    /// <summary>Restarts a failed in-place migration using its existing record.</summary>
     /// <param name="migration">Preparing replacement values for the existing record.</param>
     /// <param name="ct">Cancellation token for the operation.</param>
     /// <returns><c>true</c> when the migration existed and was restarted.</returns>
