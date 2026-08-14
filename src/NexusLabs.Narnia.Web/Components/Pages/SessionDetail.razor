@@ -47,11 +47,22 @@ else if (_session is not null)
             {
                 @if (IsInPlaceMigration)
                 {
-                    <strong>Recovered in place</strong>
-                    <span>
-                        Copilot retained this session ID and folder. The original broken event
-                        stream remains archived beside the new valid stream.
-                    </span>
+                    @if (_resumeAssessment?.Safety == SessionResumeSafety.Incompatible)
+                    {
+                        <strong>Previous recovery retained</strong>
+                        <span>
+                            This session later became incompatible again. Its earlier recovery
+                            packet and archived event stream remain available.
+                        </span>
+                    }
+                    else
+                    {
+                        <strong>Recovered in place</strong>
+                        <span>
+                            Copilot retained this session ID and folder. The original broken event
+                            stream remains archived beside the new valid stream.
+                        </span>
+                    }
                 }
                 else if (IsMigrationSource)
                 {
@@ -101,8 +112,8 @@ else if (_session is not null)
                 <h2>This session cannot be resumed as-is</h2>
                 <p>@_resumeAssessment.Reason</p>
                 <p>
-                    Copilot would reject this history and open an unrelated blank session.
-                    Narnia has disabled Launch for this session instead of pretending it resumed.
+                    Copilot would reject this history instead of resuming it.
+                    Narnia has disabled Launch rather than reporting a false recovery.
                 </p>
             </div>
             @RecoveryPlan
@@ -449,7 +460,7 @@ else if (_session is not null)
             _relatedMigration = await MigrationService.GetRelatedAsync(
                 SessionId,
                 CancellationToken.None);
-            if (!IsMigrationReplacement)
+            if (!IsMigrationReplacement || IsInPlaceMigration)
             {
                 _migrationPreview = await MigrationService.PreviewAsync(
                     SessionId,
@@ -482,7 +493,32 @@ else if (_session is not null)
                     alias, notes, Collections, Session Groups, and saved windows remain attached to
                     this same session.
                 </p>
-                @if (_migrationPreview.ExistingMigration?.Status == SessionMigrationStatus.Completed)
+                @if (_migrationPreview.CanMigrate)
+                {
+                    @if (_migrationPreview.ExistingMigration is
+                        {
+                            Status: SessionMigrationStatus.Completed,
+                            IsInPlace: true,
+                        })
+                    {
+                        <p class="session-recovery-error">
+                            This session was recovered previously, but its current event stream has
+                            become incompatible again. The earlier packet and archive will be retained.
+                        </p>
+                    }
+                    <button class="launch-btn session-migrate-btn"
+                            onclick="narniaMigrateSession('@SessionId', this)">
+                        @(_migrationPreview.ExistingMigration?.Status == SessionMigrationStatus.Completed
+                            ? "Recover this session again"
+                            : "Recover this session in place")
+                    </button>
+                }
+                else if (_migrationPreview.ResumeAssessment.Safety ==
+                    SessionResumeSafety.Incompatible)
+                {
+                    <p class="session-recovery-error">@_migrationPreview.BlockingReason</p>
+                }
+                else if (_migrationPreview.ExistingMigration?.Status == SessionMigrationStatus.Completed)
                 {
                     @if (_migrationPreview.ExistingMigration.IsInPlace)
                     {
@@ -495,13 +531,6 @@ else if (_session is not null)
                             Open recovered successor
                         </a>
                     }
-                }
-                else if (_migrationPreview.CanMigrate)
-                {
-                    <button class="launch-btn session-migrate-btn"
-                            onclick="narniaMigrateSession('@SessionId', this)">
-                        Recover this session in place
-                    </button>
                 }
                 else
                 {

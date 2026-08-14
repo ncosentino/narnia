@@ -10,6 +10,8 @@ public sealed class SessionRecoveryPacketBuilderTests
 {
     private const string SourceId = "33333333-3333-4333-8333-333333333333";
     private const string ReplacementId = "44444444-4444-4444-8444-444444444444";
+    private const string MigrationId = "55555555-5555-4555-8555-555555555555";
+    private const string SecondMigrationId = "66666666-6666-4666-8666-666666666666";
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -110,11 +112,16 @@ public sealed class SessionRecoveryPacketBuilderTests
             new NarniaOptions { RecoveryDirectory = "C:\\narnia\\recoveries\\" },
             fileSystem);
 
-        var result = await builder.BuildAsync(SourceId, ReplacementId, Ct);
+        var result = await builder.BuildAsync(
+            SourceId,
+            ReplacementId,
+            MigrationId,
+            Ct);
 
         Assert.True(result.Succeeded);
         Assert.NotNull(result.PacketPath);
         Assert.True(fileSystem.File.Exists(result.PacketPath));
+        Assert.Contains(MigrationId, result.PacketPath, StringComparison.Ordinal);
         var packet = fileSystem.File.ReadAllText(result.PacketPath);
         Assert.Contains("Initial request", packet, StringComparison.Ordinal);
         Assert.Contains("Checkpoint", packet, StringComparison.Ordinal);
@@ -128,5 +135,16 @@ public sealed class SessionRecoveryPacketBuilderTests
         Assert.Contains("get_session_recovery_packet", result.BootstrapPrompt, StringComparison.Ordinal);
         Assert.Contains("Follow-up response", result.BootstrapPrompt, StringComparison.Ordinal);
         Assert.True(result.BootstrapPrompt.Length <= 70_000);
+
+        var second = await builder.BuildAsync(
+            SourceId,
+            ReplacementId,
+            SecondMigrationId,
+            Ct);
+
+        Assert.True(second.Succeeded);
+        Assert.NotEqual(result.PacketPath, second.PacketPath);
+        Assert.True(fileSystem.File.Exists(result.PacketPath));
+        Assert.True(fileSystem.File.Exists(second.PacketPath));
     }
 }

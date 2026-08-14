@@ -25,7 +25,7 @@ public sealed class SqliteSessionMigrationRepository(NarniaOptions options)
         string sourceSessionId,
         CancellationToken ct) =>
         GetSingleAsync(
-            $"SELECT {MigrationColumns} FROM session_migrations WHERE source_session_id = @value ORDER BY created_at DESC LIMIT 1",
+            $"SELECT {MigrationColumns} FROM session_migrations WHERE source_session_id = @value ORDER BY created_at DESC, id DESC LIMIT 1",
             sourceSessionId,
             ct);
 
@@ -34,7 +34,7 @@ public sealed class SqliteSessionMigrationRepository(NarniaOptions options)
         string replacementSessionId,
         CancellationToken ct) =>
         GetSingleAsync(
-            $"SELECT {MigrationColumns} FROM session_migrations WHERE replacement_session_id = @value LIMIT 1",
+            $"SELECT {MigrationColumns} FROM session_migrations WHERE replacement_session_id = @value ORDER BY created_at DESC, id DESC LIMIT 1",
             replacementSessionId,
             ct);
 

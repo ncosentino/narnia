@@ -128,7 +128,7 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                     return new SessionResumeAssessment(
                         sessionId,
                         SessionResumeSafety.Incompatible,
-                        $"The local event stream is {eventStreamBytes:N0} bytes and decodes beyond Copilot's current {_maximumSafeEventStreamCharacters:N0}-character whole-file loader ceiling. Copilot would silently start an unrelated blank session instead of resuming this history.",
+                        $"The local event stream is {eventStreamBytes:N0} bytes and decodes beyond Copilot's current {_maximumSafeEventStreamCharacters:N0}-character whole-file loader ceiling. Copilot cannot load this history as one string.",
                         firstEventType,
                         workspace.IsNestedAgent);
                 }
