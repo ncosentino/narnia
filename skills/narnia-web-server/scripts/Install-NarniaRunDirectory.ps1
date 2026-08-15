@@ -83,7 +83,11 @@ $backup = Join-Path $runParent "$runName.backup.$([Guid]::NewGuid().ToString('N'
 $backupCreated = $false
 
 try {
-    if (Test-Path -LiteralPath $run -PathType Container) {
+    if (Test-Path -LiteralPath $run) {
+        if (-not (Test-Path -LiteralPath $run -PathType Container)) {
+            throw "Narnia's run path exists but is not a directory: '$run'."
+        }
+
         Move-Item -LiteralPath $run -Destination $backup
         $backupCreated = $true
     }
@@ -93,7 +97,23 @@ try {
     }
     catch {
         $installError = $_
-        if ($backupCreated -and -not (Test-Path -LiteralPath $run)) {
+        if (Test-Path -LiteralPath $run) {
+            try {
+                Remove-Item -LiteralPath $run -Recurse -Force
+            }
+            catch {
+                $backupMessage = if ($backupCreated) {
+                    " The prior deployment remains at '$backup'."
+                }
+                else {
+                    ""
+                }
+                throw "Installing Narnia failed and its partial deployment could not be removed." +
+                    "$backupMessage Original error: $installError"
+            }
+        }
+
+        if ($backupCreated) {
             try {
                 Move-Item -LiteralPath $backup -Destination $run
                 $backupCreated = $false
@@ -124,6 +144,11 @@ try {
 }
 finally {
     if (Test-Path -LiteralPath $source) {
-        Remove-Item -LiteralPath $source -Recurse -Force
+        try {
+            Remove-Item -LiteralPath $source -Recurse -Force
+        }
+        catch {
+            Write-Warning "The staged deployment could not be removed from '$source'."
+        }
     }
 }

@@ -67,6 +67,34 @@ try {
     Assert-True ((Get-Content -LiteralPath (Join-Path $run 'NexusLabs.Narnia.Web.dll') -Raw).Trim() -eq 'new') `
         'Validation failure changed the active deployment.'
 
+    if ($IsWindows) {
+        $rollbackStage = Join-Path $root 'app.staging.rollback'
+        New-StagedPublish $rollbackStage 'replacement'
+        $lockedFile = [System.IO.File]::Open(
+            (Join-Path $rollbackStage 'NexusLabs.Narnia.Web.dll'),
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None)
+        $rollbackFailed = $false
+        try {
+            & $installer `
+                -SourceDirectory $rollbackStage `
+                -RunDirectory $run `
+                -WarningAction SilentlyContinue |
+                Out-Null
+        }
+        catch {
+            $rollbackFailed = $true
+        }
+        finally {
+            $lockedFile.Dispose()
+        }
+
+        Assert-True $rollbackFailed 'The locked staged deployment unexpectedly moved.'
+        Assert-True ((Get-Content -LiteralPath (Join-Path $run 'NexusLabs.Narnia.Web.dll') -Raw).Trim() -eq 'new') `
+            'A failed swap did not restore the previous deployment.'
+    }
+
     $secondRun = Join-Path $root 'fresh-app'
     $secondStage = Join-Path $root 'fresh-app.staging.first'
     New-StagedPublish $secondStage 'fresh'

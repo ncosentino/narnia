@@ -10,6 +10,9 @@
 
 .PARAMETER BuildVersion
     Optional informational version. When omitted, Get-NarniaBuildVersion.ps1 computes it.
+
+.PARAMETER NoRestore
+    Passes --no-restore to dotnet publish. Intended for CI after the solution restore step.
 #>
 [CmdletBinding()]
 param(
@@ -19,7 +22,9 @@ param(
     [Parameter(Mandatory)]
     [string]$RunDirectory,
 
-    [string]$BuildVersion
+    [string]$BuildVersion,
+
+    [switch]$NoRestore
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,6 +65,9 @@ try {
         '-o', $staging,
         '-p:IncludeSourceRevisionInInformationalVersion=false',
         "-p:InformationalVersion=$BuildVersion")
+    if ($NoRestore) {
+        $publishArguments += '--no-restore'
+    }
     & dotnet @publishArguments 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet publish failed with exit code $LASTEXITCODE."
@@ -77,6 +85,11 @@ try {
 }
 finally {
     if (Test-Path -LiteralPath $staging) {
-        Remove-Item -LiteralPath $staging -Recurse -Force
+        try {
+            Remove-Item -LiteralPath $staging -Recurse -Force
+        }
+        catch {
+            Write-Warning "The staged publish could not be removed from '$staging'."
+        }
     }
 }

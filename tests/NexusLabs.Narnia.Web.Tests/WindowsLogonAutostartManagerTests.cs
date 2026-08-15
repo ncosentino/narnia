@@ -123,6 +123,88 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         Assert.True(process.ExitCode == 0, standardError);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ServerLauncher_SelectsThePublishedDeploymentHost(bool frameworkDependent)
+    {
+        var appDirectory = Path.Combine(_localAppData, "launcher mode", "app");
+        var fakeBin = Path.Combine(_localAppData, "launcher mode", "bin");
+        var executablePath = Path.Combine(appDirectory, "NexusLabs.Narnia.Web.exe");
+        var assemblyPath = Path.Combine(appDirectory, "NexusLabs.Narnia.Web.dll");
+        var runtimeConfigPath = Path.Combine(
+            appDirectory,
+            "NexusLabs.Narnia.Web.runtimeconfig.json");
+        var startupLogPath = Path.Combine(
+            _localAppData,
+            "launcher mode",
+            "autostart.log");
+        Directory.CreateDirectory(appDirectory);
+        Directory.CreateDirectory(fakeBin);
+        File.Copy(
+            Path.Combine(Environment.SystemDirectory, "where.exe"),
+            executablePath);
+        File.Copy(
+            Path.Combine(Environment.SystemDirectory, "where.exe"),
+            Path.Combine(fakeBin, "dotnet.exe"));
+        File.WriteAllText(assemblyPath, "");
+        File.WriteAllText(
+            runtimeConfigPath,
+            frameworkDependent
+                ? """{"runtimeOptions":{"frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0"}]}}"""
+                : """{"runtimeOptions":{}}""");
+        var launcher = WindowsLogonAutostartManager.BuildServerLauncher(
+            executablePath,
+            assemblyPath,
+            runtimeConfigPath,
+            startupLogPath,
+            "http://127.0.0.1:1");
+        var launcherPath = Path.Combine(
+            _localAppData,
+            "launcher mode",
+            "start-server.ps1");
+        File.WriteAllText(launcherPath, launcher, System.Text.Encoding.Unicode);
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo(
+            Path.Combine(
+                Environment.SystemDirectory,
+                "WindowsPowerShell",
+                "v1.0",
+                "powershell.exe"))
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = appDirectory,
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-ExecutionPolicy");
+        startInfo.ArgumentList.Add("Bypass");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(launcherPath);
+        startInfo.Environment["PATH"] = fakeBin;
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start powershell.exe.");
+        Assert.True(process.WaitForExit(15_000), "The generated launcher did not exit.");
+        var standardError = process.StandardError.ReadToEnd();
+        var log = File.ReadAllText(startupLogPath);
+
+        Assert.Contains(
+            frameworkDependent ? "framework-dependent" : "self-contained",
+            log,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            frameworkDependent
+                ? $"Host: {Path.Combine(fakeBin, "dotnet.exe")} {assemblyPath}"
+                : $"Host: {executablePath}",
+            log,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("autostart failed", log, StringComparison.OrdinalIgnoreCase);
+        Assert.True(process.HasExited, standardError);
+    }
+
     [Fact]
     public void EnsureConfigured_MigratesLegacyRunEntryToScheduledTask()
     {
