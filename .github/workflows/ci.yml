@@ -79,6 +79,12 @@ jobs:
         shell: pwsh
         run: ./skills/narnia-report-email/tests/Send-NarniaReportEmail.Tests.ps1
 
+      - name: Test web server deployment skill
+        shell: pwsh
+        run: |
+          ./skills/narnia-web-server/tests/Install-NarniaRunDirectory.Tests.ps1
+          ./skills/narnia-web-server/tests/Publish-NarniaServer.Tests.ps1
+
   release-package:
     name: Validate Windows release package
     runs-on: windows-latest

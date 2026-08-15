@@ -6,7 +6,7 @@ Manage the lifecycle of the Narnia server — a single ASP.NET Core process that
 
 | Action | Description |
 |--------|-------------|
-| **Start** | Check `/health` first (idempotent — never starts a second instance) → publish a stamped build to a run directory → launch it detached → health-check |
+| **Start** | Check `/health` first (idempotent — never starts a second instance) → publish a stamped build to staging → replace the complete run directory → launch it detached → health-check |
 | **Stop** | `POST /shutdown` (graceful) → falls back to an identity-checked `Stop-Process` on the recorded PID only if that fails |
 | **Restart** | Stop → Start |
 | **Update** | Record the running version → Stop → re-publish from the current source → Start → report old → new version |
@@ -17,7 +17,10 @@ Manage the lifecycle of the Narnia server — a single ASP.NET Core process that
 When you ask the LLM to start the Narnia web server, the skill:
 
 1. **Resolves the source** — either an explicit override (a path you supply, or `$NARNIA_ROOT`) or the narnia plugin bundle itself, since this skill ships inside it. There is no `git clone` and no well-known-path search: newer code arrives by updating the plugin, not by cloning here.
-2. **Publishes to a run directory** (`<LocalAppData>/narnia/app`) — a frozen `dotnet publish`ed copy, decoupled from the source tree, stamped with a content-derived build identity so `/health` can always tell whether the running server matches the latest source.
+2. **Publishes beside the run directory and swaps it into place** — the staged output replaces
+   `<LocalAppData>/narnia/app` as one deployment, so files from a self-contained release cannot
+   contaminate a later framework-dependent source build (or vice versa). The build is stamped with
+   a content-derived identity so `/health` can tell whether the running server matches the source.
 3. **Launches it detached** with the run directory as its working directory — not `dotnet run` from source — so it survives the session ending and neither the source tree nor installed plugin bundle is kept open by the running process.
 4. **Health-checks** — polls `/health` until the server responds.
 

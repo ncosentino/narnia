@@ -45,7 +45,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     }
 
     [Fact]
-    public void Enable_WritesUnicodeLauncherThatWaitsForTheServer()
+    public void Enable_WritesDeploymentAwareLaunchersThatWaitForTheServer()
     {
         var scheduler = new FakeScheduler();
         var manager = CreateManager(scheduler);
@@ -53,18 +53,154 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
 
         manager.Enable();
 
-        var launcherPath = Path.Combine(_localAppData, "narnia", "start-server-hidden.vbs");
-        var launcherBytes = File.ReadAllBytes(launcherPath);
-        Assert.Equal(0xFF, launcherBytes[0]);
-        Assert.Equal(0xFE, launcherBytes[1]);
+        var hiddenLauncherPath = Path.Combine(
+            _localAppData,
+            "narnia",
+            "start-server-hidden.vbs");
+        var serverLauncherPath = Path.Combine(
+            _localAppData,
+            "narnia",
+            "start-server.ps1");
+        foreach (var launcherPath in new[] { hiddenLauncherPath, serverLauncherPath })
+        {
+            var launcherBytes = File.ReadAllBytes(launcherPath);
+            Assert.Equal(0xFF, launcherBytes[0]);
+            Assert.Equal(0xFE, launcherBytes[1]);
+        }
 
-        var launcher = File.ReadAllText(launcherPath);
-        Assert.Contains($"\"\"{executablePath}\"\" --urls http://127.0.0.1:5244", launcher);
+        var hiddenLauncher = File.ReadAllText(hiddenLauncherPath);
+        Assert.Contains("powershell.exe", hiddenLauncher, StringComparison.Ordinal);
+        Assert.Contains(serverLauncherPath, hiddenLauncher, StringComparison.Ordinal);
         Assert.Contains(
             $"shell.CurrentDirectory = \"{Path.GetDirectoryName(executablePath)}\"",
-            launcher);
+            hiddenLauncher);
         // Waiting keeps the task reported as Running so a dead server is visible in Task Scheduler.
-        Assert.Contains(", 0, True)", launcher);
+        Assert.Contains(", 0, True)", hiddenLauncher);
+
+        var serverLauncher = File.ReadAllText(serverLauncherPath);
+        Assert.Contains("$frameworkDependent", serverLauncher, StringComparison.Ordinal);
+        Assert.Contains("Get-Command dotnet.exe", serverLauncher, StringComparison.Ordinal);
+        Assert.Contains("Invoke-WebRequest", serverLauncher, StringComparison.Ordinal);
+        Assert.Contains(executablePath, serverLauncher, StringComparison.Ordinal);
+        Assert.Contains(
+            Path.ChangeExtension(executablePath, ".dll"),
+            serverLauncher,
+            StringComparison.Ordinal);
+        Assert.Contains("autostart.log", serverLauncher, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Enable_ServerLauncherIsValidWindowsPowerShell()
+    {
+        var scheduler = new FakeScheduler();
+        var manager = CreateManager(scheduler);
+        CreatePublishedExecutable();
+        manager.Enable();
+        var serverLauncher = File.ReadAllText(Path.Combine(
+            _localAppData,
+            "narnia",
+            "start-server.ps1"));
+        var startInfo = new System.Diagnostics.ProcessStartInfo("powershell.exe")
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(
+            "[void][scriptblock]::Create([Console]::In.ReadToEnd())");
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start powershell.exe.");
+        process.StandardInput.Write(serverLauncher);
+        process.StandardInput.Close();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, standardError);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ServerLauncher_SelectsThePublishedDeploymentHost(bool frameworkDependent)
+    {
+        var appDirectory = Path.Combine(_localAppData, "launcher mode", "app");
+        var executablePath = Path.Combine(appDirectory, "launcher-probe.ps1");
+        var assemblyPath = Path.Combine(appDirectory, "NexusLabs.Narnia.Web.dll");
+        var runtimeConfigPath = Path.Combine(
+            appDirectory,
+            "NexusLabs.Narnia.Web.runtimeconfig.json");
+        var startupLogPath = Path.Combine(
+            _localAppData,
+            "launcher mode",
+            "autostart.log");
+        Directory.CreateDirectory(appDirectory);
+        File.WriteAllText(executablePath, "'launcher probe completed'");
+        File.WriteAllText(assemblyPath, "");
+        File.WriteAllText(
+            runtimeConfigPath,
+            frameworkDependent
+                ? """{"runtimeOptions":{"frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0"}]}}"""
+                : """{"runtimeOptions":{}}""");
+        var launcher = WindowsLogonAutostartManager.BuildServerLauncher(
+            executablePath,
+            assemblyPath,
+            runtimeConfigPath,
+            startupLogPath,
+            "http://127.0.0.1:1");
+        var launcherPath = Path.Combine(
+            _localAppData,
+            "launcher mode",
+            "start-server.ps1");
+        File.WriteAllText(launcherPath, launcher, System.Text.Encoding.Unicode);
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo(
+            Path.Combine(
+                Environment.SystemDirectory,
+                "WindowsPowerShell",
+                "v1.0",
+                "powershell.exe"))
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = appDirectory,
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-ExecutionPolicy");
+        startInfo.ArgumentList.Add("Bypass");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(launcherPath);
+        startInfo.Environment["DOTNET_HOST_PATH"] = executablePath;
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start powershell.exe.");
+        var exited = process.WaitForExit(15_000);
+        if (!exited)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+        }
+        var standardError = process.StandardError.ReadToEnd();
+        Assert.True(exited, $"The generated launcher did not exit. {standardError}");
+        var log = File.ReadAllText(startupLogPath);
+
+        Assert.Contains(
+            frameworkDependent ? "framework-dependent" : "self-contained",
+            log,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            frameworkDependent
+                ? $"Host: {executablePath} {assemblyPath}"
+                : $"Host: {executablePath}",
+            log,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.True(process.HasExited, standardError);
     }
 
     [Fact]
@@ -98,6 +234,10 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             _localAppData,
             "narnia",
             "start-server-hidden.vbs")));
+        Assert.False(File.Exists(Path.Combine(
+            _localAppData,
+            "narnia",
+            "start-server.ps1")));
     }
 
     [Fact]
@@ -141,6 +281,25 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     }
 
     [Fact]
+    public void Enable_WhenPublishedDeploymentIsIncomplete_FailsWithoutRegisteringTask()
+    {
+        var scheduler = new FakeScheduler();
+        var manager = CreateManager(scheduler);
+        var executablePath = Path.Combine(
+            _localAppData,
+            "narnia",
+            "app",
+            "NexusLabs.Narnia.Web.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executablePath)!);
+        File.WriteAllText(executablePath, "");
+
+        var error = Assert.Throws<InvalidOperationException>(() => manager.Enable());
+
+        Assert.Contains("incomplete", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(scheduler.Exists);
+    }
+
+    [Fact]
     public void Enable_WhenTaskRegistrationFails_RemovesGeneratedLauncherAndKeepsLegacyEntry()
     {
         var scheduler = new FakeScheduler { FailRegistration = true };
@@ -153,6 +312,10 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             _localAppData,
             "narnia",
             "start-server-hidden.vbs")));
+        Assert.False(File.Exists(Path.Combine(
+            _localAppData,
+            "narnia",
+            "start-server.ps1")));
         // The legacy entry is the only remaining autostart, so a failed migration must not clear it.
         Assert.NotNull(legacyRunValue);
     }
@@ -160,18 +323,24 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     [Fact]
     public void Enable_WhenTaskRegistrationFails_RestoresExistingLauncher()
     {
-        var launcherPath = Path.Combine(
+        var hiddenLauncherPath = Path.Combine(
             _localAppData,
             "narnia",
             "start-server-hidden.vbs");
-        Directory.CreateDirectory(Path.GetDirectoryName(launcherPath)!);
-        File.WriteAllText(launcherPath, "existing launcher");
+        var serverLauncherPath = Path.Combine(
+            _localAppData,
+            "narnia",
+            "start-server.ps1");
+        Directory.CreateDirectory(Path.GetDirectoryName(hiddenLauncherPath)!);
+        File.WriteAllText(hiddenLauncherPath, "existing hidden launcher");
+        File.WriteAllText(serverLauncherPath, "existing server launcher");
         var scheduler = new FakeScheduler { FailRegistration = true };
         var manager = CreateManager(scheduler);
         CreatePublishedExecutable();
 
         Assert.Throws<InvalidOperationException>(() => manager.Enable());
-        Assert.Equal("existing launcher", File.ReadAllText(launcherPath));
+        Assert.Equal("existing hidden launcher", File.ReadAllText(hiddenLauncherPath));
+        Assert.Equal("existing server launcher", File.ReadAllText(serverLauncherPath));
     }
 
     [Fact]
@@ -221,6 +390,21 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "NexusLabs.Narnia.Web.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, "");
+        File.WriteAllText(Path.ChangeExtension(path, ".dll"), "");
+        File.WriteAllText(
+            Path.ChangeExtension(path, ".runtimeconfig.json"),
+            """
+            {
+              "runtimeOptions": {
+                "frameworks": [
+                  {
+                    "name": "Microsoft.NETCore.App",
+                    "version": "10.0.0"
+                  }
+                ]
+              }
+            }
+            """);
         return path;
     }
 

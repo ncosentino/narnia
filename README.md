@@ -43,8 +43,9 @@ separate MCP server to build or launch.
 ### Install a tagged Windows x64 release
 
 Download `narnia-win-x64.zip` and `SHA256SUMS.txt` from the
-[Releases page](https://github.com/ncosentino/narnia/releases), verify the archive, and extract it
-directly into Narnia's application directory:
+[Releases page](https://github.com/ncosentino/narnia/releases), verify the archive, and install it
+into Narnia's application directory. Stop an existing server first and replace the directory
+instead of overlaying another deployment:
 
 ```powershell
 $expected = ((Get-Content .\SHA256SUMS.txt) -split '\s+')[0]
@@ -52,6 +53,9 @@ $actual = (Get-FileHash .\narnia-win-x64.zip -Algorithm SHA256).Hash.ToLowerInva
 if ($actual -ne $expected) { throw "Narnia release checksum mismatch." }
 
 $runDir = Join-Path $env:LOCALAPPDATA 'narnia\app'
+if (Test-Path -LiteralPath $runDir) {
+  Remove-Item -LiteralPath $runDir -Recurse -Force
+}
 New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 Expand-Archive .\narnia-win-x64.zip -DestinationPath $runDir -Force
 Start-Process (Join-Path $runDir 'NexusLabs.Narnia.Web.exe') `

@@ -25,13 +25,28 @@ Enabling autostart registers a per-user **Task Scheduler** entry:
 | Execution time limit | None |
 | On failure | Retry up to 3 times, one minute apart |
 
-The task launches a small generated VBScript shim rather than the server
-executable directly. The server is a console application, so launching it
-without the shim would flash a console window at every sign-in.
+The task launches a small generated VBScript shim rather than the server executable directly. The
+shim starts a generated PowerShell launcher hidden, so the console application never flashes a
+window at sign-in.
+
+The PowerShell launcher inspects `NexusLabs.Narnia.Web.runtimeconfig.json` each time it runs:
+
+- a self-contained release starts through `NexusLabs.Narnia.Web.exe` and requires no installed
+  .NET runtime;
+- a framework-dependent plugin/source build starts through the system `dotnet.exe` and the
+  published DLL.
+
+Choosing at launch time keeps autostart valid when the application directory switches between the
+release and rolling source channels. It also bypasses an invalid app host if an older installation
+left incompatible runtime files behind.
 
 The shim waits for the server, which means Task Scheduler reports the task as
 **Running** for as long as the server is alive and records the server's exit
 code when it stops.
+
+The launcher overwrites `<LocalAppData>\narnia\logs\autostart.log` on each start with the selected
+deployment kind and the server's output. A failed start therefore has both a scheduler result code
+and a persistent diagnostic log.
 
 !!! info "Why the task lives in `\Narnia\System\`"
     The **⏱️ Schedules** page lists `\Narnia\` and reports any task without a
@@ -54,9 +69,14 @@ Get-ScheduledTask -TaskPath '\Narnia\System\' -TaskName 'Narnia Server Autostart
     Get-ScheduledTaskInfo
 ```
 
-A `LastTaskResult` of `0` with state `Running` means the server was launched and
-is alive. A missing task means autostart is not actually installed — re-enable it
-on the Settings page to repair it.
+While the task is running, Task Scheduler commonly reports `267009` (`0x41301`,
+`SCHED_S_TASK_RUNNING`) rather than `0`; the live **Running** state is authoritative. After the
+server exits, `0` means a clean shutdown. A missing task means autostart is not actually installed
+— re-enable it on the Settings page to repair it.
+
+If the task is **Ready** and the last result is nonzero, inspect
+`<LocalAppData>\narnia\logs\autostart.log`. Runtime-host failures such as `0x80008096` are process
+exit codes, not Task Scheduler registration failures.
 
 ## Migrating from the `Run` registry entry
 
@@ -90,3 +110,5 @@ any remaining legacy `Run` value.
   a session begins and the server is not listening.
 - The 15-second logon delay keeps the server from competing with the rest of
   sign-in. It is not throttled by Windows' startup-app queue, unlike a `Run` entry.
+- Narnia's application directory is deployment-owned. Source/plugin updates replace the complete
+  directory from a staged publish rather than overlaying files from another build mode.
