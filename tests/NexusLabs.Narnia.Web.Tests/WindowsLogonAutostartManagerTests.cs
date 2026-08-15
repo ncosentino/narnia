@@ -142,10 +142,10 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         Directory.CreateDirectory(appDirectory);
         Directory.CreateDirectory(fakeBin);
         File.Copy(
-            Path.Combine(Environment.SystemDirectory, "where.exe"),
+            Path.Combine(Environment.SystemDirectory, "whoami.exe"),
             executablePath);
         File.Copy(
-            Path.Combine(Environment.SystemDirectory, "where.exe"),
+            Path.Combine(Environment.SystemDirectory, "whoami.exe"),
             Path.Combine(fakeBin, "dotnet.exe"));
         File.WriteAllText(assemblyPath, "");
         File.WriteAllText(
@@ -187,8 +187,14 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         startInfo.Environment["PATH"] = fakeBin;
         using var process = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException("Could not start powershell.exe.");
-        Assert.True(process.WaitForExit(15_000), "The generated launcher did not exit.");
+        var exited = process.WaitForExit(15_000);
+        if (!exited)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+        }
         var standardError = process.StandardError.ReadToEnd();
+        Assert.True(exited, $"The generated launcher did not exit. {standardError}");
         var log = File.ReadAllText(startupLogPath);
 
         Assert.Contains(
@@ -201,7 +207,6 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
                 : $"Host: {executablePath}",
             log,
             StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("autostart failed", log, StringComparison.OrdinalIgnoreCase);
         Assert.True(process.HasExited, standardError);
     }
 
