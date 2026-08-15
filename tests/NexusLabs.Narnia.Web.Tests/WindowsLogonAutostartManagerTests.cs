@@ -129,8 +129,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     public void ServerLauncher_SelectsThePublishedDeploymentHost(bool frameworkDependent)
     {
         var appDirectory = Path.Combine(_localAppData, "launcher mode", "app");
-        var fakeBin = Path.Combine(_localAppData, "launcher mode", "bin");
-        var executablePath = Path.Combine(appDirectory, "NexusLabs.Narnia.Web.exe");
+        var executablePath = Path.Combine(appDirectory, "launcher-probe.ps1");
         var assemblyPath = Path.Combine(appDirectory, "NexusLabs.Narnia.Web.dll");
         var runtimeConfigPath = Path.Combine(
             appDirectory,
@@ -140,13 +139,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "launcher mode",
             "autostart.log");
         Directory.CreateDirectory(appDirectory);
-        Directory.CreateDirectory(fakeBin);
-        File.Copy(
-            Path.Combine(Environment.SystemDirectory, "whoami.exe"),
-            executablePath);
-        File.Copy(
-            Path.Combine(Environment.SystemDirectory, "whoami.exe"),
-            Path.Combine(fakeBin, "dotnet.exe"));
+        File.WriteAllText(executablePath, "'launcher probe completed'");
         File.WriteAllText(assemblyPath, "");
         File.WriteAllText(
             runtimeConfigPath,
@@ -184,7 +177,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         startInfo.ArgumentList.Add("Bypass");
         startInfo.ArgumentList.Add("-File");
         startInfo.ArgumentList.Add(launcherPath);
-        startInfo.Environment["PATH"] = fakeBin;
+        startInfo.Environment["DOTNET_HOST_PATH"] = executablePath;
         using var process = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException("Could not start powershell.exe.");
         var exited = process.WaitForExit(15_000);
@@ -203,7 +196,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             StringComparison.Ordinal);
         Assert.Contains(
             frameworkDependent
-                ? $"Host: {Path.Combine(fakeBin, "dotnet.exe")} {assemblyPath}"
+                ? $"Host: {executablePath} {assemblyPath}"
                 : $"Host: {executablePath}",
             log,
             StringComparison.OrdinalIgnoreCase);

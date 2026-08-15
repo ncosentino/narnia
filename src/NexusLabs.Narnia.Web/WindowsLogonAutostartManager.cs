@@ -310,14 +310,20 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
                 Set-Content -LiteralPath $startupLogPath -Encoding UTF8
 
             if ($frameworkDependent) {
-                $dotnetCommand = Get-Command dotnet.exe -ErrorAction SilentlyContinue
-                if ($null -ne $dotnetCommand) {
-                    $dotnetPath = $dotnetCommand.Source
+                if (-not [string]::IsNullOrWhiteSpace($env:DOTNET_HOST_PATH) -and
+                    (Test-Path -LiteralPath $env:DOTNET_HOST_PATH -PathType Leaf)) {
+                    $dotnetPath = $env:DOTNET_HOST_PATH
                 }
                 else {
-                    $dotnetPath = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
-                    if (-not (Test-Path -LiteralPath $dotnetPath -PathType Leaf)) {
-                        throw 'A framework-dependent Narnia deployment requires dotnet.exe.'
+                    $dotnetCommand = Get-Command dotnet.exe -ErrorAction SilentlyContinue
+                    if ($null -ne $dotnetCommand) {
+                        $dotnetPath = $dotnetCommand.Source
+                    }
+                    else {
+                        $dotnetPath = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
+                        if (-not (Test-Path -LiteralPath $dotnetPath -PathType Leaf)) {
+                            throw 'A framework-dependent Narnia deployment requires dotnet.exe.'
+                        }
                     }
                 }
 
