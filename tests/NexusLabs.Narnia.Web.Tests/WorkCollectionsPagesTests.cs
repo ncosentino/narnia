@@ -24,9 +24,7 @@ public sealed class WorkCollectionsPagesTests
         var html = await factory.CreateClient().GetStringAsync("/collections", Ct);
 
         Assert.Contains($"""href="/collections/{collection.Id}">BrandGhost</a>""", html);
-        Assert.Contains(
-            $"onclick=\"narniaLaunchCollection('{collection.Id}', this)\"",
-            html);
+        Assert.Contains(LaunchCollectionAttribute(collection.Id), html);
         Assert.DoesNotContain("Session Groups", html, StringComparison.Ordinal);
     }
 
@@ -65,10 +63,11 @@ public sealed class WorkCollectionsPagesTests
         Assert.Contains(
             "onclick=\"narniaLaunchSelectedCollectionSessions(this)\"",
             html);
-        Assert.Contains(
-            $"onclick=\"narniaLaunchCollection('{collection.Id}', this)\"",
-            html);
+        Assert.Contains(LaunchCollectionAttribute(collection.Id), html);
         Assert.Contains("id=\"collection-selected-separate-windows\"", html);
         Assert.DoesNotContain("Save as Session Group", html, StringComparison.Ordinal);
     }
+
+    private static string LaunchCollectionAttribute(string collectionId) =>
+        $"onclick=\"narniaLaunchCollection(&#x27;{collectionId}&#x27;, this)\"";
 }
