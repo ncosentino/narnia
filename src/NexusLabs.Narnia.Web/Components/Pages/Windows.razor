@@ -1,4 +1,4 @@
-@page "/windows"
+@page "/runtime/windows"
 @using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Repositories
 @using NexusLabs.Narnia.Core.Services
@@ -10,8 +10,13 @@
 
 <div class="page-actions">
     <h1>🪟 Terminal Sessions</h1>
-    <a href="/windows" class="btn-refresh">↻ Refresh</a>
+    <a href="/runtime/windows" class="btn-refresh">↻ Refresh</a>
 </div>
+
+<nav class="section-nav" aria-label="Runtime views">
+    <SectionNavLink Href="/runtime/windows" Icon="🪟" Label="Windows" Active="true" />
+    <SectionNavLink Href="/runtime/processes" Icon="🖥️" Label="Processes" />
+</nav>
 
 <p class="settings-hint">
     Narnia records each Copilot session you launch in Windows Terminal, so you can reopen one after
@@ -35,7 +40,12 @@
         <h2>Open now <span class="window-meta">@_open.Count session@(_open.Count == 1 ? "" : "s")</span></h2>
         <div class="closed-controls">
             <label class="closed-control"><input type="checkbox" id="open-check-all" onchange="narniaToggleAllOpen(this)" /> Select all</label>
-            <button class="btn-bulk-group" id="btn-save-open-session-group" onclick="narniaSaveOpenAsSessionGroup(this)" disabled>💾 Save selected as Session Group (0)</button>
+            <button class="btn-bulk-collection"
+                    id="btn-add-open-to-collection"
+                    onclick="narniaAddOpenToCollection(this)"
+                    disabled>
+                🗂️ Add selected to Collection (0)
+            </button>
         </div>
     </div>
     <div class="window-card">
@@ -123,7 +133,7 @@
                     }
                     @if (!isClosed)
                     {
-                        <a class="btn-refresh" href="/processes?q=@record.TerminalProcessId"
+                        <a class="btn-refresh" href="/runtime/processes?q=@record.TerminalProcessId"
                            title="Inspect this Windows Terminal process and its child processes">
                             PID @record.TerminalProcessId
                         </a>

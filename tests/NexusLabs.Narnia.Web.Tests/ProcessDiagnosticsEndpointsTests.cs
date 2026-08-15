@@ -39,7 +39,7 @@ public sealed class ProcessDiagnosticsEndpointsTests
             .ReturnsAsync(Snapshot());
         var client = factory.CreateClient();
 
-        var html = await client.GetStringAsync("/processes?q=59524", Ct);
+        var html = await client.GetStringAsync("/runtime/processes?q=59524", Ct);
 
         Assert.Contains("PitCrew release", html, StringComparison.Ordinal);
         Assert.Contains("PID 59524", html, StringComparison.Ordinal);
@@ -54,7 +54,7 @@ public sealed class ProcessDiagnosticsEndpointsTests
         using var factory = new NarniaWebAppFactory();
         var client = factory.CreateClient();
 
-        var html = await client.GetStringAsync("/processes", Ct);
+        var html = await client.GetStringAsync("/runtime/processes", Ct);
 
         Assert.Contains("Process diagnostics unavailable", html, StringComparison.Ordinal);
         Assert.Contains("Diagnostics are disabled in tests.", html, StringComparison.Ordinal);
@@ -86,7 +86,7 @@ public sealed class ProcessDiagnosticsEndpointsTests
     }
 
     [Theory]
-    [InlineData("/processes")]
+    [InlineData("/runtime/processes")]
     [InlineData("/api/processes")]
     public async Task ProcessDiagnostics_RejectsNonLoopbackHost(string path)
     {

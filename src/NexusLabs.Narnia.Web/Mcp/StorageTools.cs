@@ -46,7 +46,7 @@ internal sealed class StorageTools(
     [Description("Dry-runs local session deletion. Returns allowed, protected, and hard-blocked sessions plus estimated logical bytes. No data is deleted.")]
     public async Task<string> PreviewLocalSessionCleanupAsync(
         [Description("Copilot session IDs to validate.")] string[] sessionIds,
-        [Description("Whether Narnia favorites, aliases, Collections, Session Groups, and user-assigned names may be overridden.")] bool overrideProtections,
+        [Description("Whether Narnia favorites, aliases, Collections, and user-assigned names may be overridden.")] bool overrideProtections,
         CancellationToken cancellationToken)
     {
         var preview = await cleanupService.PreviewAsync(

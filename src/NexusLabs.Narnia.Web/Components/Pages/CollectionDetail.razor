@@ -26,6 +26,17 @@ else if (_collection is not null)
             </p>
         </div>
         <div class="closed-controls">
+            <label class="closed-control"
+                   title="Off: open the collection as tabs in one window. On: open each session in its own window.">
+                <input type="checkbox"
+                       id="collection-separate-windows-@_collection.Id" />
+                Separate windows
+            </label>
+            <button class="launch-btn"
+                    disabled="@(_collection.Members.Count == 0)"
+                    onclick="narniaLaunchCollection('@_collection.Id', this)">
+                🚀 Open collection
+            </button>
             <a class="btn-refresh" href="/sessions">Browse Sessions</a>
             <button class="btn-refresh"
                     data-name="@_collection.Name"
@@ -119,12 +130,14 @@ else if (_collection is not null)
             <span id="collection-member-count">0 selected</span>
             <button class="btn-bulk-launch"
                     onclick="narniaLaunchSelectedCollectionSessions(this)">
-                🚀 Launch Selected
+                🚀 Open Selected
             </button>
-            <button class="btn-bulk-group"
-                    onclick="narniaSaveSelectedCollectionSessionsAsSessionGroup(this)">
-                💾 Save as Session Group
-            </button>
+            <label class="closed-control"
+                   title="Off: open selected sessions as tabs in one window. On: open each session in its own window.">
+                <input type="checkbox"
+                       id="collection-selected-separate-windows" />
+                Separate windows
+            </label>
             <button class="btn-bulk-archive"
                     onclick="narniaRemoveSelectedCollectionSessions('@_collection.Id', this)">
                 Remove from Collection

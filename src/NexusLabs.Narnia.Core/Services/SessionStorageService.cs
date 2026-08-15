@@ -8,7 +8,6 @@ public sealed class SessionStorageService(
     ISessionStorageRepository storageRepository,
     ISessionStorageMetadataSource metadataSource,
     ISessionOverridesRepository overridesRepository,
-    ISessionGroupsRepository groupsRepository,
     IWorkCollectionsRepository collectionsRepository,
     ISessionMigrationRepository migrationRepository,
     ICopilotSessionActivityReader activityReader) : ISessionStorageService
@@ -19,7 +18,6 @@ public sealed class SessionStorageService(
         var storageTask = storageRepository.GetCurrentAsync(ct).AsTask();
         var sessionsTask = metadataSource.ListAsync(ct).AsTask();
         var overridesTask = overridesRepository.GetAllOverridesAsync(ct).AsTask();
-        var groupsTask = groupsRepository.GetAllAsync(ct).AsTask();
         var collectionsTask = collectionsRepository.GetAllAsync(ct).AsTask();
         var recoverySourcesTask = migrationRepository.GetRecoveryProtectedSessionIdsAsync(ct).AsTask();
         var historyTask = storageRepository.GetDailyAsync(90, ct).AsTask();
@@ -29,7 +27,6 @@ public sealed class SessionStorageService(
             storageTask,
             sessionsTask,
             overridesTask,
-            groupsTask,
             collectionsTask,
             recoverySourcesTask,
             historyTask,
@@ -39,10 +36,6 @@ public sealed class SessionStorageService(
         var storage = await storageTask;
         var sessions = await sessionsTask;
         var savedOverrides = await overridesTask;
-        var groupedSessionIds = (await groupsTask)
-            .SelectMany(group => group.Members)
-            .Select(member => member.SessionId)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var collectedSessionIds = (await collectionsTask)
             .SelectMany(collection => collection.Members)
             .Select(member => member.SessionId)
@@ -67,7 +60,6 @@ public sealed class SessionStorageService(
             sessionsById.TryGetValue(sessionId, out var session);
             storageById.TryGetValue(sessionId, out var record);
             savedOverrides.TryGetValue(sessionId, out var savedOverride);
-            var inGroup = groupedSessionIds.Contains(sessionId);
             var inCollection = collectedSessionIds.Contains(sessionId);
             var hasNarniaMetadata =
                 !string.IsNullOrWhiteSpace(savedOverride?.DisplayName) ||
@@ -76,7 +68,6 @@ public sealed class SessionStorageService(
                 savedOverride?.IsFavorite == true,
                 record?.IsUserNamed == true,
                 hasNarniaMetadata,
-                inGroup,
                 inCollection,
                 recoveryProtectedSessionIds.Contains(sessionId));
 
@@ -97,7 +88,7 @@ public sealed class SessionStorageService(
                 IsFavorite = savedOverride?.IsFavorite == true,
                 IsArchived = savedOverride?.IsArchived == true,
                 HasNarniaMetadata = hasNarniaMetadata,
-                IsInSessionGroup = inGroup,
+                IsInSessionGroup = false,
                 IsInCollection = inCollection,
                 ProtectionReasons = protections,
             });
@@ -139,7 +130,6 @@ public sealed class SessionStorageService(
         bool favorite,
         bool isUserNamed,
         bool hasNarniaMetadata,
-        bool inGroup,
         bool inCollection,
         bool isRecoveryProtected)
     {
@@ -150,8 +140,6 @@ public sealed class SessionStorageService(
             reasons.Add("Named by you in Copilot");
         if (hasNarniaMetadata)
             reasons.Add("Narnia alias or notes");
-        if (inGroup)
-            reasons.Add("Session Group member");
         if (inCollection)
             reasons.Add("Collection member");
         if (isRecoveryProtected)

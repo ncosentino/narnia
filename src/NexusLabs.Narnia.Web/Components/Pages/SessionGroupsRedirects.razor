@@ -1,0 +1,10 @@
+@page "/session-groups"
+@page "/groups"
+@inject NavigationManager Navigation
+
+@code {
+    protected override void OnInitialized()
+    {
+        Navigation.NavigateTo("/collections?from=session-groups", replace: true);
+    }
+}

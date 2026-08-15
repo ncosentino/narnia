@@ -100,7 +100,7 @@ public sealed record SessionStorageItem
     /// <summary>Gets whether Narnia stores an alias or notes for the session.</summary>
     public required bool HasNarniaMetadata { get; init; }
 
-    /// <summary>Gets whether the session belongs to a Session Group.</summary>
+    /// <summary>Gets a legacy compatibility value that current Narnia always sets to false.</summary>
     public required bool IsInSessionGroup { get; init; }
 
     /// <summary>Gets whether the session belongs to a Collection.</summary>

@@ -232,8 +232,20 @@ app.UseAntiforgery();
 // Legitimate clients use a loopback Host and are unaffected.
 app.Use(async (context, next) =>
 {
+    if (context.Request.Path.StartsWithSegments("/api/session-groups") ||
+        context.Request.Path.StartsWithSegments("/api/groups"))
+    {
+        context.Response.StatusCode = StatusCodes.Status410Gone;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            message = "Session Groups have been retired. Use Collections instead.",
+        });
+        return;
+    }
+
     var requiresLoopbackHost =
         context.Request.Path.StartsWithSegments("/mcp") ||
+        context.Request.Path.StartsWithSegments("/runtime") ||
         context.Request.Path.StartsWithSegments("/processes") ||
         context.Request.Path.StartsWithSegments("/api/processes");
     if (requiresLoopbackHost)
@@ -453,70 +465,17 @@ app.MapPost("/api/launch-bulk", async (
     if (request.SessionIds.Length > 20)
         return Results.BadRequest("Maximum 20 sessions per bulk launch");
 
-    var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
-    if (string.IsNullOrWhiteSpace(shellPath))
-        return Results.BadRequest("No shell configured. Go to Settings to configure one.");
-    var copilotCommand =
-        await settingsRepo.GetAsync(CopilotSettingKeys.Command, ct) ??
-        CopilotSettingKeys.DefaultCommand;
-
-    var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
-
-    var tabs = new List<TerminalLaunchTab>();
-    var failed = new List<object>();
-
-    foreach (var sid in request.SessionIds)
-    {
-        if (!Guid.TryParse(sid, out _))
-        {
-            failed.Add(new { sessionId = sid, reason = "Invalid session ID format" });
-            continue;
-        }
-
-        var session = await sessionRepo.GetByIdAsync(sid, ct);
-        if (session is null)
-        {
-            failed.Add(new { sessionId = sid, reason = "Session not found" });
-            continue;
-        }
-
-        var ov = await overridesRepo.GetOverrideAsync(sid, ct);
-        var workspace = workspaceReader.ReadWorkspace(sid);
-
-        // "bestAvailable" resolution: localPath → cwd → gitRoot
-        string? directory = null;
-        if (ov?.LocalPath is not null && Directory.Exists(ov.LocalPath))
-            directory = ov.LocalPath;
-        else if (session.Cwd is not null && Directory.Exists(session.Cwd))
-            directory = session.Cwd;
-        else
-        {
-            var gitRoot = workspace?.GitRoot ?? session.GitRoot;
-            if (gitRoot is not null && Directory.Exists(gitRoot))
-                directory = gitRoot;
-        }
-
-        var title = ov?.TerminalTitle ?? session.Summary ?? $"Narnia: {ShortSession(sid)}";
-        tabs.Add(new TerminalLaunchTab(sid, title, directory));
-    }
-
-    var mode = request.SeparateWindows
-        ? TerminalWindowMode.SeparateWindows
-        : TerminalWindowMode.SingleWindow;
-
-    if (!request.Force && tabs.Count > 0)
-    {
-        var collisions = await collisionDetector.DetectAsync(tabs, ct);
-        if (collisions.Count > 0)
-            return DescribeCollisions(collisions);
-    }
-
-    var outcome = launcher.Launch(shellPath, shellName, tabs, mode, copilotCommand);
-
-    var launched = outcome.LaunchedSessionIds.Select(id => new { sessionId = id }).ToList();
-    failed.AddRange(outcome.Failures.Select(f => new { sessionId = f.SessionId, reason = f.Reason }));
-
-    return Results.Ok(new { launched, failed });
+    return await LaunchSessionIdsAsync(
+        request.SessionIds,
+        request.SeparateWindows,
+        request.Force,
+        sessionRepo,
+        overridesRepo,
+        workspaceReader,
+        settingsRepo,
+        launcher,
+        collisionDetector,
+        ct);
 });
 
 // ── Terminal windows (recovery console) API ─────────────────────────────────
@@ -691,169 +650,39 @@ app.MapDelete("/api/windows/{id}", async (
     return Results.NoContent();
 });
 
-// ── Session groups API ──────────────────────────────────────────────────────
-MapSessionGroupsApi("/api/session-groups");
-MapSessionGroupsApi("/api/groups");
 app.MapWorkCollectionsEndpoints();
+app.MapPost("/api/collections/{id}/open", async (
+    string id,
+    CollectionOpenRequest request,
+    IWorkCollectionsRepository collectionsRepo,
+    ISessionRepository sessionRepo,
+    ISessionOverridesRepository overridesRepo,
+    IWorkspaceReader workspaceReader,
+    INarniaSettingsRepository settingsRepo,
+    ITerminalLauncher launcher,
+    ILaunchCollisionDetector collisionDetector,
+    CancellationToken ct) =>
+{
+    var collection = await collectionsRepo.GetByIdAsync(id, ct);
+    if (collection is null)
+        return Results.NotFound("Collection not found");
+    if (collection.Members.Count == 0)
+        return Results.BadRequest("Collection has no sessions to open.");
+
+    return await LaunchSessionIdsAsync(
+        collection.Members.Select(member => member.SessionId).ToArray(),
+        request.SeparateWindows,
+        request.Force,
+        sessionRepo,
+        overridesRepo,
+        workspaceReader,
+        settingsRepo,
+        launcher,
+        collisionDetector,
+        ct);
+});
 app.MapStorageEndpoints();
 app.MapSessionMigrationEndpoints();
-
-void MapSessionGroupsApi(string routePrefix)
-{
-    app.MapGet(routePrefix, async (
-        ISessionGroupsRepository groupsRepo,
-        ISessionRepository sessionRepo,
-        CancellationToken ct) =>
-    {
-        var groups = await groupsRepo.GetAllAsync(ct);
-        var sessionIds = groups
-            .SelectMany(group => group.Members)
-            .Select(member => member.SessionId)
-            .ToArray();
-        var sessionsById = await sessionRepo.GetByIdsAsync(sessionIds, ct);
-
-        var projected = new List<object>(groups.Count);
-        foreach (var group in groups)
-        {
-            var members = new List<object>(group.Members.Count);
-            foreach (var member in group.Members)
-            {
-                sessionsById.TryGetValue(member.SessionId, out var session);
-                members.Add(new
-                {
-                    sessionId = member.SessionId,
-                    order = member.MemberOrder,
-                    summary = session?.Summary,
-                    repository = session?.Repository,
-                    branch = session?.Branch,
-                });
-            }
-
-            projected.Add(new
-            {
-                id = group.Id,
-                name = group.Name,
-                createdAt = group.CreatedAt,
-                updatedAt = group.UpdatedAt,
-                members,
-            });
-        }
-
-        return Results.Ok(new { groups = projected });
-    });
-
-    app.MapPost(routePrefix, async (
-        SessionGroupCreateRequest request,
-        ISessionGroupsRepository groupsRepo,
-        CancellationToken ct) =>
-    {
-        var name = request.Name?.Trim();
-        if (string.IsNullOrWhiteSpace(name))
-            return Results.BadRequest("A session group name is required.");
-        if (request.SessionIds is not { Length: > 0 })
-            return Results.BadRequest("Select at least one session for the session group.");
-
-        var group = await groupsRepo.CreateAsync(name, request.SessionIds, DateTimeOffset.UtcNow, ct);
-        return Results.Ok(new { id = group.Id, name = group.Name, count = group.Members.Count });
-    });
-
-    app.MapPost($"{routePrefix}/{{id}}/rename", async (
-        string id,
-        SessionGroupRenameRequest request,
-        ISessionGroupsRepository groupsRepo,
-        CancellationToken ct) =>
-    {
-        var name = request.Name?.Trim();
-        if (string.IsNullOrWhiteSpace(name))
-            return Results.BadRequest("A session group name is required.");
-
-        var group = await groupsRepo.GetByIdAsync(id, ct);
-        if (group is null)
-            return Results.NotFound("Session group not found");
-
-        await groupsRepo.RenameAsync(id, name, DateTimeOffset.UtcNow, ct);
-        return Results.Ok(new { id, name });
-    });
-
-    app.MapPost($"{routePrefix}/{{id}}/members", async (
-        string id,
-        SessionGroupMembersRequest request,
-        ISessionGroupsRepository groupsRepo,
-        CancellationToken ct) =>
-    {
-        if (request.SessionIds is not { Length: > 0 })
-            return Results.BadRequest("Select at least one session for the session group.");
-
-        var group = await groupsRepo.GetByIdAsync(id, ct);
-        if (group is null)
-            return Results.NotFound("Session group not found");
-
-        await groupsRepo.SetMembersAsync(id, request.SessionIds, DateTimeOffset.UtcNow, ct);
-        return Results.Ok(new { id, count = request.SessionIds.Length });
-    });
-
-    app.MapDelete($"{routePrefix}/{{id}}", async (
-        string id,
-        ISessionGroupsRepository groupsRepo,
-        CancellationToken ct) =>
-    {
-        await groupsRepo.DeleteAsync(id, ct);
-        return Results.NoContent();
-    });
-
-    app.MapPost($"{routePrefix}/{{id}}/reopen", async (
-        string id,
-        SessionGroupReopenRequest request,
-        ISessionGroupsRepository groupsRepo,
-        ISessionRepository sessionRepo,
-        ISessionOverridesRepository overridesRepo,
-        IWorkspaceReader workspaceReader,
-        INarniaSettingsRepository settingsRepo,
-        ITerminalLauncher launcher,
-        CancellationToken ct) =>
-    {
-        var group = await groupsRepo.GetByIdAsync(id, ct);
-        if (group is null)
-            return Results.NotFound("Session group not found");
-        if (group.Members.Count == 0)
-            return Results.BadRequest("Session group has no sessions to reopen.");
-
-        var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
-        if (string.IsNullOrWhiteSpace(shellPath))
-            return Results.BadRequest("No shell configured. Go to Settings to configure one.");
-        var copilotCommand =
-            await settingsRepo.GetAsync(CopilotSettingKeys.Command, ct) ??
-            CopilotSettingKeys.DefaultCommand;
-        var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
-
-        var launchTabs = new List<TerminalLaunchTab>(group.Members.Count);
-        foreach (var member in group.Members.OrderBy(member => member.MemberOrder))
-        {
-            launchTabs.Add(await BuildLaunchTabAsync(
-                member.SessionId,
-                null,
-                sessionRepo,
-                overridesRepo,
-                workspaceReader,
-                ct));
-        }
-
-        var mode = request.SeparateWindows
-            ? TerminalWindowMode.SeparateWindows
-            : TerminalWindowMode.SingleWindow;
-        var outcome = launcher.Launch(shellPath, shellName, launchTabs, mode, copilotCommand);
-
-        return Results.Ok(new
-        {
-            reopened = outcome.LaunchedSessionIds.Count,
-            failed = outcome.Failures.Select(failure => new
-            {
-                sessionId = failure.SessionId,
-                reason = failure.Reason,
-            }).ToList(),
-        });
-    });
-}
 
 // ── Scheduled jobs registry API ─────────────────────────────────────────────
 app.MapGet("/api/schedules", async (
@@ -1236,6 +1065,76 @@ static string? ResolveReopenDirectory(
     return null;
 }
 
+static async Task<IResult> LaunchSessionIdsAsync(
+    IReadOnlyList<string> sessionIds,
+    bool separateWindows,
+    bool force,
+    ISessionRepository sessionRepo,
+    ISessionOverridesRepository overridesRepo,
+    IWorkspaceReader workspaceReader,
+    INarniaSettingsRepository settingsRepo,
+    ITerminalLauncher launcher,
+    ILaunchCollisionDetector collisionDetector,
+    CancellationToken ct)
+{
+    var shellPath = await settingsRepo.GetAsync("shell_path", ct) ?? DetectDefaultShell();
+    if (string.IsNullOrWhiteSpace(shellPath))
+        return Results.BadRequest("No shell configured. Go to Settings to configure one.");
+    var copilotCommand =
+        await settingsRepo.GetAsync(CopilotSettingKeys.Command, ct) ??
+        CopilotSettingKeys.DefaultCommand;
+    var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
+    var tabs = new List<TerminalLaunchTab>(sessionIds.Count);
+    var failed = new List<object>();
+
+    foreach (var sessionId in sessionIds)
+    {
+        if (!Guid.TryParse(sessionId, out _))
+        {
+            failed.Add(new { sessionId, reason = "Invalid session ID format" });
+            continue;
+        }
+
+        var session = await sessionRepo.GetByIdAsync(sessionId, ct);
+        if (session is null)
+        {
+            failed.Add(new { sessionId, reason = "Session not found" });
+            continue;
+        }
+
+        var sessionOverride = await overridesRepo.GetOverrideAsync(sessionId, ct);
+        var workspace = workspaceReader.ReadWorkspace(sessionId);
+        var directory = ResolveReopenDirectory(null, sessionOverride, session, workspace);
+        var title =
+            sessionOverride?.TerminalTitle ??
+            session.Summary ??
+            $"Narnia: {ShortSession(sessionId)}";
+        tabs.Add(new TerminalLaunchTab(sessionId, title, directory));
+    }
+
+    if (!force && tabs.Count > 0)
+    {
+        var collisions = await collisionDetector.DetectAsync(tabs, ct);
+        if (collisions.Count > 0)
+            return DescribeCollisions(collisions);
+    }
+
+    var mode = separateWindows
+        ? TerminalWindowMode.SeparateWindows
+        : TerminalWindowMode.SingleWindow;
+    var outcome = launcher.Launch(shellPath, shellName, tabs, mode, copilotCommand);
+    var launched = outcome.LaunchedSessionIds
+        .Select(id => new { sessionId = id })
+        .ToList();
+    failed.AddRange(outcome.Failures.Select(failure => new
+    {
+        sessionId = failure.SessionId,
+        reason = failure.Reason,
+    }));
+
+    return Results.Ok(new { launched, failed });
+}
+
 // Resolves a recorded window's tabs into launch tabs (directory + title per session), shared by the
 // single-window reopen and the multi-select reopen so both resolve identically.
 static async Task<List<TerminalLaunchTab>> BuildReopenTabsAsync(
@@ -1255,10 +1154,8 @@ static async Task<List<TerminalLaunchTab>> BuildReopenTabsAsync(
     return launchTabs;
 }
 
-// Resolves a single session id into a launch tab (directory + title), shared by window reopen and
-// session-group reopen. A captured directory (when a window recorded one) takes precedence;
-// otherwise the directory falls back to the session override's local path, the session cwd, then
-// the git root.
+// A captured directory takes precedence when reopening a recorded window; otherwise the directory
+// falls back to the session override's local path, the session cwd, then the git root.
 static async Task<TerminalLaunchTab> BuildLaunchTabAsync(
     string sessionId,
     string? capturedDirectory,
@@ -1293,13 +1190,9 @@ internal sealed record LaunchRequest(string SessionId, string Target, bool Force
 
 internal sealed record BulkLaunchRequest(string[] SessionIds, bool SeparateWindows = false, bool Force = false);
 internal sealed record BulkReopenRequest(string[] Ids, bool SeparateWindows = false);
+internal sealed record CollectionOpenRequest(bool SeparateWindows = false, bool Force = false);
 
 internal sealed record WindowNameRequest(string? Name, bool? Pinned);
-
-internal sealed record SessionGroupCreateRequest(string? Name, string[] SessionIds);
-internal sealed record SessionGroupRenameRequest(string? Name);
-internal sealed record SessionGroupMembersRequest(string[] SessionIds);
-internal sealed record SessionGroupReopenRequest(bool SeparateWindows = false);
 
 internal sealed record ScheduleCreateRequest(
     string Name,

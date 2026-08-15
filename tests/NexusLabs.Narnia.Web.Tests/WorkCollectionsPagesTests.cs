@@ -24,6 +24,10 @@ public sealed class WorkCollectionsPagesTests
         var html = await factory.CreateClient().GetStringAsync("/collections", Ct);
 
         Assert.Contains($"""href="/collections/{collection.Id}">BrandGhost</a>""", html);
+        Assert.Contains(
+            $"onclick=\"narniaLaunchCollection('{collection.Id}', this)\"",
+            html);
+        Assert.DoesNotContain("Session Groups", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -62,7 +66,9 @@ public sealed class WorkCollectionsPagesTests
             "onclick=\"narniaLaunchSelectedCollectionSessions(this)\"",
             html);
         Assert.Contains(
-            "onclick=\"narniaSaveSelectedCollectionSessionsAsSessionGroup(this)\"",
+            $"onclick=\"narniaLaunchCollection('{collection.Id}', this)\"",
             html);
+        Assert.Contains("id=\"collection-selected-separate-windows\"", html);
+        Assert.DoesNotContain("Save as Session Group", html, StringComparison.Ordinal);
     }
 }

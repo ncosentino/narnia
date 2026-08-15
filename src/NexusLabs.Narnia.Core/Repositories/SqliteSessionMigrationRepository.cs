@@ -72,7 +72,7 @@ public sealed class SqliteSessionMigrationRepository(NarniaOptions options)
                       AND notes IS NOT NULL
                       AND TRIM(notes) <> ''),
                 (SELECT COUNT(*) FROM work_collection_sessions WHERE session_id = @sessionId),
-                (SELECT COUNT(*) FROM session_group_members WHERE session_id = @sessionId),
+                0,
                 (SELECT COUNT(*) FROM terminal_window_tabs WHERE session_id = @sessionId)
             """;
         command.Parameters.AddWithValue("@sessionId", sourceSessionId);
@@ -201,12 +201,6 @@ public sealed class SqliteSessionMigrationRepository(NarniaOptions options)
                 migration,
                 completedAt,
                 ct);
-            await ReplaceSessionGroupMembersAsync(
-                connection,
-                transaction,
-                migration,
-                completedAt,
-                ct);
             await ReplaceWindowTabsAsync(connection, transaction, migration, ct);
             await RefreshCompositionKeysAsync(
                 connection,
@@ -266,12 +260,6 @@ public sealed class SqliteSessionMigrationRepository(NarniaOptions options)
                 connection,
                 transaction,
                 migration.ReplacementSessionId,
-                updatedAt,
-                ct);
-            await RestoreSessionGroupMembersAsync(
-                connection,
-                transaction,
-                migration,
                 updatedAt,
                 ct);
             var affectedWindowIds = await GetWindowIdsAsync(
@@ -510,118 +498,6 @@ public sealed class SqliteSessionMigrationRepository(NarniaOptions options)
             "DELETE FROM work_collection_sessions WHERE session_id = @replacement";
         remove.Parameters.AddWithValue("@replacement", replacementSessionId);
         await remove.ExecuteNonQueryAsync(ct);
-    }
-
-    private static async ValueTask ReplaceSessionGroupMembersAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        SessionMigration migration,
-        DateTimeOffset now,
-        CancellationToken ct)
-    {
-        await using (var removeDuplicates = connection.CreateCommand())
-        {
-            removeDuplicates.Transaction = transaction;
-            removeDuplicates.CommandText =
-                """
-                DELETE FROM session_group_members
-                WHERE session_id = @source
-                  AND group_id IN (
-                      SELECT group_id
-                      FROM session_group_members
-                      WHERE session_id = @replacement)
-                """;
-            removeDuplicates.Parameters.AddWithValue("@source", migration.SourceSessionId);
-            removeDuplicates.Parameters.AddWithValue(
-                "@replacement",
-                migration.ReplacementSessionId);
-            await removeDuplicates.ExecuteNonQueryAsync(ct);
-        }
-
-        await using (var replace = connection.CreateCommand())
-        {
-            replace.Transaction = transaction;
-            replace.CommandText =
-                """
-                UPDATE session_group_members
-                SET session_id = @replacement
-                WHERE session_id = @source
-                """;
-            replace.Parameters.AddWithValue("@source", migration.SourceSessionId);
-            replace.Parameters.AddWithValue("@replacement", migration.ReplacementSessionId);
-            await replace.ExecuteNonQueryAsync(ct);
-        }
-
-        await using var touch = connection.CreateCommand();
-        touch.Transaction = transaction;
-        touch.CommandText =
-            """
-            UPDATE session_groups
-            SET updated_at = @now
-            WHERE id IN (
-                SELECT group_id
-                FROM session_group_members
-                WHERE session_id = @replacement)
-            """;
-        touch.Parameters.AddWithValue("@replacement", migration.ReplacementSessionId);
-        touch.Parameters.AddWithValue("@now", now.ToString("o"));
-        await touch.ExecuteNonQueryAsync(ct);
-    }
-
-    private static async ValueTask RestoreSessionGroupMembersAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        SessionMigration migration,
-        DateTimeOffset now,
-        CancellationToken ct)
-    {
-        await using (var removeDuplicates = connection.CreateCommand())
-        {
-            removeDuplicates.Transaction = transaction;
-            removeDuplicates.CommandText =
-                """
-                DELETE FROM session_group_members
-                WHERE session_id = @replacement
-                  AND group_id IN (
-                      SELECT group_id
-                      FROM session_group_members
-                      WHERE session_id = @source)
-                """;
-            removeDuplicates.Parameters.AddWithValue("@source", migration.SourceSessionId);
-            removeDuplicates.Parameters.AddWithValue(
-                "@replacement",
-                migration.ReplacementSessionId);
-            await removeDuplicates.ExecuteNonQueryAsync(ct);
-        }
-
-        await using (var restore = connection.CreateCommand())
-        {
-            restore.Transaction = transaction;
-            restore.CommandText =
-                """
-                UPDATE session_group_members
-                SET session_id = @source
-                WHERE session_id = @replacement
-                """;
-            restore.Parameters.AddWithValue("@source", migration.SourceSessionId);
-            restore.Parameters.AddWithValue("@replacement", migration.ReplacementSessionId);
-            await restore.ExecuteNonQueryAsync(ct);
-        }
-
-        await using var touch = connection.CreateCommand();
-        touch.Transaction = transaction;
-        touch.CommandText =
-            """
-            UPDATE session_groups
-            SET updated_at = @now
-            WHERE id IN (
-                SELECT group_id
-                FROM session_group_members
-                WHERE session_id = @source)
-            """;
-        touch.Parameters.AddWithValue("@source", migration.SourceSessionId);
-        touch.Parameters.AddWithValue("@now", now.ToString("o"));
-        await touch.ExecuteNonQueryAsync(ct);
     }
 
     private static async ValueTask<IReadOnlyList<string>> GetWindowIdsAsync(

@@ -68,7 +68,7 @@ public interface ISessionMigrationRepository
 
     /// <summary>
     /// Atomically completes the migration, clones source overrides, adds Collection membership,
-    /// and replaces source references in Session Groups and saved windows.
+    /// and replaces source references in saved windows.
     /// </summary>
     /// <param name="migrationId">Narnia migration identifier.</param>
     /// <param name="completedAt">Completion timestamp.</param>

@@ -1,0 +1,30 @@
+<a href="@Href"
+   class="@CssClass"
+   aria-current="@AriaCurrent">
+    <span aria-hidden="true">@Icon</span>
+    <span>@Label</span>
+</a>
+
+@code {
+    /// <summary>Gets or sets the destination for this section view.</summary>
+    [Parameter, EditorRequired]
+    public string Href { get; set; } = "";
+
+    /// <summary>Gets or sets the decorative icon shown beside the label.</summary>
+    [Parameter]
+    public string Icon { get; set; } = "";
+
+    /// <summary>Gets or sets the visible view label.</summary>
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = "";
+
+    /// <summary>Gets or sets whether this view is currently selected.</summary>
+    [Parameter]
+    public bool Active { get; set; }
+
+    private string CssClass => Active
+        ? "section-nav-link section-nav-link--active"
+        : "section-nav-link";
+
+    private string? AriaCurrent => Active ? "page" : null;
+}

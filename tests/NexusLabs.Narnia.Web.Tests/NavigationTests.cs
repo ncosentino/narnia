@@ -29,9 +29,7 @@ public sealed class NavigationTests
             "Sessions",
             "Favorites",
             "Collections",
-            "Windows",
-            "Processes",
-            "Session Groups",
+            "Runtime",
             "Schedules",
             "Stats",
             "Remote Repositories",
@@ -68,6 +66,45 @@ public sealed class NavigationTests
             Assert.True(icon.Success);
             Assert.False(string.IsNullOrWhiteSpace(icon.Groups["value"].Value));
         }
+    }
+
+    [Theory]
+    [InlineData("/runtime/windows", "/runtime/windows")]
+    [InlineData("/runtime/processes", "/runtime/processes")]
+    public async Task RuntimeArea_LinksBothViewsAndMarksTheCurrentOne(
+        string route,
+        string activeHref)
+    {
+        using var factory = new NarniaWebAppFactory();
+        var client = factory.CreateClient();
+
+        var html = await client.GetStringAsync(route, TestContext.Current.CancellationToken);
+        var navMatch = Regex.Match(
+            html,
+            """<nav class="section-nav"[^>]*>(?<content>.*?)</nav>""",
+            RegexOptions.Singleline);
+        Assert.True(navMatch.Success);
+
+        var anchors = Regex.Matches(
+            navMatch.Groups["content"].Value,
+            """<a\b[^>]*>.*?</a>""",
+            RegexOptions.Singleline);
+        Assert.Equal(2, anchors.Count);
+        Assert.Contains(
+            anchors.Cast<System.Text.RegularExpressions.Match>(),
+            anchor => anchor.Value.Contains(
+                "href=\"/runtime/windows\"",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            anchors.Cast<System.Text.RegularExpressions.Match>(),
+            anchor => anchor.Value.Contains(
+                "href=\"/runtime/processes\"",
+                StringComparison.Ordinal));
+
+        var activeAnchor = Assert.Single(
+            anchors.Cast<System.Text.RegularExpressions.Match>(),
+            anchor => anchor.Value.Contains("aria-current=\"page\"", StringComparison.Ordinal));
+        Assert.Contains($"href=\"{activeHref}\"", activeAnchor.Value, StringComparison.Ordinal);
     }
 
     [Fact]

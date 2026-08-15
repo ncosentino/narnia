@@ -178,7 +178,7 @@ else if (_session is not null)
         <dt>Created</dt><dd>@_session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
         <dt>Updated</dt><dd>@_session.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</dd>
         <dt>Live Processes</dt>
-        <dd><a href="/processes?q=@Uri.EscapeDataString(_session.Id)">Locate runtime, terminal, and child PIDs</a></dd>
+        <dd><a href="/runtime/processes?q=@Uri.EscapeDataString(_session.Id)">Locate runtime, terminal, and child PIDs</a></dd>
         <dt>Local Storage</dt>
         <dd>
             @if (_storage is null)
@@ -490,8 +490,8 @@ else if (_session is not null)
                 </div>
                 <p>
                     Existing artifacts, workspace tasks, checkpoints, rewind snapshots, favorite,
-                    alias, notes, Collections, Session Groups, and saved windows remain attached to
-                    this same session.
+                    alias, notes, Collections, and saved windows remain attached to this same
+                    session.
                 </p>
                 @if (_migrationPreview.CanMigrate)
                 {

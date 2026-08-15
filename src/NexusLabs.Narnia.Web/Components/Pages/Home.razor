@@ -37,12 +37,12 @@ else
             <span class="dashboard-summary-label">Searchable sessions</span>
             <span class="dashboard-summary-detail">@_turnCount.ToString("N0") recorded turns</span>
         </a>
-        <a class="dashboard-summary-card" href="/windows">
+        <a class="dashboard-summary-card" href="/runtime/windows">
             <span class="dashboard-summary-value">@OpenTabCount</span>
             <span class="dashboard-summary-label">Open Copilot tabs</span>
             <span class="dashboard-summary-detail">Live recovery tracking</span>
         </a>
-        <a class="dashboard-summary-card" href="/windows">
+        <a class="dashboard-summary-card" href="/runtime/windows">
             <span class="dashboard-summary-value">@_windows.Closed.Count</span>
             <span class="dashboard-summary-label">Recoverable windows</span>
             <span class="dashboard-summary-detail">@Plural(ClosedTabCount, "tab") available to restore</span>
@@ -119,7 +119,7 @@ else
                     <h2>Recover recent windows</h2>
                     <p>Restore a lost Copilot window without finding each session manually.</p>
                 </div>
-                <a href="/windows">View recovery →</a>
+                <a href="/runtime/windows">View recovery →</a>
             </div>
 
             @if (_windows.Closed.Count == 0)

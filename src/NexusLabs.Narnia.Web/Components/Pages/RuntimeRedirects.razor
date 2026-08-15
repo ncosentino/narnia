@@ -1,0 +1,17 @@
+@page "/runtime"
+@page "/windows"
+@page "/processes"
+@inject NavigationManager Navigation
+
+@code {
+    protected override void OnInitialized()
+    {
+        var source = new Uri(Navigation.Uri);
+        var destination = source.AbsolutePath.Equals(
+            "/processes",
+            StringComparison.OrdinalIgnoreCase)
+                ? "/runtime/processes"
+                : "/runtime/windows";
+        Navigation.NavigateTo($"{destination}{source.Query}", replace: true);
+    }
+}

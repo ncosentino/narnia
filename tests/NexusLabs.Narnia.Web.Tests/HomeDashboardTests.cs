@@ -73,7 +73,7 @@ public sealed class HomeDashboardTests
         Assert.DoesNotContain("🗡️", html, StringComparison.Ordinal);
         Assert.Contains("action=\"/sessions\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"q\"", html, StringComparison.Ordinal);
-        Assert.Contains("href=\"/windows\"", html, StringComparison.Ordinal);
+        Assert.Contains("href=\"/runtime/windows\"", html, StringComparison.Ordinal);
         Assert.Contains("href=\"/favorites\"", html, StringComparison.Ordinal);
         Assert.Contains("href=\"/schedules\"", html, StringComparison.Ordinal);
         Assert.Contains("Wire the recovery panel.", html, StringComparison.Ordinal);

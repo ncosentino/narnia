@@ -18,8 +18,9 @@ The **Storage** page measures local session-state disk usage, growth, staleness,
 The previous recorded-path search remains available as a secondary file-activity audit.
 Session detail pages can recover incompatible history in place by retaining the same session ID and
 folder while Copilot reseeds only the active event stream.
-The **Processes** page maps live Copilot sessions to Copilot, shell, and Windows Terminal PIDs,
-with sampled CPU, private memory, and expandable child-process attribution.
+The **Runtime** area combines recoverable Windows Terminal observations with live process
+diagnostics. Its **Processes** view maps Copilot sessions to Copilot, shell, and Windows Terminal
+PIDs, with sampled CPU, private memory, and expandable child-process attribution.
 
 The supported prebuilt release is Windows x64. Narnia's defining recovery, scheduling, autostart,
 and terminal-launch features integrate with Windows Terminal, WMI, and Windows Task Scheduler.

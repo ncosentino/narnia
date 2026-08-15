@@ -72,11 +72,11 @@ public sealed class SqliteSessionMigrationRepositoryTests : IDisposable
             connection,
             "SELECT COUNT(*) FROM work_collection_sessions WHERE collection_id = 'collection-1' AND session_id = @id",
             ReplacementId));
-        Assert.Equal(0L, await ScalarAsync(
+        Assert.Equal(1L, await ScalarAsync(
             connection,
             "SELECT COUNT(*) FROM session_group_members WHERE group_id = 'group-1' AND session_id = @id",
             SourceId));
-        Assert.Equal(1L, await ScalarAsync(
+        Assert.Equal(0L, await ScalarAsync(
             connection,
             "SELECT COUNT(*) FROM session_group_members WHERE group_id = 'group-1' AND session_id = @id",
             ReplacementId));
@@ -145,7 +145,7 @@ public sealed class SqliteSessionMigrationRepositoryTests : IDisposable
         Assert.True(summary.HasAlias);
         Assert.True(summary.HasNotes);
         Assert.Equal(1, summary.CollectionCount);
-        Assert.Equal(1, summary.SessionGroupCount);
+        Assert.Equal(0, summary.SessionGroupCount);
         Assert.Equal(1, summary.SavedWindowCount);
     }
 

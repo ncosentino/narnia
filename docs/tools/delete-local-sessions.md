@@ -22,7 +22,7 @@ Returns one result per selected session plus deleted, archived, and estimated-by
 Failures and safety blocks do not prevent independent safe sessions from being processed.
 
 !!! warning "Local data only"
-    Synced GitHub copies and Narnia aliases, notes, Collections, and Session Group references remain.
+    Synced GitHub copies and Narnia aliases, notes, and Collections remain.
     Archiving only changes their default visibility in Narnia.
 
 ## Example Prompts

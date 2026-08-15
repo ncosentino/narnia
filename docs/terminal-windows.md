@@ -9,8 +9,8 @@ the wrong window, and an entire Windows Terminal full of Copilot tabs is gone.
 Narnia continuously records your open terminal windows of Copilot tabs so you can
 reopen the whole window in one click — like restoring a browser window.
 
-Open the **🪟 Windows** page in the web UI to see your open and recently-closed
-windows and reopen any of them.
+Open the **Windows** view under **Runtime** in the web UI to see your open and
+recently-closed windows and reopen any of them.
 
 ## How it works
 
@@ -41,13 +41,16 @@ non-Copilot tabs are never recorded.
 
 ## Reopening a window
 
-On the **🪟 Windows** page, each recently-closed window shows its tabs. Click
+On the Runtime area's **Windows** view, each recently-closed window shows its tabs. Click
 **🚀 Reopen** to relaunch the whole window as a single Windows Terminal window,
 one tab per session. Each tab resumes its Copilot session and opens in the
 captured starting directory (falling back to the session's preferred path, working
 directory, or git root when no directory was captured).
 
 Reopening is always manual — Narnia never relaunches a window automatically.
+
+Select open sessions and choose **Add selected to Collection** to preserve a useful live
+working set as a user-owned Collection rather than as another observed window record.
 
 ### Pinning and retention
 
