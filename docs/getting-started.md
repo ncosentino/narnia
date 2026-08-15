@@ -17,7 +17,10 @@ Tagged beta releases are published on the [GitHub Releases page](https://github.
 - `narnia-win-x64.zip`
 - `SHA256SUMS.txt`
 
-Verify the archive and extract it directly into Narnia's application directory:
+Verify the archive and install it into Narnia's application directory. If Narnia is already
+installed, stop the server first. Replace the directory rather than extracting over it: release
+builds are self-contained, while plugin/source builds are framework-dependent, and mixing their
+files produces an invalid deployment.
 
 ```powershell
 $expected = ((Get-Content .\SHA256SUMS.txt) -split '\s+')[0]
@@ -25,6 +28,9 @@ $actual = (Get-FileHash .\narnia-win-x64.zip -Algorithm SHA256).Hash.ToLowerInva
 if ($actual -ne $expected) { throw "Narnia release checksum mismatch." }
 
 $runDir = Join-Path $env:LOCALAPPDATA 'narnia\app'
+if (Test-Path -LiteralPath $runDir) {
+  Remove-Item -LiteralPath $runDir -Recurse -Force
+}
 New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 Expand-Archive .\narnia-win-x64.zip -DestinationPath $runDir -Force
 ```

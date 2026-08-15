@@ -41,10 +41,11 @@ unavailable and the run dir has never been populated, run **Start** once.
 
 ## Design invariants (read before acting)
 
-- **Run from a published copy, never in place.** The server is `dotnet publish`ed to a run
-  directory and launched from there — *not* `dotnet run` from the source tree. Because the
-  running process only locks the run directory, the source tree can be rebuilt or updated while
-  the server is running, and an update simply re-publishes after a clean stop.
+- **Run from a published copy, never in place.** The server is published into a staging directory,
+  then the complete run directory is replaced — never overlaid — before launch. This prevents
+  framework-dependent source builds and self-contained release builds from leaving incompatible
+  runtime files behind. Because the running process only locks the run directory, the source tree
+  can be rebuilt or updated while the server is running.
 - **The running server owns a run-state file.** On startup it writes
   `<LocalAppData>/narnia/web-server.json` (`Pid`, `Port`, `Url`, `Version`, `ExePath`,
   `StartedAt`) and deletes it on graceful shutdown. Read it to discover and control a server that
@@ -96,13 +97,14 @@ resolved `$NARNIA_ROOT`:
 $buildVersion = & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Get-NarniaBuildVersion.ps1" -Root $NARNIA_ROOT
 ```
 
-Then **always publish with the stamp** so `/health` (and the run-state file) report it verbatim:
+Then **always publish with the stamped, whole-directory replacement script** so `/health` (and the
+run-state file) report it verbatim and no files from an older deployment survive:
 
 ```powershell
-dotnet publish "$NARNIA_ROOT/src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" `
-  -c Release -o $runDir `
-  -p:IncludeSourceRevisionInInformationalVersion=false `
-  -p:InformationalVersion="$buildVersion"
+& "$NARNIA_ROOT/skills/narnia-web-server/scripts/Publish-NarniaServer.ps1" `
+  -Root $NARNIA_ROOT `
+  -RunDirectory $runDir `
+  -BuildVersion $buildVersion
 ```
 
 `IncludeSourceRevisionInInformationalVersion=false` stops the SDK appending its own git suffix so
@@ -135,17 +137,19 @@ type.
 1. **Status check first.** If `/health` returns 200, it is already running — report the URL (and
    open the browser if asked) and stop. Do not launch another instance.
 2. **Resolve source** → `$NARNIA_ROOT` (see above).
-3. **Publish to the run dir** (a frozen copy, decoupled from the source tree), stamped with a
-   build identity (see *Stamp a build identity*):
+3. **Publish and replace the run dir** using a clean staging directory, stamped with a build
+   identity (see *Stamp a build identity*):
    ```powershell
    $runDir = Join-Path $env:LOCALAPPDATA 'narnia\app'
    $buildVersion = & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Get-NarniaBuildVersion.ps1" -Root $NARNIA_ROOT
-   dotnet publish "$NARNIA_ROOT/src/NexusLabs.Narnia.Web/NexusLabs.Narnia.Web.csproj" `
-     -c Release -o $runDir `
-     -p:IncludeSourceRevisionInInformationalVersion=false `
-     -p:InformationalVersion="$buildVersion"
+   & "$NARNIA_ROOT/skills/narnia-web-server/scripts/Publish-NarniaServer.ps1" `
+     -Root $NARNIA_ROOT `
+     -RunDirectory $runDir `
+     -BuildVersion $buildVersion
    ```
-   If publish fails, show the full output to the user and stop.
+   The script publishes beside the active app, validates the staged output, swaps the whole
+   directory, and restores the prior deployment if the swap fails. If it fails, show the full
+   output to the user and stop.
 4. **Launch detached** from the run dir, bound to loopback so it survives the session:
    ```powershell
    # Windows
@@ -207,15 +211,16 @@ bundle this skill resolves. To roll a running server onto the current bundle:
    current" and stop. Because the build identity is content-derived, this works for **bundle
    installs too**, not just git checkouts.
 3. **Stop** (graceful) — releases any file lock on the run dir.
-4. **Re-publish** from `$NARNIA_ROOT` to the run dir **with the build-identity stamp** (see *Stamp a
-   build identity*); overwrites the previous copy, safe because the server is stopped.
+4. **Re-publish** from `$NARNIA_ROOT` with `Publish-NarniaServer.ps1` and the build-identity stamp.
+   It replaces the complete run directory, safe because the server is stopped.
 5. **Start**, then poll `/health` until it returns 200.
 6. **Report old → new version.** Read the new `version` from `/health` and report the transition
    (e.g. `0.1.0-dev+content.ab12cd34ef56 → 0.1.0-dev+content.99aa88bb77cc`). Because the identity
    is stamped, a real code change always shows a changed value, and an identical before/after
    genuinely means the code did not change.
 
-Never re-publish or rebuild into the run dir while the server is running — stop it first.
+Never publish directly over the run directory. Stop the server, publish to staging, and replace the
+complete directory through `Publish-NarniaServer.ps1`.
 
 ## Important notes
 

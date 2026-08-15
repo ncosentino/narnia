@@ -24,6 +24,9 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
     private const string LegacyRunSubKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string LegacyValueName = "Narnia";
     private const string ServerUrl = "http://127.0.0.1:5244";
+    private const string HiddenLauncherFileName = "start-server-hidden.vbs";
+    private const string ServerLauncherFileName = "start-server.ps1";
+    private const string StartupLogFileName = "autostart.log";
     private readonly IFileSystem _fileSystem;
     private readonly string _localAppData;
     private readonly string _userId;
@@ -108,9 +111,8 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
         {
             _removeTask();
             _clearLegacyRunValue();
-            var launcherPath = GetLauncherPath();
-            if (_fileSystem.File.Exists(launcherPath))
-                _fileSystem.File.Delete(launcherPath);
+            DeleteGeneratedFile(GetHiddenLauncherPath());
+            DeleteGeneratedFile(GetServerLauncherPath());
         });
     }
 
@@ -118,45 +120,66 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
     {
         var executablePath = ResolveServerExecutable();
         var workingDirectory = _fileSystem.Path.GetDirectoryName(executablePath)!;
-        var launcherPath = GetLauncherPath();
-        var launcherDirectory = _fileSystem.Path.GetDirectoryName(launcherPath)!;
-        var commandLine = $"\"{executablePath}\" --urls {ServerUrl}";
+        var assemblyPath = ResolvePublishedFile(
+            workingDirectory,
+            "NexusLabs.Narnia.Web.dll");
+        var runtimeConfigPath = ResolvePublishedFile(
+            workingDirectory,
+            "NexusLabs.Narnia.Web.runtimeconfig.json");
+        var hiddenLauncherPath = GetHiddenLauncherPath();
+        var serverLauncherPath = GetServerLauncherPath();
+        var launcherDirectory = _fileSystem.Path.GetDirectoryName(hiddenLauncherPath)!;
+        var startupLogPath = _fileSystem.Path.Combine(
+            _localAppData,
+            "narnia",
+            "logs",
+            StartupLogFileName);
+        var serverLauncher = BuildServerLauncher(
+            executablePath,
+            assemblyPath,
+            runtimeConfigPath,
+            startupLogPath);
+        var commandLine =
+            $"\"powershell.exe\" -NoProfile -NonInteractive -ExecutionPolicy Bypass " +
+            $"-File \"{serverLauncherPath}\"";
 
         // Waiting for the server keeps the task reported as Running for its lifetime and records
         // the real exit code, which is the signal the previous Run entry could never provide.
-        var launcher = HiddenProcessLauncherScript.Build(
+        var hiddenLauncher = HiddenProcessLauncherScript.Build(
             commandLine,
             workingDirectory,
             waitForExit: true);
 
         _fileSystem.Directory.CreateDirectory(launcherDirectory);
-        var previousLauncher = _fileSystem.File.Exists(launcherPath)
-            ? _fileSystem.File.ReadAllText(launcherPath)
+        var previousHiddenLauncher = _fileSystem.File.Exists(hiddenLauncherPath)
+            ? _fileSystem.File.ReadAllText(hiddenLauncherPath)
             : null;
-        AtomicTextFile.Write(
-            _fileSystem,
-            launcherPath,
-            launcher,
-            Encoding.Unicode);
+        var previousServerLauncher = _fileSystem.File.Exists(serverLauncherPath)
+            ? _fileSystem.File.ReadAllText(serverLauncherPath)
+            : null;
 
         try
         {
+            AtomicTextFile.Write(
+                _fileSystem,
+                serverLauncherPath,
+                serverLauncher,
+                Encoding.Unicode);
+            AtomicTextFile.Write(
+                _fileSystem,
+                hiddenLauncherPath,
+                hiddenLauncher,
+                Encoding.Unicode);
             _registerTask(LogonAutostartTask.BuildRegisterScript(
                 _userId,
                 "wscript.exe",
-                $"//B //Nologo \"{launcherPath}\"",
+                $"//B //Nologo \"{hiddenLauncherPath}\"",
                 workingDirectory));
         }
         catch
         {
-            if (previousLauncher is null)
-                _fileSystem.File.Delete(launcherPath);
-            else
-                AtomicTextFile.Write(
-                    _fileSystem,
-                    launcherPath,
-                    previousLauncher,
-                    Encoding.Unicode);
+            RestoreGeneratedFile(hiddenLauncherPath, previousHiddenLauncher);
+            RestoreGeneratedFile(serverLauncherPath, previousServerLauncher);
             throw;
         }
 
@@ -212,8 +235,112 @@ public sealed class WindowsLogonAutostartManager : ILogonAutostartManager
         return published;
     }
 
-    private string GetLauncherPath() =>
-        _fileSystem.Path.Combine(_localAppData, "narnia", "start-server-hidden.vbs");
+    private string ResolvePublishedFile(string workingDirectory, string fileName)
+    {
+        var path = _fileSystem.Path.Combine(workingDirectory, fileName);
+        if (!_fileSystem.File.Exists(path))
+        {
+            throw new InvalidOperationException(
+                $"The published Narnia server is incomplete: '{fileName}' was not found.");
+        }
+
+        return path;
+    }
+
+    private string GetHiddenLauncherPath() =>
+        _fileSystem.Path.Combine(_localAppData, "narnia", HiddenLauncherFileName);
+
+    private string GetServerLauncherPath() =>
+        _fileSystem.Path.Combine(_localAppData, "narnia", ServerLauncherFileName);
+
+    private void DeleteGeneratedFile(string path)
+    {
+        if (_fileSystem.File.Exists(path))
+            _fileSystem.File.Delete(path);
+    }
+
+    private void RestoreGeneratedFile(string path, string? previousContent)
+    {
+        if (previousContent is null)
+        {
+            DeleteGeneratedFile(path);
+            return;
+        }
+
+        AtomicTextFile.Write(
+            _fileSystem,
+            path,
+            previousContent,
+            Encoding.Unicode);
+    }
+
+    private static string BuildServerLauncher(
+        string executablePath,
+        string assemblyPath,
+        string runtimeConfigPath,
+        string startupLogPath) =>
+        $$"""
+        # Auto-generated by Narnia. Do not edit this file.
+        $ErrorActionPreference = 'Stop'
+        $executablePath = '{{EscapePowerShellLiteral(executablePath)}}'
+        $assemblyPath = '{{EscapePowerShellLiteral(assemblyPath)}}'
+        $runtimeConfigPath = '{{EscapePowerShellLiteral(runtimeConfigPath)}}'
+        $startupLogPath = '{{EscapePowerShellLiteral(startupLogPath)}}'
+        $serverUrl = '{{ServerUrl}}'
+
+        try {
+            if ((Invoke-WebRequest "$serverUrl/health" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) {
+                exit 0
+            }
+        }
+        catch {
+        }
+
+        try {
+            $runtimeOptions = (Get-Content -LiteralPath $runtimeConfigPath -Raw | ConvertFrom-Json).runtimeOptions
+            $frameworkDependent =
+                $null -ne $runtimeOptions.framework -or
+                $null -ne $runtimeOptions.frameworks
+            $deploymentKind = if ($frameworkDependent) { 'framework-dependent' } else { 'self-contained' }
+            $logDirectory = Split-Path -Parent $startupLogPath
+            New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+            "[$(Get-Date -Format o)] Starting Narnia ($deploymentKind)." |
+                Set-Content -LiteralPath $startupLogPath -Encoding UTF8
+
+            if ($frameworkDependent) {
+                $dotnetCommand = Get-Command dotnet.exe -ErrorAction SilentlyContinue
+                if ($null -ne $dotnetCommand) {
+                    $dotnetPath = $dotnetCommand.Source
+                }
+                else {
+                    $dotnetPath = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
+                    if (-not (Test-Path -LiteralPath $dotnetPath -PathType Leaf)) {
+                        throw 'A framework-dependent Narnia deployment requires dotnet.exe.'
+                    }
+                }
+
+                & $dotnetPath $assemblyPath '--urls' $serverUrl *>> $startupLogPath
+            }
+            else {
+                & $executablePath '--urls' $serverUrl *>> $startupLogPath
+            }
+
+            $exitCode = $LASTEXITCODE
+            "[$(Get-Date -Format o)] Narnia exited with code $exitCode." |
+                Add-Content -LiteralPath $startupLogPath -Encoding UTF8
+            exit $exitCode
+        }
+        catch {
+            $logDirectory = Split-Path -Parent $startupLogPath
+            New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+            "[$(Get-Date -Format o)] Narnia autostart failed.`r`n$($_ | Out-String)" |
+                Add-Content -LiteralPath $startupLogPath -Encoding UTF8
+            exit 1
+        }
+        """;
+
+    private static string EscapePowerShellLiteral(string value) =>
+        value.Replace("'", "''");
 
     private static string BuildMutationMutexName()
     {

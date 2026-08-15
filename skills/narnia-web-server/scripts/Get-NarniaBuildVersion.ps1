@@ -17,7 +17,7 @@
 
 .EXAMPLE
     $buildVersion = & ./Get-NarniaBuildVersion.ps1 -Root $NARNIA_ROOT
-    dotnet publish ... -p:InformationalVersion="$buildVersion"
+    ./Publish-NarniaServer.ps1 -Root $NARNIA_ROOT -RunDirectory $runDir -BuildVersion $buildVersion
 #>
 [CmdletBinding()]
 param(
