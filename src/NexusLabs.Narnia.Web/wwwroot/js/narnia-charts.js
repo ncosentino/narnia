@@ -459,13 +459,20 @@ async function narniaArchiveBulk() {
     }
 }
 
-async function narniaLaunchSessions(ids, btn) {
+async function narniaLaunchSessions(ids, btn, separateWindows) {
     if (ids.length === 0) return;
 
+    separateWindows = separateWindows === true;
+    return narniaRunLaunch(
+        btn,
+        function () { return narniaPostBulkLaunch(ids, false, separateWindows); });
+}
+
+async function narniaRunLaunch(btn, launchRequest) {
     var originalText = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Launching…'; }
     try {
-        var data = await narniaPostBulkLaunch(ids, false);
+        var data = await launchRequest();
         if (data === 'cancelled') {
             if (btn) { btn.textContent = originalText; btn.disabled = false; }
             return;
@@ -483,24 +490,47 @@ async function narniaLaunchSessions(ids, btn) {
         }, 3000);
         if (data.failed && data.failed.length > 0) alert(msg);
     } catch (e) {
-        alert('Bulk launch failed: ' + e.message);
+        alert('Launch failed: ' + e.message);
         if (btn) { btn.textContent = originalText; btn.disabled = false; }
     }
 }
 
 // Bulk equivalent of narniaPostLaunch. Returns the response body or 'cancelled'; throws otherwise.
-async function narniaPostBulkLaunch(ids, force) {
+async function narniaPostBulkLaunch(ids, force, separateWindows) {
     var resp = await fetch('/api/launch-bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionIds: ids, force: force }),
+        body: JSON.stringify({
+            sessionIds: ids,
+            separateWindows: separateWindows === true,
+            force: force,
+        }),
     });
     if (resp.ok) return await resp.json();
 
     var data = await resp.json().catch(function () { return null; });
     if (resp.status === 409 && !force && data && data.error === 'directory-collision') {
         if (!confirm(narniaCollisionPrompt(data))) return 'cancelled';
-        return await narniaPostBulkLaunch(ids, true);
+        return await narniaPostBulkLaunch(ids, true, separateWindows);
+    }
+    throw new Error(data?.message || data || 'HTTP ' + resp.status);
+}
+
+async function narniaPostCollectionLaunch(id, force, separateWindows) {
+    var resp = await fetch('/api/collections/' + encodeURIComponent(id) + '/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            separateWindows: separateWindows === true,
+            force: force,
+        }),
+    });
+    if (resp.ok) return await resp.json();
+
+    var data = await resp.json().catch(function () { return null; });
+    if (resp.status === 409 && !force && data && data.error === 'directory-collision') {
+        if (!confirm(narniaCollisionPrompt(data))) return 'cancelled';
+        return await narniaPostCollectionLaunch(id, true, separateWindows);
     }
     throw new Error(data?.message || data || 'HTTP ' + resp.status);
 }
@@ -968,46 +998,6 @@ async function narniaDeleteWindow(id) {
     }
 }
 
-// ── Session groups ───────────────────────────────────────────────────────────
-async function narniaCreateSessionGroup(sessionIds, btn) {
-    if (!sessionIds || sessionIds.length === 0) return;
-    var name = prompt('Name this Session Group (' + sessionIds.length + ' session' + (sessionIds.length === 1 ? '' : 's') + '):', '');
-    if (name === null) return;
-    name = name.trim();
-    if (name === '') { alert('A Session Group name is required.'); return; }
-
-    var origText = btn ? btn.textContent : null;
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Saving…'; }
-    try {
-        var resp = await fetch('/api/session-groups', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name, sessionIds: sessionIds }),
-        });
-        if (resp.ok) {
-            if (btn) {
-                btn.textContent = '✅ Saved!';
-                setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 2500);
-            } else {
-                alert('Saved Session Group "' + name + '".');
-            }
-        } else {
-            var err = await resp.json().catch(function () { return null; });
-            alert('Failed to save Session Group: ' + (err || 'HTTP ' + resp.status));
-            if (btn) { btn.textContent = origText; btn.disabled = false; }
-        }
-    } catch (e) {
-        alert('Error saving Session Group: ' + e.message);
-        if (btn) { btn.textContent = origText; btn.disabled = false; }
-    }
-}
-
-function narniaSaveSessionsAsSessionGroup(btn) {
-    var ids = narniaSelectedSessionIds();
-    if (ids.length === 0) return;
-    narniaCreateSessionGroup(ids, btn);
-}
-
 function narniaOpenSelectedIds() {
     var checks = document.querySelectorAll('.open-check:checked');
     var ids = [];
@@ -1018,10 +1008,10 @@ function narniaOpenSelectedIds() {
 function narniaOpenSelectionChanged() {
     var all = document.querySelectorAll('.open-check');
     var selected = narniaOpenSelectedIds();
-    var btn = document.getElementById('btn-save-open-session-group');
+    var btn = document.getElementById('btn-add-open-to-collection');
     if (btn) {
         btn.disabled = selected.length === 0;
-        btn.textContent = '💾 Save selected as Session Group (' + selected.length + ')';
+        btn.textContent = '🗂️ Add selected to Collection (' + selected.length + ')';
     }
     var master = document.getElementById('open-check-all');
     if (master) {
@@ -1036,76 +1026,10 @@ function narniaToggleAllOpen(master) {
     narniaOpenSelectionChanged();
 }
 
-function narniaSaveOpenAsSessionGroup(btn) {
+function narniaAddOpenToCollection(btn) {
     var ids = narniaOpenSelectedIds();
     if (ids.length === 0) return;
-    narniaCreateSessionGroup(ids, btn);
-}
-
-async function narniaReopenSessionGroup(id, btn) {
-    var oneWindowEl = document.getElementById('session-group-one-window-' + id);
-    var separateWindows = !(oneWindowEl && oneWindowEl.checked);
-
-    var origText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '⏳ Reopening…';
-    try {
-        var resp = await fetch('/api/session-groups/' + id + '/reopen', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ separateWindows: separateWindows }),
-        });
-        if (resp.ok) {
-            var data = await resp.json();
-            btn.textContent = '✅ Reopened ' + (data.reopened || 0);
-            setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 3000);
-        } else {
-            var err = await resp.json().catch(function () { return null; });
-            alert('Reopen failed: ' + (err?.message || err || 'HTTP ' + resp.status));
-            btn.textContent = origText;
-            btn.disabled = false;
-        }
-    } catch (e) {
-        alert('Error reopening Session Group: ' + e.message);
-        btn.textContent = origText;
-        btn.disabled = false;
-    }
-}
-
-async function narniaRenameSessionGroup(id, btn) {
-    var current = btn ? (btn.getAttribute('data-name') || '') : '';
-    var name = prompt('Rename Session Group:', current);
-    if (name === null) return;
-    name = name.trim();
-    if (name === '') { alert('A Session Group name is required.'); return; }
-    try {
-        var resp = await fetch('/api/session-groups/' + id + '/rename', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name }),
-        });
-        if (resp.ok) {
-            location.reload();
-        } else {
-            alert('Failed to rename Session Group: HTTP ' + resp.status);
-        }
-    } catch (e) {
-        alert('Error renaming Session Group: ' + e.message);
-    }
-}
-
-async function narniaDeleteSessionGroup(id) {
-    if (!confirm('Delete this Session Group? The sessions themselves are not affected.')) return;
-    try {
-        var resp = await fetch('/api/session-groups/' + id, { method: 'DELETE' });
-        if (resp.ok) {
-            location.reload();
-        } else {
-            alert('Failed to delete Session Group: HTTP ' + resp.status);
-        }
-    } catch (e) {
-        alert('Error deleting Session Group: ' + e.message);
-    }
+    narniaAddSessionsToCollection(ids, btn);
 }
 
 // ── Work collections ─────────────────────────────────────────────────────────
@@ -1211,6 +1135,14 @@ function narniaAddSelectedSessionsToCollection(btn) {
     narniaAddSessionsToCollection(narniaSelectedSessionIds(), btn);
 }
 
+async function narniaLaunchCollection(id, btn) {
+    var separateWindows = document.getElementById(
+        'collection-separate-windows-' + id)?.checked === true;
+    return narniaRunLaunch(
+        btn,
+        function () { return narniaPostCollectionLaunch(id, false, separateWindows); });
+}
+
 async function narniaAddSessionToCollection(sessionId, btn) {
     if (await narniaAddSessionsToCollection([sessionId], btn)) location.reload();
 }
@@ -1255,13 +1187,9 @@ function narniaSelectedCollectionSessionIds() {
 }
 
 function narniaLaunchSelectedCollectionSessions(btn) {
-    narniaLaunchSessions(narniaSelectedCollectionSessionIds(), btn);
-}
-
-function narniaSaveSelectedCollectionSessionsAsSessionGroup(btn) {
-    var sessionIds = narniaSelectedCollectionSessionIds();
-    if (sessionIds.length === 0) return;
-    narniaCreateSessionGroup(sessionIds, btn);
+    var separateWindows =
+        document.getElementById('collection-selected-separate-windows')?.checked === true;
+    narniaLaunchSessions(narniaSelectedCollectionSessionIds(), btn, separateWindows);
 }
 
 function narniaUpdateCollectionMemberBar() {

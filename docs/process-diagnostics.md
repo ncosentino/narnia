@@ -5,8 +5,9 @@ description: Map live Copilot sessions to Copilot, shell, and Windows Terminal P
 # Live Process Diagnostics
 
 When many Copilot sessions are open, Task Manager can show high CPU or memory without
-explaining which session owns the work. Narnia's **🖥️ Processes** page maps live
-`copilot.exe` processes back to their Copilot sessions and owning terminal windows.
+explaining which session owns the work. The **Processes** view under Narnia's **Runtime**
+area maps live `copilot.exe` processes back to their Copilot sessions and owning terminal
+windows.
 
 The page is read-only. It helps identify the expensive process tree before you decide
 whether to stop work in the session, close a tab, or end a specific process through
@@ -31,8 +32,8 @@ Copilot session. Terminal totals cover the terminal's complete validated descend
 tree, so they can expose load from another tab or process that is not owned by Copilot.
 
 Use the search box with a Copilot PID, terminal PID, child PID, process name, session
-GUID, repository, or working directory. Session detail pages and the **Windows** recovery
-page link directly into the corresponding process search.
+GUID, repository, or working directory. Session detail pages and the **Windows** view in
+the same Runtime area link directly into the corresponding process search.
 
 ## Session mapping
 

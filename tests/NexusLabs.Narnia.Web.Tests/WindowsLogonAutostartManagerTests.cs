@@ -146,12 +146,13 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             frameworkDependent
                 ? """{"runtimeOptions":{"frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0"}]}}"""
                 : """{"runtimeOptions":{}}""");
+        // Avoid runner-specific proxy and socket timeouts while exercising the launch fallback.
         var launcher = WindowsLogonAutostartManager.BuildServerLauncher(
             executablePath,
             assemblyPath,
             runtimeConfigPath,
             startupLogPath,
-            "http://127.0.0.1:1");
+            "narnia-test://unavailable");
         var launcherPath = Path.Combine(
             _localAppData,
             "launcher mode",

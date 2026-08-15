@@ -37,8 +37,8 @@ The page follows one cleanup workflow:
 
 The final plan defaults **Archive successfully cleaned sessions in Narnia** to on. Only sessions
 whose local Copilot deletion succeeds are archived. They disappear from normal session views but
-remain available through **Show archived**, and their Collections, Session Groups, aliases, notes,
-and synced history remain.
+remain available through **Show archived**, and their Collections, aliases, notes, and synced
+history remain.
 
 The cleanup-safety filter separates the review into:
 
@@ -51,8 +51,8 @@ The cleanup-safety filter separates the review into:
 Review results are paginated in groups of 100 so large histories remain manageable.
 
 The default cleanup-candidate view excludes active and protected sessions. Favorites, Narnia
-aliases or notes, user-assigned Copilot names, Collection membership, and Session Group membership
-protect a session. Recovered sessions are also protected while their recovery record is retained.
+aliases or notes, user-assigned Copilot names, and Collection membership protect a session.
+Recovered sessions are also protected while their recovery record is retained.
 **Show protected sessions in candidate results** only makes those sessions
 visible and visually identifies their protection reasons. A separate one-time override appears in
 the final cleanup plan when protected sessions were selected.
@@ -76,7 +76,7 @@ the Storage page.
 
 !!! warning "Local data only"
     Deleting local data removes the resumable files on this machine. Synced GitHub copies and
-    Narnia-owned aliases, notes, Collections, and Session Group references remain.
+    Narnia-owned aliases, notes, and Collections remain.
 
 ## Recorded File Activity
 

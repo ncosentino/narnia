@@ -50,18 +50,6 @@ public sealed class SessionStorageServiceTests
                     IsFavorite = true,
                 },
             });
-        var groups = new Mock<ISessionGroupsRepository>();
-        groups
-            .Setup(repository => repository.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                new SessionGroup(
-                    "group",
-                    "Group",
-                    DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow,
-                    [new SessionGroupMember("indexed", 0)]),
-            ]);
         var collections = new Mock<IWorkCollectionsRepository>();
         collections
             .Setup(repository => repository.GetAllAsync(It.IsAny<CancellationToken>()))
@@ -86,7 +74,6 @@ public sealed class SessionStorageServiceTests
             storageRepository.Object,
             metadataSource.Object,
             overrides.Object,
-            groups.Object,
             collections.Object,
             migrations.Object,
             activity.Object);
@@ -99,7 +86,7 @@ public sealed class SessionStorageServiceTests
         Assert.True(indexed.IsActive);
         Assert.True(indexed.IsProtected);
         Assert.True(indexed.IsArchived);
-        Assert.Equal(5, indexed.ProtectionReasons.Count);
+        Assert.Equal(4, indexed.ProtectionReasons.Count);
         Assert.Contains("Recovered session", indexed.ProtectionReasons);
         Assert.Equal(1, dashboard.Overview.IndexedOnlyCount);
         Assert.Equal(1, dashboard.Overview.LocalStateOnlyCount);

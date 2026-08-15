@@ -94,7 +94,7 @@ public sealed record SessionMigration(
 /// <param name="HasAlias">Whether the source has a Narnia alias.</param>
 /// <param name="HasNotes">Whether the source has Narnia notes.</param>
 /// <param name="CollectionCount">Collections that will also include the successor.</param>
-/// <param name="SessionGroupCount">Session Groups whose source member will be replaced.</param>
+/// <param name="SessionGroupCount">Legacy compatibility field; current Narnia always reports zero.</param>
 /// <param name="SavedWindowCount">Saved windows whose source tab will be replaced.</param>
 public sealed record SessionMigrationReferenceSummary(
     bool IsFavorite,

@@ -52,7 +52,7 @@ only by Copilot.
 - Workspace tasks and `session.db`
 - Checkpoints, artifacts, research, rewind snapshots, and generated workspace data
 - Favorite state, alias, notes, repository/branch overrides, preferred path, and terminal title
-- Collection, Session Group, and saved-window references
+- Collection and saved-window references
 - Existing Chronicle turns and checkpoints; Copilot appends the recovery bootstrap as the next turn
 
 Sessions with recorded recovery state are protected from normal Storage cleanup review. The

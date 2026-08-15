@@ -13,10 +13,21 @@
     </div>
 </div>
 
+@if (FromSessionGroups)
+{
+    <div class="collection-notice">
+        <strong>Session Groups have been retired.</strong>
+        Collections are now the single place to organize and reopen sessions. Existing Session
+        Group records remain stored for downgrade safety, but they were not imported or changed.
+    </div>
+}
+
 <p class="settings-hint">
-    Collections organize related work across sessions and repositories without controlling how
-    those sessions launch. A session can belong to multiple collections. Select sessions on the
-    <a href="/sessions">Sessions</a> page and choose <em>Add to Collection</em>.
+    Collections organize related work across sessions and repositories. Open every session
+    together, or select individual sessions from a collection when you only need part of it.
+    A session can belong to multiple collections. Select sessions on the
+    <a href="/sessions">Sessions</a> or <a href="/runtime/windows">Windows</a> page and choose
+    <em>Add to Collection</em>.
 </p>
 
 @if (_collections.Count == 0)
@@ -39,6 +50,17 @@ else
                     Updated @collection.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
                 </p>
                 <div class="collection-actions">
+                    <label class="closed-control"
+                           title="Off: open the collection as tabs in one window. On: open each session in its own window.">
+                        <input type="checkbox"
+                               id="collection-separate-windows-@collection.Id" />
+                        Separate windows
+                    </label>
+                    <button class="launch-btn"
+                            disabled="@(collection.Members.Count == 0)"
+                            onclick="narniaLaunchCollection('@collection.Id', this)">
+                        🚀 Open collection
+                    </button>
                     <a class="btn-refresh" href="/collections/@collection.Id">View sessions</a>
                     <button class="btn-refresh"
                             data-name="@collection.Name"
@@ -56,7 +78,16 @@ else
 }
 
 @code {
+    /// <summary>Gets or sets the legacy route that redirected to Collections.</summary>
+    [SupplyParameterFromQuery(Name = "from")]
+    public string? From { get; set; }
+
     private IReadOnlyList<WorkCollection> _collections = [];
+
+    private bool FromSessionGroups => string.Equals(
+        From,
+        "session-groups",
+        StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {

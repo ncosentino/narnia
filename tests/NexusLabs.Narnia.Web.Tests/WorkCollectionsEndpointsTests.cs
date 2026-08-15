@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
 using NexusLabs.Narnia.Core.Models;
+using NexusLabs.Narnia.Core.Repositories;
 
 namespace NexusLabs.Narnia.Web.Tests;
 
@@ -161,6 +163,65 @@ public sealed class WorkCollectionsEndpointsTests
         Assert.Null(await factory.WorkCollectionsRepository.GetByIdAsync(collection.Id, Ct));
     }
 
+    [Fact]
+    public async Task OpenCollection_LaunchesMoreThanBulkSelectionLimit()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var sessionIds = Enumerable.Range(0, 21)
+            .Select(_ => Guid.NewGuid().ToString())
+            .ToArray();
+        var collection = await factory.WorkCollectionsRepository.CreateAsync(
+            "Large collection",
+            sessionIds,
+            Now,
+            Ct);
+        factory.SessionRepository
+            .Setup(repository => repository.GetByIdAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string sessionId, CancellationToken _) => new Session(
+                sessionId,
+                Path.GetTempPath(),
+                null,
+                null,
+                "Collection session",
+                null,
+                Now,
+                Now));
+        await factory.Services.GetRequiredService<INarniaSettingsRepository>()
+            .SetAsync("shell_path", "pwsh.exe", Ct);
+
+        using var response = await factory.CreateClient().PostAsJsonAsync(
+            $"/api/collections/{collection.Id}/open",
+            new { separateWindows = true },
+            Ct);
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<CollectionOpenResponse>(Ct);
+        Assert.Equal(21, body!.Launched.Count);
+        Assert.Empty(body.Failed);
+        factory.ProcessLauncher.Verify(
+            launcher => launcher.Start(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>()),
+            Times.Exactly(21));
+    }
+
+    [Fact]
+    public async Task OpenCollection_MissingCollection_Returns404()
+    {
+        using var factory = new NarniaWebAppFactory();
+
+        using var response = await factory.CreateClient().PostAsJsonAsync(
+            $"/api/collections/{Guid.NewGuid()}/open",
+            new { separateWindows = false },
+            Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        factory.ProcessLauncher.VerifyNoOtherCalls();
+    }
+
     private sealed record CollectionsResponse(List<CollectionSummaryDto> Collections);
 
     private sealed record CollectionSummaryDto(string Id, string Name, int MemberCount);
@@ -177,4 +238,12 @@ public sealed class WorkCollectionsEndpointsTests
         string? Summary,
         string? Repository,
         string? WorkingDirectory);
+
+    private sealed record CollectionOpenResponse(
+        List<LaunchedSessionDto> Launched,
+        List<LaunchFailureDto> Failed);
+
+    private sealed record LaunchedSessionDto(string SessionId);
+
+    private sealed record LaunchFailureDto(string SessionId, string Reason);
 }

@@ -554,7 +554,7 @@ public sealed class SessionMigrationServiceTests
             .Setup(repository => repository.GetReferenceSummaryAsync(
                 SourceId,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SessionMigrationReferenceSummary(true, true, true, 1, 1, 1));
+            .ReturnsAsync(new SessionMigrationReferenceSummary(true, true, true, 1, 0, 1));
         var packetBuilder = new Mock<ISessionRecoveryPacketBuilder>();
         packetBuilder
             .Setup(builder => builder.BuildAsync(

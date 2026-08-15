@@ -19,6 +19,7 @@ accepted record do not need an ADR.
 |----|-------|--------|
 | [ADR-0001](adr-0001-copilot-owned-session-store-is-read-only.md) | The Copilot-owned session store is read-only for schema | Accepted |
 | [ADR-0002](adr-0002-settings-database-lives-in-local-app-data.md) | Narnia's settings database lives in local application data | Accepted |
+| [ADR-0003](adr-0003-collections-are-the-session-organization-model.md) | Collections are the session organization model | Accepted |
 
 ## Adding a record
 

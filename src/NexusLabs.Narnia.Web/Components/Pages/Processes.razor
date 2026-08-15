@@ -1,4 +1,4 @@
-@page "/processes"
+@page "/runtime/processes"
 @using NexusLabs.Narnia.Core.Models
 @using NexusLabs.Narnia.Core.Services
 @inject IProcessDiagnosticsService Diagnostics
@@ -18,7 +18,12 @@
     <a href="@RefreshUrl" class="btn-refresh">↻ Refresh</a>
 </div>
 
-<form method="get" action="/processes" class="process-search">
+<nav class="section-nav" aria-label="Runtime views">
+    <SectionNavLink Href="/runtime/windows" Icon="🪟" Label="Windows" />
+    <SectionNavLink Href="/runtime/processes" Icon="🖥️" Label="Processes" Active="true" />
+</nav>
+
+<form method="get" action="/runtime/processes" class="process-search">
     <input type="search"
            name="q"
            value="@Query"
@@ -27,7 +32,7 @@
     <button type="submit">Find</button>
     @if (!string.IsNullOrWhiteSpace(Query))
     {
-        <a href="/processes" class="btn-refresh">Clear</a>
+        <a href="/runtime/processes" class="btn-refresh">Clear</a>
     }
 </form>
 
@@ -159,8 +164,8 @@ else
     public string? Query { get; set; }
 
     private string RefreshUrl => string.IsNullOrWhiteSpace(Query)
-        ? "/processes"
-        : $"/processes?q={Uri.EscapeDataString(Query)}";
+        ? "/runtime/processes"
+        : $"/runtime/processes?q={Uri.EscapeDataString(Query)}";
 
     private IReadOnlyList<CopilotRuntimeDiagnostics> AllRuntimes =>
         _snapshot is null

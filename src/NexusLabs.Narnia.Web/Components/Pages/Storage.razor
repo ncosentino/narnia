@@ -116,9 +116,9 @@ else
         <div class="storage-protection-explainer">
             <strong>What is a protected session?</strong>
             Narnia excludes a session from cleanup candidates by default when it is a favorite,
-            explicitly named by you, has a Narnia alias or notes, or belongs to a Collection or
-            Session Group. Showing protected sessions only makes them visible for review; it does
-            not silently remove that protection.
+            explicitly named by you, has a Narnia alias or notes, or belongs to a Collection.
+            Showing protected sessions only makes them visible for review; it does not silently
+            remove that protection.
         </div>
         <div class="storage-safety-filter-explainer">
             <strong>@SafetyFilterTitle</strong>
@@ -397,8 +397,8 @@ else
                 Include the protected sessions listed above in this one cleanup operation
             </label>
             <p>
-                This temporarily overrides their favorite, name, alias/notes, Collection, or
-                Session Group protection. It does not remove those Narnia references.
+                This temporarily overrides their favorite, name, alias/notes, or Collection
+                protection. It does not remove those Narnia references.
             </p>
         </div>
         <div class="storage-plan-archive-option">
@@ -408,7 +408,7 @@ else
             </label>
             <p>
                 Archived sessions are hidden from normal Narnia views but remain available through
-                Show archived. Collections, Session Groups, aliases, notes, and synced history remain.
+                Show archived. Collections, aliases, notes, and synced history remain.
             </p>
         </div>
         <div class="storage-delete-warning">
@@ -586,7 +586,7 @@ else
         "git" =>
             "These sessions contain a Git repository inside their stored artifacts. They are not automatically unsafe; during cleanup review Narnia verifies there are no uncommitted, untracked, or unpushed changes.",
         "protected" =>
-            "These sessions have an intentional keep signal such as a favorite, user-assigned name, alias/notes, Collection, or Session Group.",
+            "These sessions have an intentional keep signal such as a favorite, user-assigned name, alias/notes, or Collection.",
         "blocked" =>
             "These sessions cannot be selected because they are active, unindexed, incompletely scanned, linked worktrees, or contain reparse points.",
         "all" =>
