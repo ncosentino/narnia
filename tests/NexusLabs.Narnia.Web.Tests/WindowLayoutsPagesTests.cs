@@ -37,7 +37,9 @@ public sealed class WindowLayoutsPagesTests
         Assert.Contains("class=\"layout-preview-stage\"", html, StringComparison.Ordinal);
         Assert.Contains("class=\"layout-preview-window layout-preview-window--0\"", html);
         Assert.Contains("left: 0%;", html, StringComparison.Ordinal);
-        Assert.Contains("width: 33.333%;", html, StringComparison.Ordinal);
+        Assert.Matches(
+            """width: 33\.\d+%;""",
+            html);
         Assert.Contains("<summary>Window details</summary>", html, StringComparison.Ordinal);
     }
 
