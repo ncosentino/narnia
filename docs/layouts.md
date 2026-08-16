@@ -12,6 +12,21 @@ A Layout answers a different question from a Collection:
 
 Layouts live in Narnia's settings database and never modify Copilot-owned session storage.
 
+## Create and edit visually
+
+Choose **New Blank Layout** to create a Layout from the current monitor topology without capturing
+any open windows. Open **Edit Layout** to use the WYSIWYG canvas:
+
+- add a Collection window from the Collection palette;
+- search for and add an individual-session window;
+- drag windows to reposition them;
+- resize windows from their lower-right corner;
+- remove windows; and
+- save the complete arrangement atomically.
+
+Dragging a window across monitors assigns it to the monitor containing its center when saved.
+Each Collection or individual session can appear only once in a Layout.
+
 ## Capture the current desktop
 
 Arrange the Windows Terminal windows as desired, then open **Layouts → Capture Current Layout**.
@@ -26,13 +41,15 @@ For each captured window:
 
 Narnia suggests a Collection when the active window title uniquely matches one of its current
 members. Suggestions are advisory because a title alone cannot prove the complete tab composition.
+Captured Layouts can be refined later in the same visual editor.
 
 ## Launch a Layout
 
 **Launch Layout** preflights the complete arrangement before starting anything:
 
 - every referenced Collection must still exist and contain sessions;
-- no session may appear in more than one referenced Collection;
+- every referenced individual session must still exist;
+- no expanded session may appear in more than one Layout window;
 - target sessions must not already be active;
 - every session must still be indexed; and
 - normal working-directory collision checks still apply.

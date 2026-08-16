@@ -14,15 +14,15 @@
 
         @foreach (var slot in Value.Slots.OrderByDescending(slot => slot.ZOrder))
         {
-            var collectionName = CollectionName(slot.CollectionId);
+            var contentName = ContentName(slot);
             <div class="layout-preview-window layout-preview-window--@(slot.SlotOrder % 6)"
                  style="@RectangleStyle(slot.CapturedBounds, 10 + Value.Slots.Count - slot.ZOrder)"
-                 title="@WindowTooltip(slot, collectionName)">
-                <strong>@collectionName</strong>
+                 title="@WindowTooltip(slot, contentName)">
+                <strong>@contentName</strong>
                 @if (!string.IsNullOrWhiteSpace(slot.CapturedWindowTitle) &&
                     !string.Equals(
                         slot.CapturedWindowTitle,
-                        collectionName,
+                        contentName,
                         StringComparison.OrdinalIgnoreCase))
                 {
                     <span>@slot.CapturedWindowTitle</span>
@@ -36,7 +36,7 @@
         {
             <span>
                 <i class="layout-preview-swatch layout-preview-window--@(slot.SlotOrder % 6)"></i>
-                @CollectionName(slot.CollectionId)
+                @ContentName(slot)
             </span>
         }
     </div>
@@ -52,6 +52,16 @@
     public IReadOnlyDictionary<string, WorkCollection> Collections { get; set; } =
         new Dictionary<string, WorkCollection>(StringComparer.Ordinal);
 
+    /// <summary>Gets or sets sessions available for resolving individual-session labels.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyDictionary<string, Session> Sessions { get; set; } =
+        new Dictionary<string, Session>(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets Copilot-recorded sessions used for honest tooltips.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyDictionary<string, Session> RecordedSessions { get; set; } =
+        new Dictionary<string, Session>(StringComparer.Ordinal);
+
     private IReadOnlyList<PreviewMonitor> _monitors = [];
     private int _minimumX;
     private int _minimumY;
@@ -59,7 +69,7 @@
     private int _desktopHeight = 1;
 
     private string AriaLabel =>
-        $"{Value.Name}: {Value.Slots.Count} Collection window" +
+        $"{Value.Name}: {Value.Slots.Count} window" +
         (Value.Slots.Count == 1 ? "" : "s") +
         $" across {_monitors.Count} monitor" +
         (_monitors.Count == 1 ? "" : "s");
@@ -70,16 +80,11 @@
 
     protected override void OnParametersSet()
     {
-        _monitors = Value.Slots
-            .GroupBy(slot => slot.MonitorDeviceName, StringComparer.OrdinalIgnoreCase)
-            .Select(group =>
-            {
-                var representative = group.First();
-                return new PreviewMonitor(
-                    representative.MonitorDeviceName,
-                    representative.MonitorIsPrimary,
-                    representative.CapturedWorkArea);
-            })
+        _monitors = Value.Monitors
+            .Select(monitor => new PreviewMonitor(
+                monitor.DeviceName,
+                monitor.IsPrimary,
+                monitor.CapturedWorkArea))
             .OrderBy(monitor => monitor.WorkArea.X)
             .ThenBy(monitor => monitor.WorkArea.Y)
             .ToArray();
@@ -112,21 +117,40 @@
             $"height: {Percent(rectangle.Height, _desktopHeight)};",
             $"z-index: {zIndex};");
 
-    private string CollectionName(string id) =>
-        Collections.TryGetValue(id, out var collection)
-            ? collection.Name
-            : $"Missing {Short(id)}";
+    private string ContentName(WindowLayoutSlot slot)
+    {
+        if (slot.ContentKind == WindowLayoutContentKind.Collection)
+        {
+            return slot.CollectionId is not null &&
+                Collections.TryGetValue(slot.CollectionId, out var collection)
+                    ? collection.Name
+                    : $"Missing Collection {Short(slot.ContentId)}";
+        }
+
+        return slot.SessionId is not null &&
+            Sessions.TryGetValue(slot.SessionId, out var session)
+                ? session.Summary ?? $"Session {Short(slot.SessionId)}"
+                : $"Missing Session {Short(slot.ContentId)}";
+    }
 
     private static string MonitorLabel(PreviewMonitor monitor) =>
         monitor.IsPrimary
             ? $"{monitor.DeviceName} · primary"
             : monitor.DeviceName;
 
-    private static string WindowTooltip(
+    private string WindowTooltip(
         WindowLayoutSlot slot,
-        string collectionName) =>
-        $"{collectionName} — {slot.CapturedBounds.Width}×{slot.CapturedBounds.Height} " +
-        $"at {slot.CapturedBounds.X},{slot.CapturedBounds.Y}";
+        string contentName)
+    {
+        var recordedDetail = slot.SessionId is not null &&
+            RecordedSessions.TryGetValue(slot.SessionId, out var recorded) &&
+            Sessions.TryGetValue(slot.SessionId, out var effective) &&
+            !string.Equals(recorded.Summary, effective.Summary, StringComparison.Ordinal)
+                ? $" Recorded by Copilot as: {recorded.Summary ?? "(unnamed session)"}."
+                : "";
+        return $"{contentName} — {slot.CapturedBounds.Width}×{slot.CapturedBounds.Height} " +
+            $"at {slot.CapturedBounds.X},{slot.CapturedBounds.Y}.{recordedDetail}";
+    }
 
     private static string Percent(int value, int total) =>
         (value * 100d / total).ToString("0.###", CultureInfo.InvariantCulture) + "%";

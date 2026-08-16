@@ -14,6 +14,15 @@ public interface IWindowLayoutsRepository
     /// <summary>Creates a named layout with at least one Collection-backed slot.</summary>
     ValueTask<WindowLayout> CreateAsync(
         string name,
+        IReadOnlyList<WindowLayoutMonitorDefinition> monitors,
+        IReadOnlyList<WindowLayoutSlotDefinition> slots,
+        DateTimeOffset now,
+        CancellationToken ct = default);
+
+    /// <summary>Replaces the complete editable monitor and window definition.</summary>
+    ValueTask<bool> ReplaceDefinitionAsync(
+        string id,
+        IReadOnlyList<WindowLayoutMonitorDefinition> monitors,
         IReadOnlyList<WindowLayoutSlotDefinition> slots,
         DateTimeOffset now,
         CancellationToken ct = default);

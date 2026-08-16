@@ -21,6 +21,7 @@ public sealed class WindowLayoutsPagesTests
             Ct);
         var layout = await factory.WindowLayoutsRepository.CreateAsync(
             "Daily workspace",
+            Monitors(),
             [Slot(collection.Id)],
             Now,
             Ct);
@@ -34,6 +35,7 @@ public sealed class WindowLayoutsPagesTests
             html,
             StringComparison.Ordinal);
         Assert.Contains("href=\"/layouts/capture\"", html, StringComparison.Ordinal);
+        Assert.Contains("narniaCreateBlankLayout", html, StringComparison.Ordinal);
         Assert.Contains("class=\"layout-preview-stage\"", html, StringComparison.Ordinal);
         Assert.Contains("class=\"layout-preview-window layout-preview-window--0\"", html);
         Assert.Contains("left: 0%;", html, StringComparison.Ordinal);
@@ -41,6 +43,7 @@ public sealed class WindowLayoutsPagesTests
             """width: 33\.\d+%;""",
             html);
         Assert.Contains("<summary>Window details</summary>", html, StringComparison.Ordinal);
+        Assert.Contains($"""href="/layouts/{layout.Id}/edit">""", html);
     }
 
     [Fact]
@@ -97,10 +100,74 @@ public sealed class WindowLayoutsPagesTests
         Assert.Contains("narniaSaveCapturedLayout", html, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task EditorPage_RendersCanvasPalettesAndExistingWindow()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var collection = await factory.WorkCollectionsRepository.CreateAsync(
+            "Foundation",
+            [SessionId],
+            Now,
+            Ct);
+        var layout = await factory.WindowLayoutsRepository.CreateAsync(
+            "Editable",
+            Monitors(),
+            [Slot(collection.Id)],
+            Now,
+            Ct);
+        factory.SessionRepository
+            .Setup(repository => repository.ListRecentAsync(
+                30,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new SessionSummary(
+                    SessionId,
+                    Path.GetTempPath(),
+                    "owner/repository",
+                    "main",
+                    "Individual session",
+                    Now,
+                    Now,
+                    1,
+                    0),
+            ]);
+        factory.RecordedSessionRepository
+            .Setup(repository => repository.GetByIdsAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, Session>(StringComparer.Ordinal)
+            {
+                [SessionId] = new Session(
+                    SessionId,
+                    Path.GetTempPath(),
+                    "owner/repository",
+                    "main",
+                    "Recorded individual",
+                    null,
+                    Now,
+                    Now),
+            });
+
+        var html = await factory.CreateClient()
+            .GetStringAsync($"/layouts/{layout.Id}/edit", Ct);
+
+        Assert.Contains("id=\"layout-editor\"", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"layout-editor-stage\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-layout-kind=\"collection\"", html, StringComparison.Ordinal);
+        Assert.Contains($"data-layout-id=\"{collection.Id}\"", html, StringComparison.Ordinal);
+        Assert.Contains("Individual sessions", html, StringComparison.Ordinal);
+        Assert.Contains("Recorded: Recorded individual", html, StringComparison.Ordinal);
+        Assert.Contains("narniaSaveLayoutEditor", html, StringComparison.Ordinal);
+    }
+
     private static WindowLayoutSlotDefinition Slot(string collectionId) =>
         new(
             0,
+            WindowLayoutContentKind.Collection,
             collectionId,
+            null,
             "Foundry",
             @"\\.\DISPLAY1",
             true,
@@ -110,4 +177,14 @@ public sealed class WindowLayoutsPagesTests
             WindowLayoutState.Normal,
             0,
             WindowLayoutDesktopPolicy.Current);
+
+    private static IReadOnlyList<WindowLayoutMonitorDefinition> Monitors() =>
+    [
+        new(
+            0,
+            @"\\.\DISPLAY1",
+            true,
+            new WindowRectangle(0, 0, 3840, 2160),
+            new WindowRectangle(0, 0, 3840, 2112)),
+    ];
 }
