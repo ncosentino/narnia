@@ -78,6 +78,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         Assert.Contains(", 0, True)", hiddenLauncher);
 
         var serverLauncher = File.ReadAllText(serverLauncherPath);
+        Assert.Contains("$skipHealthCheck = $false", serverLauncher, StringComparison.Ordinal);
         Assert.Contains("$frameworkDependent", serverLauncher, StringComparison.Ordinal);
         Assert.Contains("Get-Command dotnet.exe", serverLauncher, StringComparison.Ordinal);
         Assert.Contains("Invoke-WebRequest", serverLauncher, StringComparison.Ordinal);
@@ -146,13 +147,14 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             frameworkDependent
                 ? """{"runtimeOptions":{"frameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0"}]}}"""
                 : """{"runtimeOptions":{}}""");
-        // Avoid runner-specific proxy and socket timeouts while exercising the launch fallback.
         var launcher = WindowsLogonAutostartManager.BuildServerLauncher(
             executablePath,
             assemblyPath,
             runtimeConfigPath,
             startupLogPath,
-            "narnia-test://unavailable");
+            "http://127.0.0.1:1",
+            skipHealthCheck: true);
+        Assert.Contains("$skipHealthCheck = $true", launcher, StringComparison.Ordinal);
         var launcherPath = Path.Combine(
             _localAppData,
             "launcher mode",
