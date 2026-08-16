@@ -5,7 +5,10 @@ using NexusLabs.Narnia.Core.Models;
 namespace NexusLabs.Narnia.Core.Repositories;
 
 public sealed class SqliteSessionRepository(NarniaOptions options)
-    : ISessionRepository, ISessionSearch, ISessionStorageMetadataSource
+    : ISessionRepository,
+      ISessionSearch,
+      ISessionStorageMetadataSource,
+      IRecordedSessionRepository
 {
     private readonly string _connectionString = options.ConnectionString
         ?? $"Data Source={options.DatabasePath};Mode=ReadOnly";

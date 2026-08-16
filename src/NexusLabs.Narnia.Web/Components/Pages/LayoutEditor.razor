@@ -1,0 +1,270 @@
+@page "/layouts/{LayoutId}/edit"
+@using System.Globalization
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject IWindowLayoutsRepository LayoutsRepository
+@inject IWorkCollectionsRepository CollectionsRepository
+@inject ISessionRepository SessionsRepository
+@inject IRecordedSessionRepository RecordedSessionsRepository
+
+<PageTitle>@(_layout?.Name ?? "Layout Editor") — Narnia</PageTitle>
+
+@if (_loaded && _layout is null)
+{
+    <h1>Layout not found</h1>
+    <a href="/layouts">← Layouts</a>
+}
+else if (_layout is not null)
+{
+    <div class="page-actions">
+        <div>
+            <a href="/layouts">← Layouts</a>
+            <h1>▦ @_layout.Name</h1>
+            <p class="settings-hint">
+                Add Collection or session windows, then drag and resize them directly on the saved
+                monitor topology. Changes apply only after Save.
+            </p>
+        </div>
+        <button class="btn-bulk-collection" onclick="narniaSaveLayoutEditor(this)">
+            💾 Save Layout
+        </button>
+    </div>
+
+    <div id="layout-editor"
+         class="layout-editor"
+         data-layout-id="@_layout.Id"
+         data-min-x="@_minimumX"
+         data-min-y="@_minimumY"
+         data-desktop-width="@_desktopWidth"
+         data-desktop-height="@_desktopHeight">
+        <aside class="layout-editor-palette">
+            <section>
+                <h2>Collections</h2>
+                <p>Each Collection launches its current members in one window.</p>
+                <div class="layout-editor-palette-list">
+                    @foreach (var collection in _collections.Values.OrderBy(item => item.Name))
+                    {
+                        <button type="button"
+                                data-layout-kind="collection"
+                                data-layout-id="@collection.Id"
+                                data-layout-label="@collection.Name"
+                                onclick="narniaLayoutEditorAddFromButton(this)">
+                            <strong>@collection.Name</strong>
+                            <span>@collection.Members.Count session@(collection.Members.Count == 1 ? "" : "s")</span>
+                        </button>
+                    }
+                </div>
+            </section>
+
+            <section>
+                <h2>Individual sessions</h2>
+                <div class="layout-editor-session-search">
+                    <input id="layout-editor-session-query"
+                           type="search"
+                           placeholder="Search sessions…" />
+                    <button type="button" onclick="narniaLayoutEditorSearchSessions()">Find</button>
+                </div>
+                <div id="layout-editor-session-results" class="layout-editor-palette-list">
+                    @foreach (var session in _recentSessions)
+                    {
+                        @SessionPaletteButton(
+                            session.Id,
+                            session.Summary,
+                            session.Repository,
+                            LookupRecordedSession(session.Id))
+                    }
+                </div>
+            </section>
+        </aside>
+
+        <main class="layout-editor-workspace">
+            <div class="layout-editor-stage"
+                 style="@StageStyle">
+                @foreach (var monitor in _layout.Monitors)
+                {
+                    <div class="layout-editor-monitor"
+                         data-monitor-device="@monitor.DeviceName"
+                         data-monitor-primary="@monitor.IsPrimary.ToString().ToLowerInvariant()"
+                         data-work-x="@monitor.CapturedWorkArea.X"
+                         data-work-y="@monitor.CapturedWorkArea.Y"
+                         data-work-width="@monitor.CapturedWorkArea.Width"
+                         data-work-height="@monitor.CapturedWorkArea.Height"
+                         style="@RectangleStyle(monitor.CapturedWorkArea, 1)">
+                        <span>@(monitor.IsPrimary ? $"{monitor.DeviceName} · primary" : monitor.DeviceName)</span>
+                    </div>
+                }
+
+                @foreach (var slot in _layout.Slots.OrderByDescending(item => item.ZOrder))
+                {
+                    var label = ContentLabel(slot);
+                    <div class="layout-editor-window layout-preview-window--@(slot.SlotOrder % 6)"
+                         data-layout-kind="@slot.ContentKind.ToString().ToLowerInvariant()"
+                         data-layout-id="@slot.ContentId"
+                         data-layout-label="@label"
+                         data-editor-z="@(100 + _layout.Slots.Count - slot.ZOrder)"
+                         style="@RectangleStyle(slot.CapturedBounds, 100 + _layout.Slots.Count - slot.ZOrder)">
+                        <button type="button"
+                                class="layout-editor-remove"
+                                title="Remove from Layout"
+                                onclick="narniaLayoutEditorRemove(this)">×</button>
+                        <strong>@label</strong>
+                        <span>
+                            @(slot.ContentKind == WindowLayoutContentKind.Collection
+                                ? "Collection"
+                                : RecordedSessionDetail(slot))
+                        </span>
+                        <i class="layout-editor-resize" title="Resize"></i>
+                    </div>
+                }
+            </div>
+            <p class="settings-hint">
+                Drag windows by their body. Resize from the lower-right corner. Windows are
+                constrained to the monitor containing their center when saved.
+            </p>
+        </main>
+    </div>
+}
+
+@code {
+    /// <summary>Gets or sets the Layout identifier from the route.</summary>
+    [Parameter]
+    public string LayoutId { get; set; } = "";
+
+    private WindowLayout? _layout;
+    private IReadOnlyDictionary<string, WorkCollection> _collections =
+        new Dictionary<string, WorkCollection>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Session> _sessions =
+        new Dictionary<string, Session>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Session> _recordedSessions =
+        new Dictionary<string, Session>(StringComparer.Ordinal);
+    private IReadOnlyList<SessionSummary> _recentSessions = [];
+    private bool _loaded;
+    private int _minimumX;
+    private int _minimumY;
+    private int _desktopWidth = 1;
+    private int _desktopHeight = 1;
+
+    private string StageStyle =>
+        $"aspect-ratio: {_desktopWidth.ToString(CultureInfo.InvariantCulture)} / " +
+        $"{_desktopHeight.ToString(CultureInfo.InvariantCulture)};";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var layoutTask = LayoutsRepository.GetByIdAsync(LayoutId).AsTask();
+        var collectionsTask = CollectionsRepository.GetAllAsync().AsTask();
+        var recentTask = SessionsRepository.ListRecentAsync(30).AsTask();
+        await Task.WhenAll(layoutTask, collectionsTask, recentTask);
+        _layout = await layoutTask;
+        _collections = (await collectionsTask).ToDictionary(
+            collection => collection.Id,
+            StringComparer.Ordinal);
+        _recentSessions = await recentTask;
+
+        if (_layout is not null)
+        {
+            var sessionIds = _layout.Slots
+                    .Where(slot => slot.SessionId is not null)
+                    .Select(slot => slot.SessionId!)
+                .Concat(_recentSessions.Select(session => session.Id))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+            var sessionsTask = SessionsRepository.GetByIdsAsync(sessionIds).AsTask();
+            var recordedTask = RecordedSessionsRepository.GetByIdsAsync(sessionIds).AsTask();
+            await Task.WhenAll(sessionsTask, recordedTask);
+            _sessions = await sessionsTask;
+            _recordedSessions = await recordedTask;
+            ResolveDesktopBounds(_layout.Monitors);
+        }
+
+        _loaded = true;
+    }
+
+    private void ResolveDesktopBounds(IReadOnlyList<WindowLayoutMonitorDefinition> monitors)
+    {
+        if (monitors.Count == 0)
+            return;
+        _minimumX = monitors.Min(monitor => monitor.CapturedWorkArea.X);
+        _minimumY = monitors.Min(monitor => monitor.CapturedWorkArea.Y);
+        _desktopWidth = Math.Max(
+            1,
+            monitors.Max(monitor =>
+                monitor.CapturedWorkArea.X + monitor.CapturedWorkArea.Width) -
+            _minimumX);
+        _desktopHeight = Math.Max(
+            1,
+            monitors.Max(monitor =>
+                monitor.CapturedWorkArea.Y + monitor.CapturedWorkArea.Height) -
+            _minimumY);
+    }
+
+    private string RectangleStyle(WindowRectangle rectangle, int zIndex) =>
+        string.Join(
+            " ",
+            $"left: {Percent(rectangle.X - _minimumX, _desktopWidth)};",
+            $"top: {Percent(rectangle.Y - _minimumY, _desktopHeight)};",
+            $"width: {Percent(rectangle.Width, _desktopWidth)};",
+            $"height: {Percent(rectangle.Height, _desktopHeight)};",
+            $"z-index: {zIndex};");
+
+    private string ContentLabel(WindowLayoutSlot slot)
+    {
+        if (slot.ContentKind == WindowLayoutContentKind.Collection)
+        {
+            return slot.CollectionId is not null &&
+                _collections.TryGetValue(slot.CollectionId, out var collection)
+                    ? collection.Name
+                    : $"Missing Collection {Short(slot.ContentId)}";
+        }
+
+        return slot.SessionId is not null &&
+            _sessions.TryGetValue(slot.SessionId, out var session)
+                ? session.Summary ?? Short(session.Id)
+                : $"Missing Session {Short(slot.ContentId)}";
+    }
+
+    private static RenderFragment SessionPaletteButton(
+        string id,
+        string? name,
+        string? repository,
+        Session? recorded) => __builder =>
+    {
+        <button type="button"
+                data-layout-kind="session"
+                data-layout-id="@id"
+                data-layout-label="@(name ?? Short(id))"
+                onclick="narniaLayoutEditorAddFromButton(this)">
+            <strong>@(name ?? Short(id))</strong>
+            <span>@(repository ?? "No repository")</span>
+            @if (recorded is not null &&
+                !string.Equals(name, recorded.Summary, StringComparison.Ordinal))
+            {
+                <span>Recorded: @(recorded.Summary ?? "(unnamed session)")</span>
+            }
+        </button>
+    };
+
+    private Session? LookupRecordedSession(string id) =>
+        _recordedSessions.TryGetValue(id, out var session) ? session : null;
+
+    private string RecordedSessionDetail(WindowLayoutSlot slot)
+    {
+        if (slot.SessionId is null ||
+            !_recordedSessions.TryGetValue(slot.SessionId, out var recorded) ||
+            !_sessions.TryGetValue(slot.SessionId, out var effective) ||
+            string.Equals(
+                recorded.Summary,
+                effective.Summary,
+                StringComparison.Ordinal))
+        {
+            return "Session";
+        }
+
+        return $"Session · recorded: {recorded.Summary ?? "(unnamed)"}";
+    }
+
+    private static string Percent(int value, int total) =>
+        (value * 100d / total).ToString("0.###", CultureInfo.InvariantCulture) + "%";
+
+    private static string Short(string id) =>
+        id.Length > 8 ? id[..8] : id;
+}

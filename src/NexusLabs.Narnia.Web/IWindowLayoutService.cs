@@ -45,8 +45,9 @@ public sealed record WindowLayoutLaunchResult(
 /// <summary>Launch and placement outcome for one Layout slot.</summary>
 public sealed record WindowLayoutWindowLaunchResult(
     string SlotId,
-    string CollectionId,
-    string CollectionName,
+    WindowLayoutContentKind ContentKind,
+    string ContentId,
+    string ContentName,
     bool Success,
     int LaunchedSessions,
     long? WindowHandle,

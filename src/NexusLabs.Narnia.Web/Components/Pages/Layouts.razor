@@ -3,6 +3,8 @@
 @using NexusLabs.Narnia.Core.Repositories
 @inject IWindowLayoutsRepository LayoutsRepository
 @inject IWorkCollectionsRepository CollectionsRepository
+@inject ISessionRepository SessionsRepository
+@inject IRecordedSessionRepository RecordedSessionsRepository
 @inject IWindowLayoutPlatform Platform
 
 <PageTitle>Layouts — Narnia</PageTitle>
@@ -17,7 +19,12 @@
     </div>
     @if (Platform.IsSupported)
     {
-        <a class="btn-bulk-collection" href="/layouts/capture">＋ Capture Current Layout</a>
+        <div class="closed-controls">
+            <button class="btn-bulk-collection" onclick="narniaCreateBlankLayout(this)">
+                ＋ New Blank Layout
+            </button>
+            <a class="btn-refresh" href="/layouts/capture">Capture Current Layout</a>
+        </div>
     }
 </div>
 
@@ -52,24 +59,59 @@ else
                     Updated @savedLayout.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
                 </p>
 
-                <WindowLayoutPreview Value="@savedLayout" Collections="@_collections" />
+                <WindowLayoutPreview
+                    Value="@savedLayout"
+                    Collections="@_collections"
+                    Sessions="@_sessions"
+                    RecordedSessions="@_recordedSessions" />
 
                 <details class="layout-window-details">
                     <summary>Window details</summary>
                     <ol class="layout-window-list">
                         @foreach (var slot in savedLayout.Slots.OrderBy(slot => slot.SlotOrder))
                         {
-                            var collection = LookupCollection(slot.CollectionId);
                             <li>
                                 <div>
-                                    @if (collection is null)
+                                    @if (slot.ContentKind == WindowLayoutContentKind.Collection)
                                     {
-                                        <strong class="status-error">Missing Collection</strong>
-                                        <code>@Short(slot.CollectionId)</code>
+                                        var collection = slot.CollectionId is null
+                                            ? null
+                                            : LookupCollection(slot.CollectionId);
+                                        @if (collection is null)
+                                        {
+                                            <strong class="status-error">Missing Collection</strong>
+                                            <code>@Short(slot.ContentId)</code>
+                                        }
+                                        else
+                                        {
+                                            <a href="/collections/@collection.Id">@collection.Name</a>
+                                        }
                                     }
                                     else
                                     {
-                                        <a href="/collections/@collection.Id">@collection.Name</a>
+                                        var session = slot.SessionId is null
+                                            ? null
+                                            : LookupSession(slot.SessionId);
+                                        @if (session is null)
+                                        {
+                                            <strong class="status-error">Missing Session</strong>
+                                            <code>@Short(slot.ContentId)</code>
+                                        }
+                                        else
+                                        {
+                                            <a href="/sessions/@session.Id">
+                                                @(session.Summary ?? Short(session.Id))
+                                            </a>
+                                            @if (TryGetRecordedDifference(
+                                                session.Id,
+                                                session.Summary,
+                                                out var recordedSummary))
+                                            {
+                                                <span class="layout-window-title">
+                                                    Recorded: @recordedSummary
+                                                </span>
+                                            }
+                                        }
                                     }
                                     @if (!string.IsNullOrWhiteSpace(slot.CapturedWindowTitle))
                                     {
@@ -87,8 +129,11 @@ else
                 </details>
 
                 <div class="collection-actions">
+                    <a class="btn-refresh" href="/layouts/@savedLayout.Id/edit">
+                        ✥ Edit Layout
+                    </a>
                     <button class="launch-btn"
-                            disabled="@(!Platform.IsSupported)"
+                            disabled="@(!Platform.IsSupported || savedLayout.Slots.Count == 0)"
                             onclick="narniaLaunchWindowLayout('@savedLayout.Id', this, false)">
                         🚀 Launch Layout
                     </button>
@@ -111,6 +156,10 @@ else
     private IReadOnlyList<WindowLayout> _layouts = [];
     private IReadOnlyDictionary<string, WorkCollection> _collections =
         new Dictionary<string, WorkCollection>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Session> _sessions =
+        new Dictionary<string, Session>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Session> _recordedSessions =
+        new Dictionary<string, Session>(StringComparer.Ordinal);
 
     protected override async Task OnInitializedAsync()
     {
@@ -121,10 +170,40 @@ else
         _collections = (await collectionsTask).ToDictionary(
             collection => collection.Id,
             StringComparer.Ordinal);
+        var sessionIds = _layouts
+            .SelectMany(layout => layout.Slots)
+            .Where(slot => slot.SessionId is not null)
+            .Select(slot => slot.SessionId!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var sessionsTask = SessionsRepository.GetByIdsAsync(sessionIds).AsTask();
+        var recordedTask = RecordedSessionsRepository.GetByIdsAsync(sessionIds).AsTask();
+        await Task.WhenAll(sessionsTask, recordedTask);
+        _sessions = await sessionsTask;
+        _recordedSessions = await recordedTask;
     }
 
     private WorkCollection? LookupCollection(string id) =>
         _collections.TryGetValue(id, out var collection) ? collection : null;
+
+    private Session? LookupSession(string id) =>
+        _sessions.TryGetValue(id, out var session) ? session : null;
+
+    private bool TryGetRecordedDifference(
+        string id,
+        string? effectiveSummary,
+        out string recordedSummary)
+    {
+        if (_recordedSessions.TryGetValue(id, out var recorded) &&
+            !string.Equals(recorded.Summary, effectiveSummary, StringComparison.Ordinal))
+        {
+            recordedSummary = recorded.Summary ?? "(unnamed session)";
+            return true;
+        }
+
+        recordedSummary = "";
+        return false;
+    }
 
     private static string Short(string id) =>
         id.Length > 8 ? id[..8] : id;

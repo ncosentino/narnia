@@ -566,6 +566,12 @@ async function narniaSaveCapturedLayout(btn) {
             capturedWindowTitle: cards[i].dataset.title || null,
             monitorDeviceName: cards[i].dataset.monitor,
             monitorIsPrimary: cards[i].dataset.monitorPrimary === 'true',
+            capturedMonitorBounds: {
+                x: Number(cards[i].dataset.monitorX),
+                y: Number(cards[i].dataset.monitorY),
+                width: Number(cards[i].dataset.monitorWidth),
+                height: Number(cards[i].dataset.monitorHeight),
+            },
             capturedWorkArea: {
                 x: Number(cards[i].dataset.workX),
                 y: Number(cards[i].dataset.workY),
@@ -637,7 +643,7 @@ async function narniaLaunchWindowLayout(id, btn, force) {
             alert(
                 'Some Layout windows could not be restored:\n\n' +
                 failed.map(function (window) {
-                    return '• ' + window.collectionName + ': ' +
+                    return '• ' + window.contentName + ': ' +
                         (window.error || (window.failures || []).map(function (failure) {
                             return failure.reason;
                         }).join(', '));
@@ -689,6 +695,324 @@ async function narniaDeleteWindowLayout(id) {
         alert('Failed to delete Layout: ' + e.message);
     }
 }
+
+async function narniaCreateBlankLayout(btn) {
+    var name = prompt('Name this Layout:', '');
+    if (name === null) return;
+    name = name.trim();
+    if (name === '') {
+        alert('A Layout name is required.');
+        return;
+    }
+
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Creating…';
+    try {
+        var response = await fetch('/api/layouts/blank', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name }),
+        });
+        if (!response.ok) throw new Error(await narniaCollectionError(response));
+        var body = await response.json();
+        location.href = '/layouts/' + encodeURIComponent(body.id) + '/edit';
+    } catch (e) {
+        alert('Failed to create Layout: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+var narniaLayoutEditorZ = 100;
+
+function narniaInitializeLayoutEditor() {
+    var editor = document.getElementById('layout-editor');
+    if (!editor) return;
+
+    var windows = editor.querySelectorAll('.layout-editor-window');
+    for (var i = 0; i < windows.length; i++) {
+        var z = Number(windows[i].dataset.editorZ || 100);
+        narniaLayoutEditorZ = Math.max(narniaLayoutEditorZ, z);
+        narniaAttachLayoutEditorWindow(windows[i]);
+    }
+    narniaLayoutEditorSyncPalette();
+}
+
+function narniaLayoutEditorAddFromButton(btn) {
+    narniaLayoutEditorAdd(
+        btn.dataset.layoutKind,
+        btn.dataset.layoutId,
+        btn.dataset.layoutLabel);
+}
+
+function narniaLayoutEditorAdd(kind, id, label) {
+    var editor = document.getElementById('layout-editor');
+    var stage = editor?.querySelector('.layout-editor-stage');
+    if (!stage || !kind || !id) return;
+
+    var existing = stage.querySelector(
+        '.layout-editor-window[data-layout-kind="' +
+        CSS.escape(kind) +
+        '"][data-layout-id="' +
+        CSS.escape(id) +
+        '"]');
+    if (existing) {
+        existing.classList.add('layout-editor-window--active');
+        setTimeout(function () {
+            existing.classList.remove('layout-editor-window--active');
+        }, 1200);
+        return;
+    }
+
+    var monitor =
+        stage.querySelector('.layout-editor-monitor[data-monitor-primary="true"]') ||
+        stage.querySelector('.layout-editor-monitor');
+    if (!monitor) return;
+
+    var stageRect = stage.getBoundingClientRect();
+    var monitorRect = monitor.getBoundingClientRect();
+    var count = stage.querySelectorAll('.layout-editor-window').length;
+    var offset = (count % 8) * 18;
+    var width = Math.max(140, monitorRect.width * 0.36);
+    var height = Math.max(100, monitorRect.height * 0.32);
+    var left = monitorRect.left - stageRect.left + 20 + offset;
+    var top = monitorRect.top - stageRect.top + 20 + offset;
+    left = Math.min(left, monitorRect.right - stageRect.left - width);
+    top = Math.min(top, monitorRect.bottom - stageRect.top - height);
+
+    var windowElement = document.createElement('div');
+    windowElement.className =
+        'layout-editor-window layout-preview-window--' + (count % 6);
+    windowElement.dataset.layoutKind = kind;
+    windowElement.dataset.layoutId = id;
+    windowElement.dataset.layoutLabel = label || id.substring(0, 8);
+    windowElement.dataset.editorZ = String(++narniaLayoutEditorZ);
+    windowElement.style.left = (left / stageRect.width * 100) + '%';
+    windowElement.style.top = (top / stageRect.height * 100) + '%';
+    windowElement.style.width = (width / stageRect.width * 100) + '%';
+    windowElement.style.height = (height / stageRect.height * 100) + '%';
+    windowElement.style.zIndex = windowElement.dataset.editorZ;
+
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'layout-editor-remove';
+    remove.title = 'Remove from Layout';
+    remove.textContent = '×';
+    remove.addEventListener('click', function () {
+        narniaLayoutEditorRemove(remove);
+    });
+    var title = document.createElement('strong');
+    title.textContent = windowElement.dataset.layoutLabel;
+    var type = document.createElement('span');
+    type.textContent = kind === 'collection' ? 'Collection' : 'Session';
+    var resize = document.createElement('i');
+    resize.className = 'layout-editor-resize';
+    resize.title = 'Resize';
+    windowElement.append(remove, title, type, resize);
+    stage.appendChild(windowElement);
+    narniaAttachLayoutEditorWindow(windowElement);
+    narniaLayoutEditorSyncPalette();
+}
+
+function narniaLayoutEditorRemove(btn) {
+    btn.closest('.layout-editor-window')?.remove();
+    narniaLayoutEditorSyncPalette();
+}
+
+function narniaAttachLayoutEditorWindow(windowElement) {
+    windowElement.addEventListener('pointerdown', function (event) {
+        if (event.target.closest('.layout-editor-remove')) return;
+
+        var stage = windowElement.closest('.layout-editor-stage');
+        if (!stage) return;
+        event.preventDefault();
+        windowElement.setPointerCapture(event.pointerId);
+        narniaLayoutEditorZ++;
+        windowElement.dataset.editorZ = String(narniaLayoutEditorZ);
+        windowElement.style.zIndex = String(narniaLayoutEditorZ);
+        var stageRect = stage.getBoundingClientRect();
+        var startRect = windowElement.getBoundingClientRect();
+        var startX = event.clientX;
+        var startY = event.clientY;
+        var resizing = event.target.closest('.layout-editor-resize') !== null;
+        windowElement.classList.add('layout-editor-window--active');
+
+        function move(pointerEvent) {
+            var deltaX = pointerEvent.clientX - startX;
+            var deltaY = pointerEvent.clientY - startY;
+            if (resizing) {
+                var width = Math.max(80, Math.min(
+                    stageRect.right - startRect.left,
+                    startRect.width + deltaX));
+                var height = Math.max(60, Math.min(
+                    stageRect.bottom - startRect.top,
+                    startRect.height + deltaY));
+                windowElement.style.width = (width / stageRect.width * 100) + '%';
+                windowElement.style.height = (height / stageRect.height * 100) + '%';
+            } else {
+                var left = Math.max(0, Math.min(
+                    stageRect.width - startRect.width,
+                    startRect.left - stageRect.left + deltaX));
+                var top = Math.max(0, Math.min(
+                    stageRect.height - startRect.height,
+                    startRect.top - stageRect.top + deltaY));
+                windowElement.style.left = (left / stageRect.width * 100) + '%';
+                windowElement.style.top = (top / stageRect.height * 100) + '%';
+            }
+        }
+
+        function end(pointerEvent) {
+            if (windowElement.hasPointerCapture(pointerEvent.pointerId)) {
+                windowElement.releasePointerCapture(pointerEvent.pointerId);
+            }
+            windowElement.removeEventListener('pointermove', move);
+            windowElement.removeEventListener('pointerup', end);
+            windowElement.removeEventListener('pointercancel', end);
+            windowElement.classList.remove('layout-editor-window--active');
+        }
+
+        windowElement.addEventListener('pointermove', move);
+        windowElement.addEventListener('pointerup', end);
+        windowElement.addEventListener('pointercancel', end);
+    });
+}
+
+function narniaLayoutEditorSyncPalette() {
+    var editor = document.getElementById('layout-editor');
+    if (!editor) return;
+    var buttons = editor.querySelectorAll(
+        '.layout-editor-palette-list button[data-layout-kind]');
+    for (var i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = editor.querySelector(
+            '.layout-editor-window[data-layout-kind="' +
+            CSS.escape(buttons[i].dataset.layoutKind) +
+            '"][data-layout-id="' +
+            CSS.escape(buttons[i].dataset.layoutId) +
+            '"]') !== null;
+    }
+}
+
+async function narniaLayoutEditorSearchSessions() {
+    var input = document.getElementById('layout-editor-session-query');
+    var results = document.getElementById('layout-editor-session-results');
+    if (!results) return;
+    results.textContent = 'Searching…';
+    try {
+        var query = input ? input.value.trim() : '';
+        var response = await fetch(
+            '/api/layouts/catalog/sessions?q=' + encodeURIComponent(query));
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var data = await response.json();
+        results.textContent = '';
+        (data.sessions || []).forEach(function (session) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.layoutKind = 'session';
+            button.dataset.layoutId = session.id;
+            button.dataset.layoutLabel = session.name;
+            var title = document.createElement('strong');
+            title.textContent = session.name;
+            var repository = document.createElement('span');
+            repository.textContent = session.repository || 'No repository';
+            button.append(title, repository);
+            if (session.recordedName !== null &&
+                session.recordedName !== session.name) {
+                var recorded = document.createElement('span');
+                recorded.textContent =
+                    'Recorded: ' + (session.recordedName || '(unnamed session)');
+                button.appendChild(recorded);
+            }
+            button.addEventListener('click', function () {
+                narniaLayoutEditorAddFromButton(button);
+            });
+            results.appendChild(button);
+        });
+        narniaLayoutEditorSyncPalette();
+    } catch (e) {
+        results.textContent = 'Session search failed: ' + e.message;
+    }
+}
+
+async function narniaSaveLayoutEditor(btn) {
+    var editor = document.getElementById('layout-editor');
+    var stage = editor?.querySelector('.layout-editor-stage');
+    if (!editor || !stage) return;
+
+    var stageRect = stage.getBoundingClientRect();
+    var desktopMinX = Number(editor.dataset.minX);
+    var desktopMinY = Number(editor.dataset.minY);
+    var desktopWidth = Number(editor.dataset.desktopWidth);
+    var desktopHeight = Number(editor.dataset.desktopHeight);
+    var monitors = Array.from(stage.querySelectorAll('.layout-editor-monitor'));
+    var slots = Array.from(stage.querySelectorAll('.layout-editor-window'));
+    slots.sort(function (left, right) {
+        return Number(right.dataset.editorZ) - Number(left.dataset.editorZ);
+    });
+
+    var windows = slots.map(function (slot, index) {
+        var rect = slot.getBoundingClientRect();
+        var virtualX = desktopMinX +
+            (rect.left - stageRect.left) / stageRect.width * desktopWidth;
+        var virtualY = desktopMinY +
+            (rect.top - stageRect.top) / stageRect.height * desktopHeight;
+        var virtualWidth = rect.width / stageRect.width * desktopWidth;
+        var virtualHeight = rect.height / stageRect.height * desktopHeight;
+        var centerX = virtualX + virtualWidth / 2;
+        var centerY = virtualY + virtualHeight / 2;
+        var monitor = monitors.find(function (candidate) {
+            var x = Number(candidate.dataset.workX);
+            var y = Number(candidate.dataset.workY);
+            var width = Number(candidate.dataset.workWidth);
+            var height = Number(candidate.dataset.workHeight);
+            return centerX >= x && centerX <= x + width &&
+                centerY >= y && centerY <= y + height;
+        }) || monitors[0];
+        var workX = Number(monitor.dataset.workX);
+        var workY = Number(monitor.dataset.workY);
+        var workWidth = Number(monitor.dataset.workWidth);
+        var workHeight = Number(monitor.dataset.workHeight);
+        var width = Math.min(1, Math.max(0.03, virtualWidth / workWidth));
+        var height = Math.min(1, Math.max(0.03, virtualHeight / workHeight));
+        var x = Math.min(1 - width, Math.max(0, (virtualX - workX) / workWidth));
+        var y = Math.min(1 - height, Math.max(0, (virtualY - workY) / workHeight));
+        return {
+            contentKind: slot.dataset.layoutKind,
+            contentId: slot.dataset.layoutId,
+            monitorDeviceName: monitor.dataset.monitorDevice,
+            title: slot.dataset.layoutLabel,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            zOrder: index,
+        };
+    });
+
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving…';
+    try {
+        var response = await fetch(
+            '/api/layouts/' + encodeURIComponent(editor.dataset.layoutId) + '/definition',
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ windows: windows }),
+            });
+        if (!response.ok) throw new Error(await narniaCollectionError(response));
+        btn.textContent = '✅ Saved';
+        setTimeout(function () {
+            location.reload();
+        }, 500);
+    } catch (e) {
+        alert('Failed to save Layout: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+queueMicrotask(narniaInitializeLayoutEditor);
 
 // ── Session storage ──────────────────────────────────────────────────────────
 var narniaStorageCleanupPlan = null;

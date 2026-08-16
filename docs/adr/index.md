@@ -21,6 +21,7 @@ accepted record do not need an ADR.
 | [ADR-0002](adr-0002-settings-database-lives-in-local-app-data.md) | Narnia's settings database lives in local application data | Accepted |
 | [ADR-0003](adr-0003-collections-are-the-session-organization-model.md) | Collections are the session organization model | Accepted |
 | [ADR-0004](adr-0004-window-layouts-compose-collections.md) | Window Layouts compose Collections | Accepted |
+| [ADR-0005](adr-0005-layout-editor-supports-mixed-window-content.md) | The Layout editor supports mixed window content | Accepted |
 
 ## Adding a record
 

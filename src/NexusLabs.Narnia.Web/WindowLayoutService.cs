@@ -66,6 +66,8 @@ public sealed class WindowLayoutService(
             return PreflightFailure("Window Layout restore requires Windows.");
         if (commandBuilder.FindWindowsTerminalPath() is null)
             return PreflightFailure("Window Layout restore requires Windows Terminal.");
+        if (layout.Slots.Count == 0)
+            return PreflightFailure("Layout has no windows to launch.");
 
         var capture = platform.Capture();
         if (!capture.IsAvailable || capture.Monitors.Count == 0)
@@ -79,42 +81,57 @@ public sealed class WindowLayoutService(
             collection => collection.Id,
             StringComparer.Ordinal);
         var issues = new List<string>();
-        var slotCollections = new List<(WindowLayoutSlot Slot, WorkCollection Collection)>();
+        var slotSources = new List<LayoutSlotSource>();
         foreach (var slot in layout.Slots)
         {
-            if (!collectionsById.TryGetValue(slot.CollectionId, out var collection))
+            if (slot.ContentKind == WindowLayoutContentKind.Collection)
+            {
+                if (slot.CollectionId is null ||
+                    !collectionsById.TryGetValue(slot.CollectionId, out var collection))
+                {
+                    issues.Add(
+                        $"The Collection referenced by window '{slot.CapturedWindowTitle ?? slot.Id}' no longer exists.");
+                    continue;
+                }
+                if (collection.Members.Count == 0)
+                {
+                    issues.Add($"Collection '{collection.Name}' has no sessions.");
+                    continue;
+                }
+
+                slotSources.Add(new LayoutSlotSource(
+                    slot,
+                    collection.Name,
+                    collection.Members.Select(member => member.SessionId).ToArray()));
+            }
+            else if (slot.SessionId is null)
             {
                 issues.Add(
-                    $"The Collection referenced by window '{slot.CapturedWindowTitle ?? slot.Id}' no longer exists.");
-                continue;
+                    $"The session referenced by window '{slot.CapturedWindowTitle ?? slot.Id}' is invalid.");
             }
-            if (collection.Members.Count == 0)
+            else
             {
-                issues.Add($"Collection '{collection.Name}' has no sessions.");
-                continue;
+                slotSources.Add(new LayoutSlotSource(slot, null, [slot.SessionId]));
             }
-
-            slotCollections.Add((slot, collection));
         }
 
-        var duplicateSessions = slotCollections
-            .SelectMany(pair => pair.Collection.Members.Select(member => new
+        var duplicateSessions = slotSources
+            .SelectMany(source => source.SessionIds.Select(sessionId => new
             {
-                pair.Collection.Name,
-                member.SessionId,
+                source.Slot,
+                SessionId = sessionId,
             }))
             .GroupBy(item => item.SessionId, StringComparer.OrdinalIgnoreCase)
-            .Where(group => group.Select(item => item.Name).Distinct().Count() > 1)
+            .Where(group => group.Select(item => item.Slot.Id).Distinct().Count() > 1)
             .ToArray();
         foreach (var duplicate in duplicateSessions)
         {
             issues.Add(
-                $"Session {Short(duplicate.Key)} belongs to multiple Collections in this Layout.");
+                $"Session {Short(duplicate.Key)} appears in multiple windows in this Layout.");
         }
 
-        var allSessionIds = slotCollections
-            .SelectMany(pair => pair.Collection.Members)
-            .Select(member => member.SessionId)
+        var allSessionIds = slotSources
+            .SelectMany(source => source.SessionIds)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var activeSessionIds = activityReader.GetActiveSessionIds();
@@ -135,13 +152,21 @@ public sealed class WindowLayoutService(
             return new WindowLayoutLaunchResult(false, issues, [], []);
 
         var overrides = await overridesRepository.GetAllOverridesAsync(ct);
-        var tabsBySlot = slotCollections.ToDictionary(
-            pair => pair.Slot.Id,
-            pair => pair.Collection.Members
-                .Select(member => BuildTab(
-                    member.SessionId,
-                    sessions[member.SessionId],
-                    overrides.TryGetValue(member.SessionId, out var sessionOverride)
+        var resolvedSlots = slotSources
+            .Select(source => source with
+            {
+                ContentName = source.ContentName ??
+                    sessions[source.SessionIds[0]].Summary ??
+                    $"Session {Short(source.SessionIds[0])}",
+            })
+            .ToArray();
+        var tabsBySlot = resolvedSlots.ToDictionary(
+            source => source.Slot.Id,
+            source => source.SessionIds
+                .Select(sessionId => BuildTab(
+                    sessionId,
+                    sessions[sessionId],
+                    overrides.TryGetValue(sessionId, out var sessionOverride)
                         ? sessionOverride
                         : null))
                 .ToArray(),
@@ -171,11 +196,11 @@ public sealed class WindowLayoutService(
         var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
         var results = new List<WindowLayoutWindowLaunchResult>(layout.Slots.Count);
-        foreach (var pair in slotCollections
+        foreach (var source in resolvedSlots
             .OrderByDescending(item => item.Slot.ZOrder)
             .ThenByDescending(item => item.Slot.SlotOrder))
         {
-            var tabs = tabsBySlot[pair.Slot.Id];
+            var tabs = tabsBySlot[source.Slot.Id];
             var existingHandles = platform.Capture().Windows
                 .Select(window => window.Handle)
                 .ToHashSet();
@@ -188,9 +213,9 @@ public sealed class WindowLayoutService(
             if (outcome.LaunchedSessionIds.Count == 0)
             {
                 results.Add(FailedWindow(
-                    pair,
+                    source,
                     outcome.Failures,
-                    "No session in this Collection could be launched."));
+                    "No session in this Layout window could be launched."));
                 continue;
             }
 
@@ -202,20 +227,21 @@ public sealed class WindowLayoutService(
             if (window is null)
             {
                 results.Add(FailedWindow(
-                    pair,
+                    source,
                     outcome.Failures,
                     "Windows Terminal did not expose a new window before the timeout."));
                 continue;
             }
 
             var placement = WindowLayoutPlacementResolver.Resolve(
-                pair.Slot,
+                source.Slot,
                 capture.Monitors);
             var applied = platform.ApplyPlacement(window.Handle, placement);
             results.Add(new WindowLayoutWindowLaunchResult(
-                pair.Slot.Id,
-                pair.Collection.Id,
-                pair.Collection.Name,
+                source.Slot.Id,
+                source.Slot.ContentKind,
+                source.Slot.ContentId,
+                source.ContentName!,
                 applied.Success && outcome.Failures.Count == 0,
                 outcome.LaunchedSessionIds.Count,
                 window.Handle,
@@ -314,13 +340,14 @@ public sealed class WindowLayoutService(
         new(false, [issue], [], []);
 
     private static WindowLayoutWindowLaunchResult FailedWindow(
-        (WindowLayoutSlot Slot, WorkCollection Collection) pair,
+        LayoutSlotSource source,
         IReadOnlyList<TerminalLaunchFailure> failures,
         string error) =>
         new(
-            pair.Slot.Id,
-            pair.Collection.Id,
-            pair.Collection.Name,
+            source.Slot.Id,
+            source.Slot.ContentKind,
+            source.Slot.ContentId,
+            source.ContentName ?? source.Slot.CapturedWindowTitle ?? "Layout window",
             false,
             0,
             null,
@@ -332,4 +359,9 @@ public sealed class WindowLayoutService(
 
     private static string Short(string sessionId) =>
         sessionId.Length > 8 ? sessionId[..8] : sessionId;
+
+    private sealed record LayoutSlotSource(
+        WindowLayoutSlot Slot,
+        string? ContentName,
+        IReadOnlyList<string> SessionIds);
 }

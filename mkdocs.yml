@@ -103,6 +103,7 @@ nav:
     - "ADR-0002: Settings database location": adr/adr-0002-settings-database-lives-in-local-app-data.md
     - "ADR-0003: Collections organize sessions": adr/adr-0003-collections-are-the-session-organization-model.md
     - "ADR-0004: Window Layouts compose Collections": adr/adr-0004-window-layouts-compose-collections.md
+    - "ADR-0005: Layout editor mixed content": adr/adr-0005-layout-editor-supports-mixed-window-content.md
   - Articles: articles.md
 
 plugins:

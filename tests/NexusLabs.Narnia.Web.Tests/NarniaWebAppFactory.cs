@@ -27,6 +27,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock session repository used for tab metadata enrichment.</summary>
     public Mock<ISessionRepository> SessionRepository { get; } = new();
 
+    /// <summary>Mock raw session repository used where recorded values must remain visible.</summary>
+    public Mock<IRecordedSessionRepository> RecordedSessionRepository { get; } = new();
+
     /// <summary>Mock lightweight storage-page metadata source.</summary>
     public Mock<ISessionStorageMetadataSource> StorageMetadataSource { get; } = new();
 
@@ -160,6 +163,17 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         StorageMetadataSource
             .Setup(source => source.ListAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
+        RecordedSessionRepository
+            .Setup(repository => repository.ListRecentAsync(
+                It.IsAny<int>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        RecordedSessionRepository
+            .Setup(repository => repository.GetByIdsAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, Session>(StringComparer.Ordinal));
         GitArtifactInspector
             .Setup(inspector => inspector.InspectAsync(
                 It.IsAny<string>(),
@@ -266,6 +280,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<ISessionRepository>();
             services.AddSingleton(SessionRepository.Object);
+
+            services.RemoveAll<IRecordedSessionRepository>();
+            services.AddSingleton(RecordedSessionRepository.Object);
 
             services.RemoveAll<ISessionStorageMetadataSource>();
             services.AddSingleton(StorageMetadataSource.Object);
