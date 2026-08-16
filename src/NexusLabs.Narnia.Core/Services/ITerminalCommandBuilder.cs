@@ -49,6 +49,16 @@ public interface ITerminalCommandBuilder
         string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs, string copilotCommand);
 
     /// <summary>
+    /// Builds a <c>wt.exe</c> argument string that forces one new window containing all tabs.
+    /// </summary>
+    /// <param name="copilotCommand">See <see cref="BuildShellArguments"/>.</param>
+    string BuildNewWindowCommand(
+        string shellPath,
+        string shellName,
+        IReadOnlyList<TerminalLaunchTab> tabs,
+        string copilotCommand);
+
+    /// <summary>
     /// Builds the shell arguments for launching a tab directly (without Windows Terminal), including
     /// a best-effort window-title set. Used as the fallback when <c>wt.exe</c> is unavailable.
     /// </summary>

@@ -12,6 +12,9 @@ Narnia is a single ASP.NET Core app â€” both an MCP server and a local web UI â€
 
 Use the star control in any session view to favorite important sessions. Favorite state is shared across the UI, can be filtered or sorted on the Sessions page, and has a dedicated **Favorites** page.
 
+**Layouts** persist several Collection windows as one monitor-aware arrangement. Runtime supplies
+the current HWND geometry for capture, while Collections remain independently launchable.
+
 Table columns can be resized by dragging the separator at the right edge of a header or by focusing it and using the arrow keys. Widths are stored in the browser for each table; double-click a separator or press Escape to restore that column's default width.
 
 The **Storage** page measures local session-state disk usage, growth, staleness, and cleanup safety.

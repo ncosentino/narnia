@@ -540,6 +540,156 @@ function narniaLaunchBulk() {
     narniaLaunchSessions(narniaSelectedSessionIds(), btn);
 }
 
+// ── Saved window layouts ────────────────────────────────────────────────────
+async function narniaSaveCapturedLayout(btn) {
+    var nameInput = document.getElementById('layout-capture-name');
+    var name = nameInput ? nameInput.value.trim() : '';
+    if (name === '') {
+        alert('A Layout name is required.');
+        return;
+    }
+
+    var cards = document.querySelectorAll('.layout-capture-window');
+    var windows = [];
+    var collectionIds = new Set();
+    for (var i = 0; i < cards.length; i++) {
+        var select = cards[i].querySelector('.layout-capture-collection');
+        var collectionId = select ? select.value : '';
+        if (collectionId === '') continue;
+        if (collectionIds.has(collectionId)) {
+            alert('A Collection can appear only once in a Layout.');
+            return;
+        }
+        collectionIds.add(collectionId);
+        windows.push({
+            collectionId: collectionId,
+            capturedWindowTitle: cards[i].dataset.title || null,
+            monitorDeviceName: cards[i].dataset.monitor,
+            monitorIsPrimary: cards[i].dataset.monitorPrimary === 'true',
+            capturedWorkArea: {
+                x: Number(cards[i].dataset.workX),
+                y: Number(cards[i].dataset.workY),
+                width: Number(cards[i].dataset.workWidth),
+                height: Number(cards[i].dataset.workHeight),
+            },
+            capturedBounds: {
+                x: Number(cards[i].dataset.x),
+                y: Number(cards[i].dataset.y),
+                width: Number(cards[i].dataset.width),
+                height: Number(cards[i].dataset.height),
+            },
+            windowState: cards[i].dataset.state,
+            zOrder: Number(cards[i].dataset.zOrder),
+        });
+    }
+    if (windows.length === 0) {
+        alert('Assign at least one window to a Collection.');
+        return;
+    }
+
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving…';
+    try {
+        var response = await fetch('/api/layouts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, windows: windows }),
+        });
+        if (!response.ok) throw new Error(await narniaCollectionError(response));
+        location.href = '/layouts';
+    } catch (e) {
+        alert('Failed to save Layout: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+async function narniaLaunchWindowLayout(id, btn, force) {
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Launching…';
+    try {
+        var response = await fetch('/api/layouts/' + encodeURIComponent(id) + '/launch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: force === true }),
+        });
+        var body = await response.json().catch(function () { return null; });
+        if (response.status === 409 && body?.error === 'directory-collision' && !force) {
+            if (!confirm(narniaCollisionPrompt(body))) {
+                btn.disabled = false;
+                btn.textContent = originalText;
+                return;
+            }
+            btn.disabled = false;
+            btn.textContent = originalText;
+            return narniaLaunchWindowLayout(id, btn, true);
+        }
+        if (!response.ok) {
+            var issues = body?.issues ? '\n\n' + body.issues.join('\n') : '';
+            throw new Error((body?.message || 'HTTP ' + response.status) + issues);
+        }
+
+        var failed = (body.windows || []).filter(function (window) { return !window.success; });
+        btn.textContent = body.success ? '✅ Layout launched' : '⚠️ Partial launch';
+        if (failed.length > 0) {
+            alert(
+                'Some Layout windows could not be restored:\n\n' +
+                failed.map(function (window) {
+                    return '• ' + window.collectionName + ': ' +
+                        (window.error || (window.failures || []).map(function (failure) {
+                            return failure.reason;
+                        }).join(', '));
+                }).join('\n'));
+        }
+        setTimeout(function () {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }, 4000);
+    } catch (e) {
+        alert('Layout launch failed: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+async function narniaRenameWindowLayout(id, btn) {
+    var current = btn.getAttribute('data-name') || '';
+    var name = prompt('Rename Layout:', current);
+    if (name === null) return;
+    name = name.trim();
+    if (name === '') {
+        alert('A Layout name is required.');
+        return;
+    }
+
+    try {
+        var response = await fetch('/api/layouts/' + encodeURIComponent(id) + '/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name }),
+        });
+        if (!response.ok) throw new Error(await narniaCollectionError(response));
+        location.reload();
+    } catch (e) {
+        alert('Failed to rename Layout: ' + e.message);
+    }
+}
+
+async function narniaDeleteWindowLayout(id) {
+    if (!confirm('Delete this Layout? Collections and sessions are not affected.')) return;
+    try {
+        var response = await fetch('/api/layouts/' + encodeURIComponent(id), {
+            method: 'DELETE',
+        });
+        if (!response.ok) throw new Error(await narniaCollectionError(response));
+        location.reload();
+    } catch (e) {
+        alert('Failed to delete Layout: ' + e.message);
+    }
+}
+
 // ── Session storage ──────────────────────────────────────────────────────────
 var narniaStorageCleanupPlan = null;
 var narniaStorageCleanupCompleted = false;

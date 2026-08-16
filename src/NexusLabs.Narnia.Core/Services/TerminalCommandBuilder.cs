@@ -44,7 +44,21 @@ public sealed class TerminalCommandBuilder : ITerminalCommandBuilder
     /// <inheritdoc />
     public string BuildWindowCommand(
         string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs, string copilotCommand) =>
-        string.Join(" ; ", tabs.Select(tab => BuildNewTabSegment(shellPath, shellName, tab, copilotCommand)));
+        string.Join(
+            " ; ",
+            tabs.Select(tab => BuildNewTabSegment(
+                shellPath,
+                shellName,
+                tab,
+                copilotCommand)));
+
+    /// <inheritdoc />
+    public string BuildNewWindowCommand(
+        string shellPath,
+        string shellName,
+        IReadOnlyList<TerminalLaunchTab> tabs,
+        string copilotCommand) =>
+        $"-w new {BuildWindowCommand(shellPath, shellName, tabs, copilotCommand)}";
 
     /// <inheritdoc />
     public string BuildDirectLaunchArguments(string shellName, TerminalLaunchTab tab, string copilotCommand)

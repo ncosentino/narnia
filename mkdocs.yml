@@ -50,6 +50,7 @@ nav:
   - Configuration: configuration.md
   - Broken Session Recovery: session-recovery.md
   - Collections: collections.md
+  - Window Layouts: layouts.md
   - Session Storage: session-storage.md
   - Terminal Window Recovery: terminal-windows.md
   - Live Process Diagnostics: process-diagnostics.md
@@ -101,6 +102,7 @@ nav:
     - "ADR-0001: Session store is read-only": adr/adr-0001-copilot-owned-session-store-is-read-only.md
     - "ADR-0002: Settings database location": adr/adr-0002-settings-database-lives-in-local-app-data.md
     - "ADR-0003: Collections organize sessions": adr/adr-0003-collections-are-the-session-organization-model.md
+    - "ADR-0004: Window Layouts compose Collections": adr/adr-0004-window-layouts-compose-collections.md
   - Articles: articles.md
 
 plugins:

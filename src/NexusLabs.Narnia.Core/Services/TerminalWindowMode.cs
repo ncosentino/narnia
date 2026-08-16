@@ -8,6 +8,9 @@ public enum TerminalWindowMode
     /// <summary>All sessions open as tabs within a single terminal window.</summary>
     SingleWindow,
 
+    /// <summary>All sessions open as tabs within one newly created terminal window.</summary>
+    NewWindow,
+
     /// <summary>Each session opens in its own separate terminal window.</summary>
     SeparateWindows,
 }

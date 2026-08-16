@@ -1,0 +1,121 @@
+@page "/layouts/capture"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject IWindowLayoutService LayoutService
+@inject IWorkCollectionsRepository CollectionsRepository
+
+<PageTitle>Capture Layout — Narnia</PageTitle>
+
+<a href="/layouts">← Layouts</a>
+
+<div class="page-actions layout-capture-heading">
+    <div>
+        <h1>▦ Capture Current Layout</h1>
+        <p class="settings-hint">
+            Assign each visible Windows Terminal window to one Collection. Narnia stores placement
+            separately from the Collection, so every Collection can still be opened on its own.
+        </p>
+    </div>
+    <a href="/layouts/capture" class="btn-refresh">↻ Recapture</a>
+</div>
+
+@if (!_capture.IsAvailable)
+{
+    <div class="process-unavailable">
+        <strong>Layout capture unavailable</strong>
+        <p>@_capture.UnavailableReason</p>
+    </div>
+}
+else if (_collections.Count == 0)
+{
+    <p>
+        Create at least one <a href="/collections">Collection</a> before capturing a Layout.
+    </p>
+}
+else if (_capture.Windows.Count == 0)
+{
+    <p>No visible Windows Terminal windows were found.</p>
+}
+else
+{
+    <div class="layout-capture-name">
+        <label for="layout-capture-name"><strong>Layout name</strong></label>
+        <input id="layout-capture-name"
+               type="text"
+               maxlength="100"
+               placeholder="Daily workspace" />
+    </div>
+
+    <div class="layout-capture-grid">
+        @foreach (var candidate in _capture.Windows.OrderBy(item => item.Window.ZOrder))
+        {
+            var window = candidate.Window;
+            <article class="layout-capture-window"
+                     data-title="@window.Title"
+                     data-monitor="@window.Monitor.DeviceName"
+                     data-monitor-primary="@window.Monitor.IsPrimary.ToString().ToLowerInvariant()"
+                     data-work-x="@window.Monitor.WorkArea.X"
+                     data-work-y="@window.Monitor.WorkArea.Y"
+                     data-work-width="@window.Monitor.WorkArea.Width"
+                     data-work-height="@window.Monitor.WorkArea.Height"
+                     data-x="@window.Bounds.X"
+                     data-y="@window.Bounds.Y"
+                     data-width="@window.Bounds.Width"
+                     data-height="@window.Bounds.Height"
+                     data-state="@window.State.ToString().ToLowerInvariant()"
+                     data-z-order="@window.ZOrder">
+                <div class="collection-card-head">
+                    <h2>@(string.IsNullOrWhiteSpace(window.Title) ? "Windows Terminal" : window.Title)</h2>
+                    <code>HWND 0x@window.Handle.ToString("X")</code>
+                </div>
+                <p class="layout-window-placement">
+                    @window.Monitor.DeviceName ·
+                    @window.Bounds.Width×@window.Bounds.Height
+                    at @window.Bounds.X,@window.Bounds.Y
+                </p>
+                <label>
+                    <strong>Collection for this window</strong>
+                    <select class="layout-capture-collection">
+                        <option value="">Ignore this window</option>
+                        @foreach (var collection in _collections)
+                        {
+                            <option value="@collection.Id"
+                                    selected="@(collection.Id == candidate.SuggestedCollectionId)">
+                                @collection.Name (@collection.Members.Count)
+                            </option>
+                        }
+                    </select>
+                </label>
+                @if (candidate.SuggestedCollectionId is not null)
+                {
+                    <span class="layout-capture-suggestion">
+                        Suggested from the active terminal title
+                    </span>
+                }
+            </article>
+        }
+    </div>
+
+    <div class="layout-capture-actions">
+        <button class="btn-bulk-collection" onclick="narniaSaveCapturedLayout(this)">
+            💾 Save Layout
+        </button>
+        <span class="settings-hint">
+            Unassigned windows are ignored. A Collection can appear only once.
+        </span>
+    </div>
+}
+
+@code {
+    private WindowLayoutCaptureView _capture = new(false, "Loading…", []);
+    private IReadOnlyList<WorkCollection> _collections = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var captureTask = LayoutService.CaptureAsync(CancellationToken.None).AsTask();
+        var collectionsTask = CollectionsRepository.GetAllAsync().AsTask();
+        await Task.WhenAll(captureTask, collectionsTask);
+        _capture = await captureTask;
+        _collections = await collectionsTask;
+    }
+}

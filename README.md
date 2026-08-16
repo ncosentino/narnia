@@ -21,6 +21,7 @@ If you use Copilot CLI heavily, you know the pain: a Windows update reboots your
 - **Terminal window recovery** — continuously records your open Windows Terminal windows of Copilot tabs so you can reopen a whole multi-tab window after it is closed or lost, like restoring a browser window
 - **Live process diagnostics** — map Copilot sessions to Copilot, shell, and Windows Terminal PIDs, then inspect sampled CPU, memory, and spawned child-process trees
 - **Collections** — organize related sessions across repositories, capture selected live sessions, and reopen all or part of a collection as one tabbed window or separate windows
+- **Window Layouts** — persist several Collection windows as one monitor-aware arrangement and launch the complete workspace with one action
 - **Broken-session recovery** — detect malformed or oversized Copilot event history, block unsafe blank-session fallbacks, archive the original stream, and have Copilot reseed the same session ID and folder
 - **Session storage** — measure per-session disk usage and growth, identify stale or risky sessions, and delete validated local data through the official Copilot SDK
 - **Session workspace** — reads supplemental metadata from `~/.copilot/session-state/` including git root and session artifact files

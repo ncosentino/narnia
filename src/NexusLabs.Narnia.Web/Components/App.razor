@@ -1,4 +1,5 @@
 @using NexusLabs.Narnia.Core.Repositories
+@using System.Reflection
 @inject INarniaSettingsRepository SettingsRepo
 
 <!DOCTYPE html>
@@ -9,22 +10,29 @@
     <title>Narnia — Copilot Session Browser</title>
     <base href="/" />
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
-    <link rel="stylesheet" href="app.css?v=14" />
-    <link rel="stylesheet" href="table-resize.css?v=1" />
+    <link rel="stylesheet" href="app.css?v=@AssetVersion" />
+    <link rel="stylesheet" href="table-resize.css?v=@AssetVersion" />
     <HeadOutlet />
 </head>
 <body>
     <Routes />
     <script src="lib/chart.js/chart.umd.min.js"></script>
-    <script src="js/narnia-charts.js?v=29"></script>
-    <script src="js/narnia-favorites.js?v=1"></script>
-    <script src="js/narnia-table-resize.js?v=1"></script>
+    <script src="js/narnia-charts.js?v=@AssetVersion"></script>
+    <script src="js/narnia-favorites.js?v=@AssetVersion"></script>
+    <script src="js/narnia-table-resize.js?v=@AssetVersion"></script>
 </body>
 </html>
 
 @code {
     // Dark is Narnia's default theme; the persisted setting overrides it to
     // "light" only when explicitly chosen.
+    private static readonly string AssetVersion = Uri.EscapeDataString(
+        typeof(App).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion ??
+        typeof(App).Assembly.GetName().Version?.ToString() ??
+        "development");
+
     private string _theme = "dark";
 
     protected override async Task OnInitializedAsync()

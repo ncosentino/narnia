@@ -63,8 +63,15 @@ public sealed class TerminalLauncher(
 
             var wtPath = commandBuilder.FindWindowsTerminalPath();
 
-            var outcome = wtPath is not null && mode == TerminalWindowMode.SingleWindow
-                ? LaunchSingleWindow(wtPath, shellPath, shellName, safeTabs, copilotCommand)
+            var outcome = wtPath is not null &&
+                mode is TerminalWindowMode.SingleWindow or TerminalWindowMode.NewWindow
+                ? LaunchSingleWindow(
+                    wtPath,
+                    shellPath,
+                    shellName,
+                    safeTabs,
+                    copilotCommand,
+                    forceNewWindow: mode == TerminalWindowMode.NewWindow)
                 : LaunchPerTab(wtPath, shellPath, shellName, safeTabs, copilotCommand);
 
             return blocked.Count == 0
@@ -81,9 +88,24 @@ public sealed class TerminalLauncher(
     }
 
     private TerminalLaunchOutcome LaunchSingleWindow(
-        string wtPath, string shellPath, string shellName, IReadOnlyList<TerminalLaunchTab> tabs, string copilotCommand)
+        string wtPath,
+        string shellPath,
+        string shellName,
+        IReadOnlyList<TerminalLaunchTab> tabs,
+        string copilotCommand,
+        bool forceNewWindow)
     {
-        var arguments = commandBuilder.BuildWindowCommand(shellPath, shellName, tabs, copilotCommand);
+        var arguments = forceNewWindow
+            ? commandBuilder.BuildNewWindowCommand(
+                shellPath,
+                shellName,
+                tabs,
+                copilotCommand)
+            : commandBuilder.BuildWindowCommand(
+                shellPath,
+                shellName,
+                tabs,
+                copilotCommand);
         try
         {
             processLauncher.Start(wtPath, arguments);

@@ -62,6 +62,33 @@ public sealed class TerminalLauncherTests
     }
 
     [Fact]
+    public void Launch_WindowsTerminalNewWindow_StartsOneForcedWindowCommand()
+    {
+        _commandBuilder.Setup(b => b.FindWindowsTerminalPath()).Returns(WtPath);
+        var tabs = new[] { Tab("s1"), Tab("s2") };
+        _commandBuilder
+            .Setup(b => b.BuildNewWindowCommand(
+                ShellPath,
+                "pwsh",
+                tabs,
+                CopilotCommand))
+            .Returns("new-window-command");
+
+        var outcome = Launcher().Launch(
+            ShellPath,
+            "pwsh",
+            tabs,
+            TerminalWindowMode.NewWindow,
+            CopilotCommand);
+
+        _processLauncher.Verify(
+            p => p.Start(WtPath, "new-window-command", null),
+            Times.Once);
+        Assert.Equal(new[] { "s1", "s2" }, outcome.LaunchedSessionIds);
+        Assert.Empty(outcome.Failures);
+    }
+
+    [Fact]
     public void Launch_WindowsTerminalSeparateWindows_StartsOnePerTab()
     {
         _commandBuilder.Setup(b => b.FindWindowsTerminalPath()).Returns(WtPath);

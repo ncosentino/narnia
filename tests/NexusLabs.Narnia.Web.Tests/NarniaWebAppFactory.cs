@@ -57,6 +57,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     /// <summary>Mock process diagnostics so tests never enumerate operating-system processes.</summary>
     public Mock<IProcessDiagnosticsService> ProcessDiagnostics { get; } = new();
 
+    /// <summary>Mock desktop-window platform so tests never inspect or move real windows.</summary>
+    public Mock<IWindowLayoutPlatform> WindowLayoutPlatform { get; } = new();
+
     /// <summary>Mock Git safety inspector so cleanup tests never execute Git against real paths.</summary>
     public Mock<IGitArtifactInspector> GitArtifactInspector { get; } = new();
 
@@ -143,6 +146,17 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
                 0,
                 [],
                 []));
+        WindowLayoutPlatform.SetupGet(platform => platform.IsSupported).Returns(true);
+        WindowLayoutPlatform
+            .Setup(platform => platform.Capture())
+            .Returns(new WindowLayoutCaptureSnapshot(true, null, [], []));
+        WindowLayoutPlatform
+            .Setup(platform => platform.WaitForNewTerminalWindowAsync(
+                It.IsAny<IReadOnlySet<long>>(),
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CapturedTerminalWindow?)null);
         StorageMetadataSource
             .Setup(source => source.ListAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
@@ -224,6 +238,10 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
     public IWorkCollectionsRepository WorkCollectionsRepository =>
         Services.GetRequiredService<IWorkCollectionsRepository>();
 
+    /// <summary>The real temp-database-backed window Layouts repository.</summary>
+    public IWindowLayoutsRepository WindowLayoutsRepository =>
+        Services.GetRequiredService<IWindowLayoutsRepository>();
+
     /// <summary>The real (temp-database-backed) scheduled job registry, for seeding.</summary>
     public IScheduledJobRegistry ScheduledJobRegistry =>
         Services.GetRequiredService<IScheduledJobRegistry>();
@@ -278,6 +296,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<IProcessDiagnosticsService>();
             services.AddSingleton(ProcessDiagnostics.Object);
+
+            services.RemoveAll<IWindowLayoutPlatform>();
+            services.AddSingleton(WindowLayoutPlatform.Object);
 
             services.RemoveAll<IGitArtifactInspector>();
             services.AddSingleton(GitArtifactInspector.Object);

@@ -42,10 +42,10 @@ presentation and Copilot's data.
 
 ## Narnia's own settings database
 
-`settings.db` holds everything Narnia itself records: overrides, favorites, Collections, settings,
-recorded terminal windows, storage metadata, scheduled-job catalog entries, and session-migration
-history. Legacy Session Group rows remain stored for downgrade safety but are no longer an active
-product model.
+`settings.db` holds everything Narnia itself records: overrides, favorites, Collections, window
+Layouts, settings, recorded terminal windows, storage metadata, scheduled-job catalog entries,
+and session-migration history. Legacy Session Group rows remain stored for downgrade safety but
+are no longer an active product model.
 
 It lives in a dedicated per-app folder under the platform's local application data directory —
 `%LOCALAPPDATA%\narnia\settings.db` on Windows, and the XDG or `~/Library/Application Support`
