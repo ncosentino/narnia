@@ -26,6 +26,12 @@ Collections do not currently expose manual tab ordering. Launches use the Collec
 membership order; persistent drag-and-drop ordering can be added later without bringing back a
 second organizational model.
 
+## Collections in Layouts
+
+A [Layout](layouts.md) references one or more Collections and stores where each Collection window
+belongs. The Layout uses current Collection membership every time it launches. Opening a
+Collection directly never requires or changes a Layout.
+
 ## Retired Session Groups
 
 Session Groups were an older, overlapping model for named sets of sessions. They are no longer

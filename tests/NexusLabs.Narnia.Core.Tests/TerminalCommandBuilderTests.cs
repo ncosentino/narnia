@@ -94,6 +94,25 @@ public sealed class TerminalCommandBuilderTests
         Assert.Contains("--resume=22222222-2222-4222-8222-222222222222", segments[1]);
     }
 
+    [Fact]
+    public void BuildNewWindowCommand_ForcesNewWindowBeforeJoinedTabs()
+    {
+        var tabs = new[]
+        {
+            new TerminalLaunchTab(SessionId, "One", @"C:\one"),
+        };
+
+        var command = _builder.BuildNewWindowCommand(
+            ShellPath,
+            "pwsh",
+            tabs,
+            "copilot");
+
+        Assert.StartsWith("-w new new-tab ", command);
+        Assert.Contains("--title \"One\"", command);
+        Assert.Contains($"--resume={SessionId}", command);
+    }
+
     [Theory]
     [InlineData("pwsh")]
     [InlineData("powershell")]

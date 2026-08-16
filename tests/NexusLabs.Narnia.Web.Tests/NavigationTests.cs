@@ -29,6 +29,7 @@ public sealed class NavigationTests
             "Sessions",
             "Favorites",
             "Collections",
+            "Layouts",
             "Runtime",
             "Schedules",
             "Stats",
@@ -120,6 +121,30 @@ public sealed class NavigationTests
             html);
         await AssertPngAsync(client, "/favicon.png");
         await AssertPngAsync(client, "/narnia-logo.png");
+    }
+
+    [Fact]
+    public async Task RuntimeAssets_ShareContentSensitiveCacheVersion()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var html = await factory.CreateClient().GetStringAsync(
+            "/",
+            TestContext.Current.CancellationToken);
+
+        var stylesheet = Regex.Match(
+            html,
+            "href=\"app\\.css\\?v=(?<version>[^\"]+)\"");
+        var script = Regex.Match(
+            html,
+            "src=\"js/narnia-charts\\.js\\?v=(?<version>[^\"]+)\"");
+
+        Assert.True(stylesheet.Success);
+        Assert.True(script.Success);
+        Assert.Equal(
+            stylesheet.Groups["version"].Value,
+            script.Groups["version"].Value);
+        Assert.NotEqual("14", stylesheet.Groups["version"].Value);
+        Assert.NotEqual("29", stylesheet.Groups["version"].Value);
     }
 
     private static async Task AssertPngAsync(HttpClient client, string path)

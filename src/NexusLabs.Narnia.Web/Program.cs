@@ -16,6 +16,8 @@ using NexusLabs.Narnia.Web;
 using NexusLabs.Narnia.Web.Components;
 using NexusLabs.Narnia.Web.Mcp;
 
+WindowsDpiAwareness.EnablePerMonitorV2();
+
 // Detached launchers inherit their caller's working directory. Normalize it immediately so the
 // server never keeps a plugin or source directory open, and relative process operations resolve
 // beside the running application.
@@ -90,6 +92,9 @@ builder.Services.AddSingleton<SqliteSessionGroupsRepository>();
 builder.Services.AddSingleton<ISessionGroupsRepository>(sp => sp.GetRequiredService<SqliteSessionGroupsRepository>());
 builder.Services.AddSingleton<SqliteWorkCollectionsRepository>();
 builder.Services.AddSingleton<IWorkCollectionsRepository>(sp => sp.GetRequiredService<SqliteWorkCollectionsRepository>());
+builder.Services.AddSingleton<SqliteWindowLayoutsRepository>();
+builder.Services.AddSingleton<IWindowLayoutsRepository>(
+    sp => sp.GetRequiredService<SqliteWindowLayoutsRepository>());
 builder.Services.AddSingleton<SqliteScheduledJobRegistry>();
 builder.Services.AddSingleton<IScheduledJobRegistry>(sp => sp.GetRequiredService<SqliteScheduledJobRegistry>());
 builder.Services.AddSingleton<SqliteScheduledJobImportRepository>();
@@ -102,6 +107,7 @@ builder.Services.AddSingleton<IScheduledJobPackageService, ScheduledJobPackageSe
 builder.Services.AddSingleton<ITerminalCommandBuilder, TerminalCommandBuilder>();
 builder.Services.AddSingleton<IProcessLauncher, ShellExecuteProcessLauncher>();
 builder.Services.AddSingleton<ITerminalLauncher, TerminalLauncher>();
+builder.Services.AddSingleton<IWindowLayoutService, WindowLayoutService>();
 
 // Recovery-console window sources. The live snapshotter is the built-in source; additional
 // sources (e.g. a future launch-history source) can be registered here and will surface in the
@@ -131,6 +137,7 @@ else
 
 if (OperatingSystem.IsWindows())
 {
+    builder.Services.AddSingleton<IWindowLayoutPlatform, WindowsWindowLayoutPlatform>();
     builder.Services.AddSingleton<IProcessResourceSnapshotProvider, WindowsProcessResourceSnapshotProvider>();
     builder.Services.AddSingleton<IProcessSnapshotProvider, WmiProcessSnapshotProvider>();
     builder.Services.AddSingleton<ILiveWindowDetector, LiveWindowDetector>();
@@ -139,6 +146,7 @@ if (OperatingSystem.IsWindows())
 }
 else
 {
+    builder.Services.AddSingleton<IWindowLayoutPlatform, UnsupportedWindowLayoutPlatform>();
     builder.Services.AddSingleton<IProcessResourceSnapshotProvider, UnsupportedProcessResourceSnapshotProvider>();
 }
 
@@ -245,6 +253,8 @@ app.Use(async (context, next) =>
 
     var requiresLoopbackHost =
         context.Request.Path.StartsWithSegments("/mcp") ||
+        context.Request.Path.StartsWithSegments("/layouts") ||
+        context.Request.Path.StartsWithSegments("/api/layouts") ||
         context.Request.Path.StartsWithSegments("/runtime") ||
         context.Request.Path.StartsWithSegments("/processes") ||
         context.Request.Path.StartsWithSegments("/api/processes");
@@ -682,6 +692,7 @@ app.MapPost("/api/collections/{id}/open", async (
         ct);
 });
 app.MapStorageEndpoints();
+app.MapWindowLayoutsEndpoints();
 app.MapSessionMigrationEndpoints();
 
 // ── Scheduled jobs registry API ─────────────────────────────────────────────

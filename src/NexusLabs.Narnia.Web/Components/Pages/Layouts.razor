@@ -1,0 +1,131 @@
+@page "/layouts"
+@using NexusLabs.Narnia.Core.Models
+@using NexusLabs.Narnia.Core.Repositories
+@inject IWindowLayoutsRepository LayoutsRepository
+@inject IWorkCollectionsRepository CollectionsRepository
+@inject IWindowLayoutPlatform Platform
+
+<PageTitle>Layouts — Narnia</PageTitle>
+
+<div class="page-actions">
+    <div>
+        <h1>▦ Layouts</h1>
+        <p class="settings-hint">
+            Launch several Collections into a persisted window arrangement. Collections remain
+            independently launchable; a Layout only composes them.
+        </p>
+    </div>
+    @if (Platform.IsSupported)
+    {
+        <a class="btn-bulk-collection" href="/layouts/capture">＋ Capture Current Layout</a>
+    }
+</div>
+
+@if (!Platform.IsSupported)
+{
+    <div class="process-unavailable">
+        <strong>Window Layouts unavailable</strong>
+        <p>Capturing and restoring terminal placement currently requires Windows.</p>
+    </div>
+}
+
+@if (_layouts.Count == 0)
+{
+    <p>
+        No Layouts yet. Arrange your Windows Terminal windows, then choose
+        <strong>Capture Current Layout</strong>.
+    </p>
+}
+else
+{
+    <div class="layout-grid">
+        @foreach (var savedLayout in _layouts)
+        {
+            <article class="layout-card">
+                <div class="collection-card-head">
+                    <h2>@savedLayout.Name</h2>
+                    <span class="window-meta">
+                        @savedLayout.Slots.Count window@(savedLayout.Slots.Count == 1 ? "" : "s")
+                    </span>
+                </div>
+                <p class="collection-meta">
+                    Updated @savedLayout.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                </p>
+
+                <WindowLayoutPreview Value="@savedLayout" Collections="@_collections" />
+
+                <details class="layout-window-details">
+                    <summary>Window details</summary>
+                    <ol class="layout-window-list">
+                        @foreach (var slot in savedLayout.Slots.OrderBy(slot => slot.SlotOrder))
+                        {
+                            var collection = LookupCollection(slot.CollectionId);
+                            <li>
+                                <div>
+                                    @if (collection is null)
+                                    {
+                                        <strong class="status-error">Missing Collection</strong>
+                                        <code>@Short(slot.CollectionId)</code>
+                                    }
+                                    else
+                                    {
+                                        <a href="/collections/@collection.Id">@collection.Name</a>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(slot.CapturedWindowTitle))
+                                    {
+                                        <span class="layout-window-title">@slot.CapturedWindowTitle</span>
+                                    }
+                                </div>
+                                <span class="layout-window-placement">
+                                    @slot.MonitorDeviceName ·
+                                    @slot.CapturedBounds.Width×@slot.CapturedBounds.Height
+                                    at @slot.CapturedBounds.X,@slot.CapturedBounds.Y
+                                </span>
+                            </li>
+                        }
+                    </ol>
+                </details>
+
+                <div class="collection-actions">
+                    <button class="launch-btn"
+                            disabled="@(!Platform.IsSupported)"
+                            onclick="narniaLaunchWindowLayout('@savedLayout.Id', this, false)">
+                        🚀 Launch Layout
+                    </button>
+                    <button class="btn-refresh"
+                            data-name="@savedLayout.Name"
+                            onclick="narniaRenameWindowLayout('@savedLayout.Id', this)">
+                        ✏️ Rename
+                    </button>
+                    <button class="btn-bulk-archive"
+                            onclick="narniaDeleteWindowLayout('@savedLayout.Id')">
+                        🗑 Delete
+                    </button>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<WindowLayout> _layouts = [];
+    private IReadOnlyDictionary<string, WorkCollection> _collections =
+        new Dictionary<string, WorkCollection>(StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var layoutsTask = LayoutsRepository.GetAllAsync().AsTask();
+        var collectionsTask = CollectionsRepository.GetAllAsync().AsTask();
+        await Task.WhenAll(layoutsTask, collectionsTask);
+        _layouts = await layoutsTask;
+        _collections = (await collectionsTask).ToDictionary(
+            collection => collection.Id,
+            StringComparer.Ordinal);
+    }
+
+    private WorkCollection? LookupCollection(string id) =>
+        _collections.TryGetValue(id, out var collection) ? collection : null;
+
+    private static string Short(string id) =>
+        id.Length > 8 ? id[..8] : id;
+}
