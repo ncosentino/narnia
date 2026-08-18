@@ -97,6 +97,97 @@ body {
 .nav-icon-image { width: 1.6rem; height: 1.6rem; object-fit: contain; }
 .brand { font-weight: 700; font-size: 1.1rem; }
 
+/* ── In-app dialogs ─────────────────────────────────────────────────────── */
+.narnia-dialog {
+    width: min(34rem, calc(100vw - 2rem));
+    max-height: min(80vh, 42rem);
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    background: var(--surface);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .45);
+}
+.narnia-dialog::backdrop {
+    background: rgba(8, 8, 18, .72);
+    backdrop-filter: blur(2px);
+}
+.narnia-dialog form {
+    display: grid;
+    max-height: min(80vh, 42rem);
+}
+.narnia-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.15rem;
+    border-bottom: 1px solid var(--border);
+}
+.narnia-dialog-header h2 {
+    margin: 0;
+    font-size: 1.15rem;
+}
+.narnia-dialog-close {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    color: var(--text);
+    background: transparent;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.narnia-dialog-close:hover { background: var(--row-hover); }
+.narnia-dialog-message {
+    overflow: auto;
+    padding: 1.15rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+.narnia-dialog-input-group {
+    display: grid;
+    gap: .4rem;
+    padding: 0 1.15rem 1.15rem;
+}
+.narnia-dialog-input-group[hidden] { display: none; }
+.narnia-dialog-input-group span {
+    color: var(--text-muted);
+    font-size: .85rem;
+    font-weight: 650;
+}
+.narnia-dialog-input-group input {
+    width: 100%;
+    padding: .6rem .7rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    background: var(--surface-alt);
+}
+.narnia-dialog-input-group input:focus {
+    border-color: var(--accent);
+    outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.narnia-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .65rem;
+    padding: .9rem 1.15rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface-alt);
+}
+.narnia-dialog-actions .btn-bulk-archive {
+    background: var(--status-danger);
+    color: #11111b;
+}
+.narnia-dialog-actions .btn-bulk-archive:hover {
+    filter: brightness(.9);
+}
+
 /* ── Theme toggle ────────────────────────────────────────────────────────── */
 .theme-toggle {
     margin-left: auto;

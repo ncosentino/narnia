@@ -17,6 +17,6 @@ async function narniaSetFavorite(sessionId, favorite, button) {
     } catch (error) {
         button.disabled = false;
         button.textContent = originalText;
-        alert('Error updating favorite status: ' + error.message);
+        await narniaDialog.alert('Error updating favorite status: ' + error.message);
     }
 }
