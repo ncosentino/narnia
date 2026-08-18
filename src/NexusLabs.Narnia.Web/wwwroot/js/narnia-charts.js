@@ -650,36 +650,27 @@ async function narniaLaunchWindowLayout(id, btn, force) {
             body: JSON.stringify({ force: force === true }),
         });
         var body = await response.json().catch(function () { return null; });
-        if (response.status === 409 && body?.error === 'directory-collision' && !force) {
-            if (!await narniaDialog.confirm(narniaCollisionPrompt(body), {
-                title: 'Working directory conflict',
-                confirmLabel: 'Launch anyway',
-                danger: true,
-            })) {
-                btn.disabled = false;
-                btn.textContent = originalText;
-                return;
-            }
-            btn.disabled = false;
-            btn.textContent = originalText;
-            return narniaLaunchWindowLayout(id, btn, true);
-        }
         if (!response.ok) {
             var issues = body?.issues ? '\n\n' + body.issues.join('\n') : '';
             throw new Error((body?.message || 'HTTP ' + response.status) + issues);
         }
 
         var failed = (body.windows || []).filter(function (window) { return !window.success; });
+        var launched = (body.windows || []).filter(function (window) {
+            return (window.launchedSessions || 0) > 0;
+        });
         btn.textContent = body.success ? '✅ Layout launched' : '⚠️ Partial launch';
         if (failed.length > 0) {
             await narniaDialog.alert(
-                'Some Layout windows could not be restored:\n\n' +
+                'Launched ' + launched.length + ' of ' + body.windows.length +
+                ' Layout windows.\n\nSkipped or partial windows:\n\n' +
                 failed.map(function (window) {
                     return '• ' + window.contentName + ': ' +
                         (window.error || (window.failures || []).map(function (failure) {
                             return failure.reason;
                         }).join(', '));
-                }).join('\n'));
+                }).join('\n'),
+                { title: 'Layout partially launched' });
         }
         setTimeout(function () {
             btn.disabled = false;

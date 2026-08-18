@@ -230,7 +230,7 @@ public sealed class WindowLayoutsEndpointsTests
     }
 
     [Fact]
-    public async Task LaunchLayout_ActiveSessionBlocksBeforeSpawning()
+    public async Task LaunchLayout_ActiveSessionIsReportedWithoutSpawning()
     {
         using var factory = new NarniaWebAppFactory();
         var collection = await factory.WorkCollectionsRepository.CreateAsync(
@@ -260,10 +260,175 @@ public sealed class WindowLayoutsEndpointsTests
             new { force = false },
             Ct);
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<PreflightResponse>(Ct);
-        Assert.Contains("already active", Assert.Single(body!.Issues), StringComparison.Ordinal);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<LaunchResponse>(Ct);
+        Assert.False(body!.Success);
+        var window = Assert.Single(body.Windows);
+        Assert.False(window.Success);
+        Assert.Equal(0, window.LaunchedSessions);
+        Assert.Contains(
+            window.Failures,
+            failure => failure.Reason.Contains("already active", StringComparison.Ordinal));
         factory.ProcessLauncher.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task LaunchLayout_ActiveWindowDoesNotBlockViableWindow()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var layout = await factory.WindowLayoutsRepository.CreateAsync(
+            "Partial",
+            Monitors(),
+            [SessionSlot(SessionId, 0), SessionSlot(Session2, 1)],
+            Now,
+            Ct);
+        var sessions = new Dictionary<string, Session>(StringComparer.Ordinal)
+        {
+            [SessionId] = Session(SessionId, "Already active"),
+            [Session2] = Session(Session2, "Launch me"),
+        };
+        factory.SessionRepository
+            .Setup(repository => repository.GetByIdsAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(sessions);
+        factory.SessionActivityReader
+            .Setup(reader => reader.GetActiveSessionIds())
+            .Returns(new HashSet<string>([SessionId], StringComparer.OrdinalIgnoreCase));
+        await factory.Services.GetRequiredService<INarniaSettingsRepository>()
+            .SetAsync("shell_path", "pwsh.exe", Ct);
+        factory.CommandBuilder
+            .Setup(builder => builder.FindWindowsTerminalPath())
+            .Returns("wt.exe");
+        factory.CommandBuilder
+            .Setup(builder => builder.BuildNewWindowCommand(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<TerminalLaunchTab>>(),
+                It.IsAny<string>()))
+            .Returns("-w new viable");
+        factory.WindowLayoutPlatform
+            .Setup(platform => platform.Capture())
+            .Returns(Snapshot([]));
+        factory.WindowLayoutPlatform
+            .Setup(platform => platform.WaitForNewTerminalWindowAsync(
+                It.IsAny<IReadOnlySet<long>>(),
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CapturedWindow("Launch me", 203));
+        factory.WindowLayoutPlatform
+            .Setup(platform => platform.ApplyPlacement(
+                203,
+                It.IsAny<ResolvedWindowLayoutPlacement>()))
+            .Returns((long _, ResolvedWindowLayoutPlacement placement) =>
+                new WindowLayoutPlacementResult(true, placement.Bounds, null));
+
+        using var response = await factory.CreateClient().PostAsJsonAsync(
+            $"/api/layouts/{layout.Id}/launch",
+            new { force = false },
+            Ct);
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<LaunchResponse>(Ct);
+        Assert.False(body!.Success);
+        Assert.Equal(2, body.Windows.Count);
+        Assert.Contains(
+            body.Windows,
+            window => window.ContentName == "Already active" &&
+                !window.Success &&
+                window.LaunchedSessions == 0);
+        Assert.Contains(
+            body.Windows,
+            window => window.ContentName == "Launch me" &&
+                window.Success &&
+                window.LaunchedSessions == 1);
+        factory.ProcessLauncher.Verify(
+            launcher => launcher.Start("wt.exe", "-w new viable", null),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task LaunchLayout_CollidingSessionIsSkippedWhileOthersLaunch()
+    {
+        using var factory = new NarniaWebAppFactory();
+        var layout = await factory.WindowLayoutsRepository.CreateAsync(
+            "Partial collision",
+            Monitors(),
+            [SessionSlot(SessionId, 0), SessionSlot(Session2, 1)],
+            Now,
+            Ct);
+        factory.SessionRepository
+            .Setup(repository => repository.GetByIdsAsync(
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, Session>(StringComparer.Ordinal)
+            {
+                [SessionId] = Session(SessionId, "Collision"),
+                [Session2] = Session(Session2, "Safe"),
+            });
+        factory.LaunchCollisionDetector
+            .Setup(detector => detector.DetectAsync(
+                It.IsAny<IReadOnlyList<TerminalLaunchTab>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new LaunchDirectoryCollision(
+                    SessionId,
+                    Path.GetTempPath(),
+                    "33333333-3333-4333-8333-333333333333",
+                    "Occupying session",
+                    true),
+            ]);
+        await factory.Services.GetRequiredService<INarniaSettingsRepository>()
+            .SetAsync("shell_path", "pwsh.exe", Ct);
+        factory.CommandBuilder
+            .Setup(builder => builder.FindWindowsTerminalPath())
+            .Returns("wt.exe");
+        factory.CommandBuilder
+            .Setup(builder => builder.BuildNewWindowCommand(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<TerminalLaunchTab>>(),
+                It.IsAny<string>()))
+            .Returns("-w new safe");
+        factory.WindowLayoutPlatform
+            .Setup(platform => platform.Capture())
+            .Returns(Snapshot([]));
+        factory.WindowLayoutPlatform
+            .Setup(platform => platform.WaitForNewTerminalWindowAsync(
+                It.IsAny<IReadOnlySet<long>>(),
+                It.IsAny<IReadOnlyCollection<string>>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CapturedWindow("Safe", 204));
+        factory.WindowLayoutPlatform
+            .Setup(platform => platform.ApplyPlacement(
+                204,
+                It.IsAny<ResolvedWindowLayoutPlacement>()))
+            .Returns((long _, ResolvedWindowLayoutPlacement placement) =>
+                new WindowLayoutPlacementResult(true, placement.Bounds, null));
+
+        using var response = await factory.CreateClient().PostAsJsonAsync(
+            $"/api/layouts/{layout.Id}/launch",
+            new { force = false },
+            Ct);
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<LaunchResponse>(Ct);
+        Assert.False(body!.Success);
+        Assert.Single(body.Collisions);
+        Assert.Contains(
+            body.Windows,
+            window => window.ContentName == "Collision" &&
+                window.LaunchedSessions == 0);
+        Assert.Contains(
+            body.Windows,
+            window => window.ContentName == "Safe" &&
+                window.LaunchedSessions == 1);
+        factory.ProcessLauncher.Verify(
+            launcher => launcher.Start("wt.exe", "-w new safe", null),
+            Times.Once);
     }
 
     [Fact]
@@ -454,12 +619,19 @@ public sealed class WindowLayoutsEndpointsTests
         string Title,
         string? SuggestedCollectionId);
 
-    private sealed record LaunchResponse(bool Success, List<LaunchedWindowResponse> Windows);
+    private sealed record LaunchResponse(
+        bool Success,
+        List<CollisionResponse> Collisions,
+        List<LaunchedWindowResponse> Windows);
 
     private sealed record LaunchedWindowResponse(
         string ContentName,
         bool Success,
+        int LaunchedSessions,
+        List<LaunchFailureResponse> Failures,
         string? Adaptation);
 
-    private sealed record PreflightResponse(List<string> Issues);
+    private sealed record LaunchFailureResponse(string SessionId, string Reason);
+
+    private sealed record CollisionResponse(string SessionId, string Description);
 }

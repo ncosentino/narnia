@@ -430,25 +430,6 @@ internal static class WindowLayoutsEndpoints
             return Results.NotFound("Layout not found");
 
         var result = await service.LaunchAsync(layout, request.Force, ct);
-        if (result.Collisions.Count > 0)
-        {
-            return Results.Json(
-                new
-                {
-                    error = "directory-collision",
-                    message = "Two or more Layout sessions would share a working directory.",
-                    collisions = result.Collisions.Select(collision => new
-                    {
-                        sessionId = collision.SessionId,
-                        directory = collision.Directory,
-                        occupyingSessionId = collision.OccupyingSessionId,
-                        occupyingSessionName = collision.OccupyingSessionName,
-                        occupyingIsLive = collision.OccupyingIsLive,
-                        description = collision.Describe(),
-                    }),
-                },
-                statusCode: StatusCodes.Status409Conflict);
-        }
         if (!result.PreflightPassed)
         {
             return Results.Json(
@@ -464,6 +445,15 @@ internal static class WindowLayoutsEndpoints
         return Results.Ok(new
         {
             success = result.Success,
+            collisions = result.Collisions.Select(collision => new
+            {
+                sessionId = collision.SessionId,
+                directory = collision.Directory,
+                occupyingSessionId = collision.OccupyingSessionId,
+                occupyingSessionName = collision.OccupyingSessionName,
+                occupyingIsLive = collision.OccupyingIsLive,
+                description = collision.Describe(),
+            }),
             windows = result.Windows.Select(window => new
             {
                 contentKind = window.ContentKind.ToString().ToLowerInvariant(),

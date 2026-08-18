@@ -22,6 +22,7 @@ accepted record do not need an ADR.
 | [ADR-0003](adr-0003-collections-are-the-session-organization-model.md) | Collections are the session organization model | Accepted |
 | [ADR-0004](adr-0004-window-layouts-compose-collections.md) | Window Layouts compose Collections | Accepted |
 | [ADR-0005](adr-0005-layout-editor-supports-mixed-window-content.md) | The Layout editor supports mixed window content | Accepted |
+| [ADR-0006](adr-0006-layout-launch-isolates-session-failures.md) | Layout launch isolates session failures | Accepted |
 
 ## Adding a record
 

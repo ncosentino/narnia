@@ -104,6 +104,7 @@ nav:
     - "ADR-0003: Collections organize sessions": adr/adr-0003-collections-are-the-session-organization-model.md
     - "ADR-0004: Window Layouts compose Collections": adr/adr-0004-window-layouts-compose-collections.md
     - "ADR-0005: Layout editor mixed content": adr/adr-0005-layout-editor-supports-mixed-window-content.md
+    - "ADR-0006: Layout launch fault isolation": adr/adr-0006-layout-launch-isolates-session-failures.md
   - Articles: articles.md
 
 plugins:
