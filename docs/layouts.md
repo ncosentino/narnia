@@ -45,18 +45,18 @@ Captured Layouts can be refined later in the same visual editor.
 
 ## Launch a Layout
 
-**Launch Layout** preflights the complete arrangement before starting anything:
+**Launch Layout** validates the environment once, then evaluates every session independently.
+Only platform-wide failures such as a missing shell, Windows Terminal, or monitor topology block
+the complete Layout.
 
-- every referenced Collection must still exist and contain sessions;
-- every referenced individual session must still exist;
-- no expanded session may appear in more than one Layout window;
-- target sessions must not already be active;
-- every session must still be indexed; and
-- normal working-directory collision checks still apply.
+Unavailable, already-active, duplicated, directory-colliding, or resume-incompatible sessions are
+skipped and reported. Every remaining Collection member, individual session, and window continues
+to launch. An individual-session window takes precedence when the same session also belongs to a
+Collection window.
 
-After preflight, Narnia opens each Collection in a new Windows Terminal window, detects the new
-HWND, applies saved placement, and verifies the resulting bounds. A partial launch is reported
-explicitly; Narnia does not close successfully launched windows to disguise another failure.
+Narnia detects each new HWND, applies saved placement, and verifies the resulting bounds. The
+in-app completion summary distinguishes fully launched, partially launched, and skipped windows.
+Narnia does not close successful windows to disguise another failure.
 
 Collections remain independently available through **Open Collection** and **Open Selected**.
 

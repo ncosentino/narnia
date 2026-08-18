@@ -9,7 +9,10 @@ public interface IWindowLayoutService
     /// <summary>Captures current terminal windows with suggested Collection matches.</summary>
     ValueTask<WindowLayoutCaptureView> CaptureAsync(CancellationToken ct);
 
-    /// <summary>Launches and positions every Collection window in a persisted Layout.</summary>
+    /// <summary>
+    /// Launches and positions every eligible session and window in a persisted Layout while
+    /// reporting slot-local failures.
+    /// </summary>
     ValueTask<WindowLayoutLaunchResult> LaunchAsync(
         WindowLayout layout,
         bool force,

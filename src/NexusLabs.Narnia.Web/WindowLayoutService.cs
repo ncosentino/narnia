@@ -80,7 +80,7 @@ public sealed class WindowLayoutService(
         var collectionsById = allCollections.ToDictionary(
             collection => collection.Id,
             StringComparer.Ordinal);
-        var issues = new List<string>();
+        var results = new List<WindowLayoutWindowLaunchResult>(layout.Slots.Count);
         var slotSources = new List<LayoutSlotSource>();
         foreach (var slot in layout.Slots)
         {
@@ -89,13 +89,20 @@ public sealed class WindowLayoutService(
                 if (slot.CollectionId is null ||
                     !collectionsById.TryGetValue(slot.CollectionId, out var collection))
                 {
-                    issues.Add(
-                        $"The Collection referenced by window '{slot.CapturedWindowTitle ?? slot.Id}' no longer exists.");
+                    results.Add(FailedWindow(
+                        slot,
+                        slot.CapturedWindowTitle ?? $"Collection {Short(slot.ContentId)}",
+                        [],
+                        "The referenced Collection no longer exists."));
                     continue;
                 }
                 if (collection.Members.Count == 0)
                 {
-                    issues.Add($"Collection '{collection.Name}' has no sessions.");
+                    results.Add(FailedWindow(
+                        slot,
+                        collection.Name,
+                        [],
+                        "Collection has no sessions."));
                     continue;
                 }
 
@@ -106,8 +113,11 @@ public sealed class WindowLayoutService(
             }
             else if (slot.SessionId is null)
             {
-                issues.Add(
-                    $"The session referenced by window '{slot.CapturedWindowTitle ?? slot.Id}' is invalid.");
+                results.Add(FailedWindow(
+                    slot,
+                    slot.CapturedWindowTitle ?? "Invalid session",
+                    [],
+                    "The referenced session is invalid."));
             }
             else
             {
@@ -115,54 +125,82 @@ public sealed class WindowLayoutService(
             }
         }
 
-        var duplicateSessions = slotSources
-            .SelectMany(source => source.SessionIds.Select(sessionId => new
-            {
-                source.Slot,
-                SessionId = sessionId,
-            }))
-            .GroupBy(item => item.SessionId, StringComparer.OrdinalIgnoreCase)
-            .Where(group => group.Select(item => item.Slot.Id).Distinct().Count() > 1)
-            .ToArray();
-        foreach (var duplicate in duplicateSessions)
+        var failuresBySlot = slotSources.ToDictionary(
+            source => source.Slot.Id,
+            _ => new List<TerminalLaunchFailure>(),
+            StringComparer.Ordinal);
+        var candidateSessionIdsBySlot = slotSources.ToDictionary(
+            source => source.Slot.Id,
+            _ => new List<string>(),
+            StringComparer.Ordinal);
+        var ownerBySessionId =
+            new Dictionary<string, LayoutSlotSource>(StringComparer.OrdinalIgnoreCase);
+
+        // An explicit individual-session window wins when the same session also belongs to a
+        // Collection window. The Collection can still launch its remaining members.
+        foreach (var source in slotSources
+            .OrderBy(source =>
+                source.Slot.ContentKind == WindowLayoutContentKind.Session ? 0 : 1)
+            .ThenBy(source => source.Slot.SlotOrder))
         {
-            issues.Add(
-                $"Session {Short(duplicate.Key)} appears in multiple windows in this Layout.");
+            foreach (var sessionId in source.SessionIds)
+            {
+                if (ownerBySessionId.TryGetValue(sessionId, out var owner))
+                {
+                    failuresBySlot[source.Slot.Id].Add(new TerminalLaunchFailure(
+                        sessionId,
+                        $"This session is assigned to another Layout window ({DisplayName(owner)})."));
+                    continue;
+                }
+
+                ownerBySessionId[sessionId] = source;
+                candidateSessionIdsBySlot[source.Slot.Id].Add(sessionId);
+            }
         }
 
-        var allSessionIds = slotSources
-            .SelectMany(source => source.SessionIds)
+        var allSessionIds = candidateSessionIdsBySlot.Values
+            .SelectMany(sessionIds => sessionIds)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var activeSessionIds = activityReader.GetActiveSessionIds();
-        var activeTargets = allSessionIds
-            .Where(activeSessionIds.Contains)
-            .ToArray();
-        if (activeTargets.Length > 0)
-        {
-            issues.Add(
-                $"{activeTargets.Length} Layout session{(activeTargets.Length == 1 ? " is" : "s are")} already active.");
-        }
-
         var sessions = await sessionsRepository.GetByIdsAsync(allSessionIds, ct);
-        foreach (var missingSessionId in allSessionIds.Where(id => !sessions.ContainsKey(id)))
-            issues.Add($"Session {Short(missingSessionId)} is unavailable.");
+        foreach (var source in slotSources)
+        {
+            var candidates = candidateSessionIdsBySlot[source.Slot.Id];
+            for (var index = candidates.Count - 1; index >= 0; index--)
+            {
+                var sessionId = candidates[index];
+                string? reason = null;
+                if (activeSessionIds.Contains(sessionId))
+                    reason = "Session is already active.";
+                else if (!sessions.ContainsKey(sessionId))
+                    reason = "Session is unavailable.";
 
-        if (issues.Count > 0)
-            return new WindowLayoutLaunchResult(false, issues, [], []);
+                if (reason is null)
+                    continue;
+
+                candidates.RemoveAt(index);
+                failuresBySlot[source.Slot.Id].Add(
+                    new TerminalLaunchFailure(sessionId, reason));
+            }
+        }
 
         var overrides = await overridesRepository.GetAllOverridesAsync(ct);
         var resolvedSlots = slotSources
             .Select(source => source with
             {
                 ContentName = source.ContentName ??
-                    sessions[source.SessionIds[0]].Summary ??
-                    $"Session {Short(source.SessionIds[0])}",
+                    (source.SessionIds.FirstOrDefault() is { } sessionId &&
+                     sessions.TryGetValue(sessionId, out var session)
+                        ? session.Summary
+                        : null) ??
+                    source.Slot.CapturedWindowTitle ??
+                    $"Session {Short(source.Slot.ContentId)}",
             })
             .ToArray();
         var tabsBySlot = resolvedSlots.ToDictionary(
             source => source.Slot.Id,
-            source => source.SessionIds
+            source => candidateSessionIdsBySlot[source.Slot.Id]
                 .Select(sessionId => BuildTab(
                     sessionId,
                     sessions[sessionId],
@@ -172,17 +210,50 @@ public sealed class WindowLayoutService(
                 .ToArray(),
             StringComparer.Ordinal);
         var allTabs = tabsBySlot.Values.SelectMany(tabs => tabs).ToArray();
-        if (!force)
+        IReadOnlyList<LaunchDirectoryCollision> collisions = [];
+        if (!force && allTabs.Length > 0)
         {
-            var collisions = await collisionDetector.DetectAsync(allTabs, ct);
-            if (collisions.Count > 0)
+            collisions = await collisionDetector.DetectAsync(allTabs, ct);
+            foreach (var collisionGroup in collisions.GroupBy(
+                collision => collision.SessionId,
+                StringComparer.OrdinalIgnoreCase))
             {
-                return new WindowLayoutLaunchResult(
-                    false,
-                    [],
-                    collisions,
-                    []);
+                var source = resolvedSlots.FirstOrDefault(candidate =>
+                    tabsBySlot[candidate.Slot.Id].Any(tab =>
+                        string.Equals(
+                            tab.SessionId,
+                            collisionGroup.Key,
+                            StringComparison.OrdinalIgnoreCase)));
+                if (source is null)
+                    continue;
+
+                tabsBySlot[source.Slot.Id] = tabsBySlot[source.Slot.Id]
+                    .Where(tab => !string.Equals(
+                        tab.SessionId,
+                        collisionGroup.Key,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                foreach (var collision in collisionGroup)
+                {
+                    failuresBySlot[source.Slot.Id].Add(new TerminalLaunchFailure(
+                        collision.SessionId,
+                        collision.Describe()));
+                }
             }
+        }
+
+        if (tabsBySlot.Values.All(tabs => tabs.Length == 0))
+        {
+            foreach (var source in resolvedSlots)
+            {
+                results.Add(FailedWindow(
+                    source.Slot,
+                    source.ContentName!,
+                    failuresBySlot[source.Slot.Id],
+                    "No eligible sessions remain for this Layout window."));
+            }
+
+            return Complete(results, collisions);
         }
 
         var shellPath =
@@ -195,12 +266,22 @@ public sealed class WindowLayoutService(
             CopilotSettingKeys.DefaultCommand;
         var shellName = Path.GetFileNameWithoutExtension(shellPath).ToLowerInvariant();
 
-        var results = new List<WindowLayoutWindowLaunchResult>(layout.Slots.Count);
         foreach (var source in resolvedSlots
             .OrderByDescending(item => item.Slot.ZOrder)
             .ThenByDescending(item => item.Slot.SlotOrder))
         {
             var tabs = tabsBySlot[source.Slot.Id];
+            var preflightFailures = failuresBySlot[source.Slot.Id];
+            if (tabs.Length == 0)
+            {
+                results.Add(FailedWindow(
+                    source.Slot,
+                    source.ContentName!,
+                    preflightFailures,
+                    "No eligible sessions remain for this Layout window."));
+                continue;
+            }
+
             var existingHandles = platform.Capture().Windows
                 .Select(window => window.Handle)
                 .ToHashSet();
@@ -213,8 +294,9 @@ public sealed class WindowLayoutService(
             if (outcome.LaunchedSessionIds.Count == 0)
             {
                 results.Add(FailedWindow(
-                    source,
-                    outcome.Failures,
+                    source.Slot,
+                    source.ContentName!,
+                    [.. preflightFailures, .. outcome.Failures],
                     "No session in this Layout window could be launched."));
                 continue;
             }
@@ -227,8 +309,9 @@ public sealed class WindowLayoutService(
             if (window is null)
             {
                 results.Add(FailedWindow(
-                    source,
-                    outcome.Failures,
+                    source.Slot,
+                    source.ContentName!,
+                    [.. preflightFailures, .. outcome.Failures],
                     "Windows Terminal did not expose a new window before the timeout."));
                 continue;
             }
@@ -237,22 +320,26 @@ public sealed class WindowLayoutService(
                 source.Slot,
                 capture.Monitors);
             var applied = platform.ApplyPlacement(window.Handle, placement);
+            var combinedFailures =
+                new List<TerminalLaunchFailure>(preflightFailures.Count + outcome.Failures.Count);
+            combinedFailures.AddRange(preflightFailures);
+            combinedFailures.AddRange(outcome.Failures);
             results.Add(new WindowLayoutWindowLaunchResult(
                 source.Slot.Id,
                 source.Slot.ContentKind,
                 source.Slot.ContentId,
                 source.ContentName!,
-                applied.Success && outcome.Failures.Count == 0,
+                applied.Success && combinedFailures.Count == 0,
                 outcome.LaunchedSessionIds.Count,
                 window.Handle,
                 placement.Adaptation,
                 placement.Bounds,
                 applied.ActualBounds,
-                outcome.Failures,
+                combinedFailures,
                 applied.Error));
         }
 
-        return new WindowLayoutLaunchResult(true, [], [], results);
+        return Complete(results, collisions);
 
         TerminalLaunchTab BuildTab(
             string sessionId,
@@ -340,14 +427,15 @@ public sealed class WindowLayoutService(
         new(false, [issue], [], []);
 
     private static WindowLayoutWindowLaunchResult FailedWindow(
-        LayoutSlotSource source,
+        WindowLayoutSlot slot,
+        string contentName,
         IReadOnlyList<TerminalLaunchFailure> failures,
         string error) =>
         new(
-            source.Slot.Id,
-            source.Slot.ContentKind,
-            source.Slot.ContentId,
-            source.ContentName ?? source.Slot.CapturedWindowTitle ?? "Layout window",
+            slot.Id,
+            slot.ContentKind,
+            slot.ContentId,
+            contentName,
             false,
             0,
             null,
@@ -356,6 +444,22 @@ public sealed class WindowLayoutService(
             null,
             failures,
             error);
+
+    private static WindowLayoutLaunchResult Complete(
+        IReadOnlyList<WindowLayoutWindowLaunchResult> results,
+        IReadOnlyList<LaunchDirectoryCollision> collisions) =>
+        new(
+            true,
+            [],
+            collisions,
+            [.. results.OrderBy(result => result.SlotId, StringComparer.Ordinal)]);
+
+    private static string DisplayName(LayoutSlotSource source) =>
+        source.ContentName ??
+        source.Slot.CapturedWindowTitle ??
+        (source.Slot.ContentKind == WindowLayoutContentKind.Collection
+            ? $"Collection {Short(source.Slot.ContentId)}"
+            : $"Session {Short(source.Slot.ContentId)}");
 
     private static string Short(string sessionId) =>
         sessionId.Length > 8 ? sessionId[..8] : sessionId;
