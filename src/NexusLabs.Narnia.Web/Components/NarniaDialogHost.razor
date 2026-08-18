@@ -1,0 +1,31 @@
+<dialog id="narnia-dialog" class="narnia-dialog" aria-labelledby="narnia-dialog-title">
+    <form id="narnia-dialog-form" method="dialog">
+        <header class="narnia-dialog-header">
+            <h2 id="narnia-dialog-title">Narnia</h2>
+            <button id="narnia-dialog-close"
+                    type="button"
+                    class="narnia-dialog-close"
+                    aria-label="Close dialog">×</button>
+        </header>
+
+        <div id="narnia-dialog-message" class="narnia-dialog-message"></div>
+
+        <label id="narnia-dialog-input-group" class="narnia-dialog-input-group" hidden>
+            <span id="narnia-dialog-input-label">Value</span>
+            <input id="narnia-dialog-input" type="text" autocomplete="off" />
+        </label>
+
+        <footer class="narnia-dialog-actions">
+            <button id="narnia-dialog-cancel"
+                    type="button"
+                    class="btn-refresh">
+                Cancel
+            </button>
+            <button id="narnia-dialog-confirm"
+                    type="submit"
+                    class="launch-btn">
+                OK
+            </button>
+        </footer>
+    </form>
+</dialog>

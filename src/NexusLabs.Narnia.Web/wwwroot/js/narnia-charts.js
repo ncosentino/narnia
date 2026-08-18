@@ -226,17 +226,23 @@ async function narniaSaveOverride(sessionId) {
                 const body = await resp.json();
                 message = body.errors?.repository?.[0] ?? message;
             }
-            alert(message);
+            await narniaDialog.alert(message);
             if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
         }
     } catch (e) {
-        alert('Error saving overrides: ' + e.message);
+        await narniaDialog.alert('Error saving overrides: ' + e.message);
         if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
     }
 }
 
 async function narniaResetOverride(sessionId) {
-    if (!confirm('Reset session metadata overrides? Favorite and archive state will be preserved.')) return;
+    if (!await narniaDialog.confirm(
+        'Reset session metadata overrides? Favorite and archive state will be preserved.',
+        {
+            title: 'Reset session metadata',
+            confirmLabel: 'Reset metadata',
+            danger: true,
+        })) return;
     const btn = document.querySelector('.btn-reset');
     if (btn) { btn.disabled = true; btn.textContent = 'Resetting…'; }
     try {
@@ -246,11 +252,11 @@ async function narniaResetOverride(sessionId) {
         if (resp.ok) {
             window.location.reload();
         } else {
-            alert('Failed to reset overrides (HTTP ' + resp.status + ')');
+            await narniaDialog.alert('Failed to reset overrides (HTTP ' + resp.status + ')');
             if (btn) { btn.disabled = false; btn.textContent = 'Reset Metadata'; }
         }
     } catch (e) {
-        alert('Error resetting overrides: ' + e.message);
+        await narniaDialog.alert('Error resetting overrides: ' + e.message);
         if (btn) { btn.disabled = false; btn.textContent = 'Reset Metadata'; }
     }
 }
@@ -265,7 +271,7 @@ async function narniaToggleArchive(sessionId, archived) {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         window.location.reload();
     } catch (e) {
-        alert('Error updating archive status: ' + e.message);
+        await narniaDialog.alert('Error updating archive status: ' + e.message);
     }
 }
 
@@ -283,7 +289,7 @@ async function narniaLaunch(target, sessionId, btn) {
         btn.textContent = '✅ Launched!';
         setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 3000);
     } catch (e) {
-        alert('Launch failed: ' + e.message);
+        await narniaDialog.alert('Launch failed: ' + e.message);
         btn.textContent = origText;
         btn.disabled = false;
     }
@@ -301,7 +307,11 @@ async function narniaPostLaunch(payload, force) {
 
     var data = await resp.json().catch(function () { return null; });
     if (resp.status === 409 && !force && data && data.error === 'directory-collision') {
-        if (!confirm(narniaCollisionPrompt(data))) return 'cancelled';
+        if (!await narniaDialog.confirm(narniaCollisionPrompt(data), {
+            title: 'Working directory conflict',
+            confirmLabel: 'Launch anyway',
+            danger: true,
+        })) return 'cancelled';
         return await narniaPostLaunch(payload, true);
     }
     throw new Error(data?.message || data || 'HTTP ' + resp.status);
@@ -315,9 +325,14 @@ function narniaCollisionPrompt(data) {
 }
 
 async function narniaMigrateSession(sessionId, btn) {
-    if (!confirm(
+    if (!await narniaDialog.confirm(
         'Recover this Copilot session in place? Narnia will archive the broken event stream, ' +
-        'retain the same folder and session ID, and use one bootstrap model response to reseed it.')) {
+        'retain the same folder and session ID, and use one bootstrap model response to reseed it.',
+        {
+            title: 'Recover this session',
+            confirmLabel: 'Recover session',
+            danger: true,
+        })) {
         return;
     }
 
@@ -342,7 +357,7 @@ async function narniaMigrateSession(sessionId, btn) {
         window.location.assign(
             '/sessions/' + encodeURIComponent(body.replacementSessionId));
     } catch (e) {
-        alert('Session recovery failed: ' + e.message);
+        await narniaDialog.alert('Session recovery failed: ' + e.message);
         btn.disabled = false;
         btn.classList.remove('session-migrate-btn--working');
         btn.textContent = originalText;
@@ -374,11 +389,11 @@ async function narniaSaveSettings() {
                 if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
             }, 2000);
         } else {
-            alert('Failed to save settings (HTTP ' + resp.status + ')');
+            await narniaDialog.alert('Failed to save settings (HTTP ' + resp.status + ')');
             if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
         }
     } catch (e) {
-        alert('Error saving settings: ' + e.message);
+        await narniaDialog.alert('Error saving settings: ' + e.message);
         if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
     }
 }
@@ -395,11 +410,11 @@ async function narniaDetectShell() {
             if (btn) { btn.textContent = '✅ Detected!'; }
             setTimeout(function () { if (btn) { btn.textContent = '🔍 Auto-detect'; btn.disabled = false; } }, 2000);
         } else {
-            alert('No shell detected on this system');
+            await narniaDialog.alert('No shell detected on this system');
             if (btn) { btn.disabled = false; btn.textContent = '🔍 Auto-detect'; }
         }
     } catch (e) {
-        alert('Error detecting shell: ' + e.message);
+        await narniaDialog.alert('Error detecting shell: ' + e.message);
         if (btn) { btn.disabled = false; btn.textContent = '🔍 Auto-detect'; }
     }
 }
@@ -436,7 +451,12 @@ async function narniaArchiveBulk() {
     var ids = narniaSelectedSessionIds();
     if (ids.length === 0) return;
 
-    if (!confirm('Archive ' + ids.length + ' session(s)?')) return;
+    if (!await narniaDialog.confirm(
+        'Archive ' + ids.length + ' session(s)?',
+        {
+            title: 'Archive selected sessions',
+            confirmLabel: 'Archive sessions',
+        })) return;
 
     var btn = document.querySelector('.btn-bulk-archive');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Archiving…'; }
@@ -450,11 +470,11 @@ async function narniaArchiveBulk() {
         }));
         var failed = results.filter(function (r) { return !r.ok; });
         if (failed.length > 0) {
-            alert('Failed to archive ' + failed.length + ' session(s).');
+            await narniaDialog.alert('Failed to archive ' + failed.length + ' session(s).');
         }
         window.location.reload();
     } catch (e) {
-        alert('Error archiving: ' + e.message);
+        await narniaDialog.alert('Error archiving: ' + e.message);
         if (btn) { btn.textContent = '📦 Archive Selected'; btn.disabled = false; }
     }
 }
@@ -488,9 +508,9 @@ async function narniaRunLaunch(btn, launchRequest) {
                 btn.disabled = false;
             }
         }, 3000);
-        if (data.failed && data.failed.length > 0) alert(msg);
+        if (data.failed && data.failed.length > 0) await narniaDialog.alert(msg);
     } catch (e) {
-        alert('Launch failed: ' + e.message);
+        await narniaDialog.alert('Launch failed: ' + e.message);
         if (btn) { btn.textContent = originalText; btn.disabled = false; }
     }
 }
@@ -510,7 +530,11 @@ async function narniaPostBulkLaunch(ids, force, separateWindows) {
 
     var data = await resp.json().catch(function () { return null; });
     if (resp.status === 409 && !force && data && data.error === 'directory-collision') {
-        if (!confirm(narniaCollisionPrompt(data))) return 'cancelled';
+        if (!await narniaDialog.confirm(narniaCollisionPrompt(data), {
+            title: 'Working directory conflict',
+            confirmLabel: 'Launch anyway',
+            danger: true,
+        })) return 'cancelled';
         return await narniaPostBulkLaunch(ids, true, separateWindows);
     }
     throw new Error(data?.message || data || 'HTTP ' + resp.status);
@@ -529,7 +553,11 @@ async function narniaPostCollectionLaunch(id, force, separateWindows) {
 
     var data = await resp.json().catch(function () { return null; });
     if (resp.status === 409 && !force && data && data.error === 'directory-collision') {
-        if (!confirm(narniaCollisionPrompt(data))) return 'cancelled';
+        if (!await narniaDialog.confirm(narniaCollisionPrompt(data), {
+            title: 'Working directory conflict',
+            confirmLabel: 'Launch anyway',
+            danger: true,
+        })) return 'cancelled';
         return await narniaPostCollectionLaunch(id, true, separateWindows);
     }
     throw new Error(data?.message || data || 'HTTP ' + resp.status);
@@ -545,7 +573,7 @@ async function narniaSaveCapturedLayout(btn) {
     var nameInput = document.getElementById('layout-capture-name');
     var name = nameInput ? nameInput.value.trim() : '';
     if (name === '') {
-        alert('A Layout name is required.');
+        await narniaDialog.alert('A Layout name is required.');
         return;
     }
 
@@ -557,7 +585,7 @@ async function narniaSaveCapturedLayout(btn) {
         var collectionId = select ? select.value : '';
         if (collectionId === '') continue;
         if (collectionIds.has(collectionId)) {
-            alert('A Collection can appear only once in a Layout.');
+            await narniaDialog.alert('A Collection can appear only once in a Layout.');
             return;
         }
         collectionIds.add(collectionId);
@@ -589,7 +617,7 @@ async function narniaSaveCapturedLayout(btn) {
         });
     }
     if (windows.length === 0) {
-        alert('Assign at least one window to a Collection.');
+        await narniaDialog.alert('Assign at least one window to a Collection.');
         return;
     }
 
@@ -605,7 +633,7 @@ async function narniaSaveCapturedLayout(btn) {
         if (!response.ok) throw new Error(await narniaCollectionError(response));
         location.href = '/layouts';
     } catch (e) {
-        alert('Failed to save Layout: ' + e.message);
+        await narniaDialog.alert('Failed to save Layout: ' + e.message);
         btn.disabled = false;
         btn.textContent = originalText;
     }
@@ -623,7 +651,11 @@ async function narniaLaunchWindowLayout(id, btn, force) {
         });
         var body = await response.json().catch(function () { return null; });
         if (response.status === 409 && body?.error === 'directory-collision' && !force) {
-            if (!confirm(narniaCollisionPrompt(body))) {
+            if (!await narniaDialog.confirm(narniaCollisionPrompt(body), {
+                title: 'Working directory conflict',
+                confirmLabel: 'Launch anyway',
+                danger: true,
+            })) {
                 btn.disabled = false;
                 btn.textContent = originalText;
                 return;
@@ -640,7 +672,7 @@ async function narniaLaunchWindowLayout(id, btn, force) {
         var failed = (body.windows || []).filter(function (window) { return !window.success; });
         btn.textContent = body.success ? '✅ Layout launched' : '⚠️ Partial launch';
         if (failed.length > 0) {
-            alert(
+            await narniaDialog.alert(
                 'Some Layout windows could not be restored:\n\n' +
                 failed.map(function (window) {
                     return '• ' + window.contentName + ': ' +
@@ -654,7 +686,7 @@ async function narniaLaunchWindowLayout(id, btn, force) {
             btn.textContent = originalText;
         }, 4000);
     } catch (e) {
-        alert('Layout launch failed: ' + e.message);
+        await narniaDialog.alert('Layout launch failed: ' + e.message);
         btn.disabled = false;
         btn.textContent = originalText;
     }
@@ -662,11 +694,18 @@ async function narniaLaunchWindowLayout(id, btn, force) {
 
 async function narniaRenameWindowLayout(id, btn) {
     var current = btn.getAttribute('data-name') || '';
-    var name = prompt('Rename Layout:', current);
+    var name = await narniaDialog.prompt(
+        'Choose a new name for this Layout.',
+        current,
+        {
+            title: 'Rename Layout',
+            inputLabel: 'Layout name',
+            confirmLabel: 'Rename',
+        });
     if (name === null) return;
     name = name.trim();
     if (name === '') {
-        alert('A Layout name is required.');
+        await narniaDialog.alert('A Layout name is required.');
         return;
     }
 
@@ -679,12 +718,18 @@ async function narniaRenameWindowLayout(id, btn) {
         if (!response.ok) throw new Error(await narniaCollectionError(response));
         location.reload();
     } catch (e) {
-        alert('Failed to rename Layout: ' + e.message);
+        await narniaDialog.alert('Failed to rename Layout: ' + e.message);
     }
 }
 
 async function narniaDeleteWindowLayout(id) {
-    if (!confirm('Delete this Layout? Collections and sessions are not affected.')) return;
+    if (!await narniaDialog.confirm(
+        'Delete this Layout? Collections and sessions are not affected.',
+        {
+            title: 'Delete Layout',
+            confirmLabel: 'Delete',
+            danger: true,
+        })) return;
     try {
         var response = await fetch('/api/layouts/' + encodeURIComponent(id), {
             method: 'DELETE',
@@ -692,16 +737,23 @@ async function narniaDeleteWindowLayout(id) {
         if (!response.ok) throw new Error(await narniaCollectionError(response));
         location.reload();
     } catch (e) {
-        alert('Failed to delete Layout: ' + e.message);
+        await narniaDialog.alert('Failed to delete Layout: ' + e.message);
     }
 }
 
 async function narniaCreateBlankLayout(btn) {
-    var name = prompt('Name this Layout:', '');
+    var name = await narniaDialog.prompt(
+        'Create an empty Layout using the current monitor topology.',
+        '',
+        {
+            title: 'New blank Layout',
+            inputLabel: 'Layout name',
+            confirmLabel: 'Create Layout',
+        });
     if (name === null) return;
     name = name.trim();
     if (name === '') {
-        alert('A Layout name is required.');
+        await narniaDialog.alert('A Layout name is required.');
         return;
     }
 
@@ -718,7 +770,7 @@ async function narniaCreateBlankLayout(btn) {
         var body = await response.json();
         location.href = '/layouts/' + encodeURIComponent(body.id) + '/edit';
     } catch (e) {
-        alert('Failed to create Layout: ' + e.message);
+        await narniaDialog.alert('Failed to create Layout: ' + e.message);
         btn.disabled = false;
         btn.textContent = originalText;
     }
@@ -1006,7 +1058,7 @@ async function narniaSaveLayoutEditor(btn) {
             location.reload();
         }, 500);
     } catch (e) {
-        alert('Failed to save Layout: ' + e.message);
+        await narniaDialog.alert('Failed to save Layout: ' + e.message);
         btn.disabled = false;
         btn.textContent = originalText;
     }
@@ -1081,7 +1133,7 @@ async function narniaRequestStorageScan(btn) {
         }
         await narniaPollStorageScan(btn, originalText);
     } catch (e) {
-        alert('Storage scan failed to start: ' + e.message);
+        await narniaDialog.alert('Storage scan failed to start: ' + e.message);
         if (btn) { btn.disabled = false; btn.textContent = originalText; }
     }
 }
@@ -1106,7 +1158,7 @@ async function narniaPollStorageScan(btn, originalText) {
         await new Promise(function (resolve) { setTimeout(resolve, 1000); });
     }
     if (btn) { btn.disabled = false; btn.textContent = originalText; }
-    alert('The storage scan is still running. Refresh the page later to see its progress.');
+    await narniaDialog.alert('The storage scan is still running. Refresh the page later to see its progress.');
 }
 
 async function narniaPreviewStorageCleanup(btn) {
@@ -1191,7 +1243,7 @@ async function narniaPreviewStorageCleanup(btn) {
         var dialog = document.getElementById('storage-cleanup-dialog');
         if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
     } catch (e) {
-        alert('Cleanup preview failed: ' + e.message);
+        await narniaDialog.alert('Cleanup preview failed: ' + e.message);
     } finally {
         btn.disabled = false;
         btn.textContent = originalText;
@@ -1368,12 +1420,12 @@ async function narniaReopenWindow(id, btn) {
             setTimeout(function () { btn.textContent = origText; btn.disabled = false; }, 3000);
         } else {
             var data = await resp.json().catch(function () { return null; });
-            alert('Reopen failed: ' + (data?.message || data || 'HTTP ' + resp.status));
+            await narniaDialog.alert('Reopen failed: ' + (data?.message || data || 'HTTP ' + resp.status));
             btn.textContent = origText;
             btn.disabled = false;
         }
     } catch (e) {
-        alert('Error reopening: ' + e.message);
+        await narniaDialog.alert('Error reopening: ' + e.message);
         btn.textContent = origText;
         btn.disabled = false;
     }
@@ -1428,19 +1480,26 @@ async function narniaReopenSelected(btn) {
             setTimeout(function () { location.reload(); }, 1200);
         } else {
             var err = await resp.json().catch(function () { return null; });
-            alert('Reopen failed: ' + (err?.message || err || 'HTTP ' + resp.status));
+            await narniaDialog.alert('Reopen failed: ' + (err?.message || err || 'HTTP ' + resp.status));
             btn.textContent = origText;
             btn.disabled = false;
         }
     } catch (e) {
-        alert('Error reopening selection: ' + e.message);
+        await narniaDialog.alert('Error reopening selection: ' + e.message);
         btn.textContent = origText;
         btn.disabled = false;
     }
 }
 
 async function narniaNameWindow(id, current) {
-    var name = prompt('Name this window (naming it pins it so it is never auto-pruned). Leave blank to clear:', current || '');
+    var name = await narniaDialog.prompt(
+        'Naming this window pins it so it is never auto-pruned. Leave the value blank to clear the name.',
+        current || '',
+        {
+            title: 'Name recorded window',
+            inputLabel: 'Window name',
+            confirmLabel: 'Save name',
+        });
     if (name === null) return;
     try {
         var resp = await fetch('/api/windows/' + id + '/name', {
@@ -1451,24 +1510,30 @@ async function narniaNameWindow(id, current) {
         if (resp.ok) {
             location.reload();
         } else {
-            alert('Failed to name window: HTTP ' + resp.status);
+            await narniaDialog.alert('Failed to name window: HTTP ' + resp.status);
         }
     } catch (e) {
-        alert('Error naming window: ' + e.message);
+        await narniaDialog.alert('Error naming window: ' + e.message);
     }
 }
 
 async function narniaDeleteWindow(id) {
-    if (!confirm('Delete this recorded window? This cannot be undone.')) return;
+    if (!await narniaDialog.confirm(
+        'Delete this recorded window? This cannot be undone.',
+        {
+            title: 'Delete recorded window',
+            confirmLabel: 'Delete',
+            danger: true,
+        })) return;
     try {
         var resp = await fetch('/api/windows/' + id, { method: 'DELETE' });
         if (resp.ok) {
             location.reload();
         } else {
-            alert('Failed to delete window: HTTP ' + resp.status);
+            await narniaDialog.alert('Failed to delete window: HTTP ' + resp.status);
         }
     } catch (e) {
-        alert('Error deleting window: ' + e.message);
+        await narniaDialog.alert('Error deleting window: ' + e.message);
     }
 }
 
@@ -1515,10 +1580,17 @@ async function narniaCollectionError(resp) {
 }
 
 async function narniaCreateCollection(btn) {
-    var name = prompt('Name this Collection:', '');
+    var name = await narniaDialog.prompt(
+        'Create a Collection for organizing related sessions.',
+        '',
+        {
+            title: 'New Collection',
+            inputLabel: 'Collection name',
+            confirmLabel: 'Create Collection',
+        });
     if (name === null) return;
     name = name.trim();
-    if (name === '') { alert('A Collection name is required.'); return; }
+    if (name === '') { await narniaDialog.alert('A Collection name is required.'); return; }
 
     var originalText = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
@@ -1531,7 +1603,7 @@ async function narniaCreateCollection(btn) {
         if (!resp.ok) throw new Error(await narniaCollectionError(resp));
         location.reload();
     } catch (e) {
-        alert('Failed to create Collection: ' + e.message);
+        await narniaDialog.alert('Failed to create Collection: ' + e.message);
         if (btn) { btn.disabled = false; btn.textContent = originalText; }
     }
 }
@@ -1553,10 +1625,17 @@ async function narniaAddSessionsToCollection(sessionIds, btn) {
             : 'Add ' + sessionIds.length + ' session(s) to a Collection.\n\n'
                 + choices.join('\n')
                 + '\n\nEnter a #number, an existing Collection name, or a new name:';
-        var answer = prompt(promptText, '');
+        var answer = await narniaDialog.prompt(
+            promptText,
+            '',
+            {
+                title: 'Add to Collection',
+                inputLabel: 'Collection name or number',
+                confirmLabel: 'Continue',
+            });
         if (answer === null) return false;
         answer = answer.trim();
-        if (answer === '') { alert('Choose or name a Collection.'); return false; }
+        if (answer === '') { await narniaDialog.alert('Choose or name a Collection.'); return false; }
 
         var normalizedAnswer = answer.toLowerCase();
         var collection = collections.find(function (candidate) {
@@ -1565,7 +1644,7 @@ async function narniaAddSessionsToCollection(sessionIds, btn) {
         if (!collection && /^#\d+$/.test(answer)) {
             var index = Number(answer.substring(1)) - 1;
             if (index < 0 || index >= collections.length) {
-                alert('That Collection number does not exist.');
+                await narniaDialog.alert('That Collection number does not exist.');
                 return false;
             }
             collection = collections[index];
@@ -1599,7 +1678,7 @@ async function narniaAddSessionsToCollection(sessionIds, btn) {
         }
         return true;
     } catch (e) {
-        alert('Failed to update Collection: ' + e.message);
+        await narniaDialog.alert('Failed to update Collection: ' + e.message);
         if (btn) { btn.disabled = false; btn.textContent = originalText; }
         return false;
     }
@@ -1623,10 +1702,17 @@ async function narniaAddSessionToCollection(sessionId, btn) {
 
 async function narniaRenameCollection(id, btn) {
     var current = btn ? (btn.getAttribute('data-name') || '') : '';
-    var name = prompt('Rename Collection:', current);
+    var name = await narniaDialog.prompt(
+        'Choose a new name for this Collection.',
+        current,
+        {
+            title: 'Rename Collection',
+            inputLabel: 'Collection name',
+            confirmLabel: 'Rename',
+        });
     if (name === null) return;
     name = name.trim();
-    if (name === '') { alert('A Collection name is required.'); return; }
+    if (name === '') { await narniaDialog.alert('A Collection name is required.'); return; }
 
     try {
         var resp = await fetch('/api/collections/' + encodeURIComponent(id) + '/rename', {
@@ -1637,19 +1723,25 @@ async function narniaRenameCollection(id, btn) {
         if (!resp.ok) throw new Error(await narniaCollectionError(resp));
         location.reload();
     } catch (e) {
-        alert('Failed to rename Collection: ' + e.message);
+        await narniaDialog.alert('Failed to rename Collection: ' + e.message);
     }
 }
 
 async function narniaDeleteCollection(id) {
-    if (!confirm('Delete this Collection? The sessions themselves are not affected.')) return;
+    if (!await narniaDialog.confirm(
+        'Delete this Collection? The sessions themselves are not affected.',
+        {
+            title: 'Delete Collection',
+            confirmLabel: 'Delete',
+            danger: true,
+        })) return;
 
     try {
         var resp = await fetch('/api/collections/' + encodeURIComponent(id), { method: 'DELETE' });
         if (!resp.ok) throw new Error(await narniaCollectionError(resp));
         location.href = '/collections';
     } catch (e) {
-        alert('Failed to delete Collection: ' + e.message);
+        await narniaDialog.alert('Failed to delete Collection: ' + e.message);
     }
 }
 
@@ -1690,7 +1782,13 @@ function narniaToggleAllCollectionMembers(master) {
 async function narniaRemoveSelectedCollectionSessions(collectionId, btn) {
     var sessionIds = narniaSelectedCollectionSessionIds();
     if (sessionIds.length === 0) return;
-    if (!confirm('Remove ' + sessionIds.length + ' session(s) from this Collection?')) return;
+    if (!await narniaDialog.confirm(
+        'Remove ' + sessionIds.length + ' session(s) from this Collection?',
+        {
+            title: 'Remove Collection members',
+            confirmLabel: 'Remove sessions',
+            danger: true,
+        })) return;
 
     var originalText = btn.textContent;
     btn.disabled = true;
@@ -1706,7 +1804,7 @@ async function narniaRemoveSelectedCollectionSessions(collectionId, btn) {
         if (!resp.ok) throw new Error(await narniaCollectionError(resp));
         location.reload();
     } catch (e) {
-        alert('Failed to remove sessions: ' + e.message);
+        await narniaDialog.alert('Failed to remove sessions: ' + e.message);
         btn.disabled = false;
         btn.textContent = originalText;
     }
@@ -1944,7 +2042,7 @@ function narniaCadenceChanged() {
 
 async function narniaScheduleSubmit(register) {
     var body = narniaScheduleFormBody(register);
-    if (!body.name || !body.prompt || !body.prompt.trim()) { alert('Name and prompt are required.'); return; }
+    if (!body.name || !body.prompt || !body.prompt.trim()) { await narniaDialog.alert('Name and prompt are required.'); return; }
     var editId = document.getElementById('sched-edit-id').value;
     var url = editId ? ('/api/schedules/' + editId) : '/api/schedules';
     var method = editId ? 'PUT' : 'POST';
@@ -1953,21 +2051,21 @@ async function narniaScheduleSubmit(register) {
             method: method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         });
         var data = await resp.json().catch(function () { return null; });
-        if (!resp.ok) { alert('Failed: ' + (data || 'HTTP ' + resp.status)); return; }
+        if (!resp.ok) { await narniaDialog.alert('Failed: ' + (data || 'HTTP ' + resp.status)); return; }
         if (register || editId) { location.reload(); }
         else {
             document.getElementById('sched-script-box').value = data.script || '';
             document.getElementById('sched-command').value = data.command || '';
             document.getElementById('sched-copyout').style.display = 'block';
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { await narniaDialog.alert('Error: ' + e.message); }
 }
 
 async function narniaScheduleEdit(id) {
     var resp = await fetch('/api/schedules');
     var data = await resp.json();
     var job = (data.jobs || []).find(function (j) { return j.id === id; });
-    if (!job) { alert('Job not found'); return; }
+    if (!job) { await narniaDialog.alert('Job not found'); return; }
     document.getElementById('sched-edit-id').value = job.id;
     document.getElementById('sched-name').value = job.name || '';
     document.getElementById('sched-desc').value = job.description || '';
@@ -2016,16 +2114,31 @@ async function narniaScheduleAction(id, verb, body) {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : null,
         });
         if (resp.ok) { location.reload(); }
-        else { var d = await resp.json().catch(function () { return null; }); alert('Failed: ' + (d || 'HTTP ' + resp.status)); }
-    } catch (e) { alert('Error: ' + e.message); }
+        else { var d = await resp.json().catch(function () { return null; }); await narniaDialog.alert('Failed: ' + (d || 'HTTP ' + resp.status)); }
+    } catch (e) { await narniaDialog.alert('Error: ' + e.message); }
 }
 
 function narniaScheduleEnable(id, enabled) { narniaScheduleAction(id, 'enable', { enabled: enabled }); }
-function narniaScheduleRun(id) { if (confirm('Run this job now? It will start a real Copilot session.')) narniaScheduleAction(id, 'run', null); }
+async function narniaScheduleRun(id) {
+    if (await narniaDialog.confirm(
+        'Run this job now? It will start a real Copilot session.',
+        {
+            title: 'Run scheduled job',
+            confirmLabel: 'Run now',
+        })) {
+        narniaScheduleAction(id, 'run', null);
+    }
+}
 async function narniaScheduleDelete(id) {
-    if (!confirm('Delete this job? Its scheduled task and generated script will be removed.')) return;
+    if (!await narniaDialog.confirm(
+        'Delete this job? Its scheduled task and generated script will be removed.',
+        {
+            title: 'Delete scheduled job',
+            confirmLabel: 'Delete',
+            danger: true,
+        })) return;
     var resp = await fetch('/api/schedules/' + id, { method: 'DELETE' });
-    if (resp.ok) location.reload(); else alert('Delete failed');
+    if (resp.ok) location.reload(); else await narniaDialog.alert('Delete failed');
 }
 
 function narniaScheduleSelectedPackageIds() {
@@ -2082,12 +2195,12 @@ async function narniaScheduleExportPackage(profile) {
         if (!resp.ok) throw new Error(await narniaScheduleResponseError(resp));
         var data = await resp.json();
         if (data.warnings && data.warnings.length > 0) {
-            alert('The package was created with warnings. Review them before transferring it:\n\n- ' + data.warnings.join('\n- '));
+            await narniaDialog.alert('The package was created with warnings. Review them before transferring it:\n\n- ' + data.warnings.join('\n- '));
         }
         var stamp = new Date().toISOString().substring(0, 10);
         narniaScheduleDownloadJson(data.packageJson, 'narnia-schedules-' + profile + '-' + stamp + '.narnia-schedules.json');
     } catch (e) {
-        alert('Schedule export failed: ' + e.message);
+        await narniaDialog.alert('Schedule export failed: ' + e.message);
     }
 }
 
@@ -2098,7 +2211,7 @@ async function narniaSchedulePreviewSelectedPackage() {
     var fileInput = document.getElementById('sched-package-file');
     var file = fileInput && fileInput.files ? fileInput.files[0] : null;
     if (!file) {
-        alert('Choose a .narnia-schedules.json package first.');
+        await narniaDialog.alert('Choose a .narnia-schedules.json package first.');
         return;
     }
 
@@ -2307,7 +2420,12 @@ function narniaScheduleRenderPackagePreview(data) {
 
 async function narniaScheduleImportPackage() {
     if (!_narniaSchedulePackagePreview || !_narniaSchedulePackageJson) return;
-    if (!confirm('Import these jobs as disabled Narnia schedules? Nothing will run until you enable it.')) return;
+    if (!await narniaDialog.confirm(
+        'Import these jobs as disabled Narnia schedules? Nothing will run until you enable it.',
+        {
+            title: 'Import scheduled jobs',
+            confirmLabel: 'Import disabled',
+        })) return;
 
     var status = document.getElementById('sched-package-status');
     status.textContent = 'Importing disabled jobs…';
@@ -2401,12 +2519,12 @@ async function narniaSaveSetting(key, value, el) {
             body: JSON.stringify({ key: key, value: value }),
         });
         if (!resp.ok) {
-            alert('Failed to save setting: HTTP ' + resp.status);
+            await narniaDialog.alert('Failed to save setting: HTTP ' + resp.status);
             return false;
         }
         return true;
     } catch (e) {
-        alert('Error saving setting: ' + e.message);
+        await narniaDialog.alert('Error saving setting: ' + e.message);
         return false;
     }
 }
@@ -2432,11 +2550,11 @@ async function narniaSetAutostart(enabled, el) {
         });
         if (!resp.ok) {
             var data = await resp.json().catch(function () { return null; });
-            alert('Failed to update autostart: ' + (data || 'HTTP ' + resp.status));
+            await narniaDialog.alert('Failed to update autostart: ' + (data || 'HTTP ' + resp.status));
             if (el) el.checked = !enabled;
         }
     } catch (e) {
-        alert('Error updating autostart: ' + e.message);
+        await narniaDialog.alert('Error updating autostart: ' + e.message);
         if (el) el.checked = !enabled;
     }
 }
