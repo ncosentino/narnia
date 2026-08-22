@@ -1,5 +1,9 @@
 name: Release
 
+# `windows-latest` and `ubuntu-latest` are standard GitHub-hosted runners.
+# GitHub documents their use as free and unlimited for public repositories:
+# https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+
 on:
   push:
     tags:
@@ -147,6 +151,7 @@ jobs:
             artifacts/release/narnia-win-x64.zip
             artifacts/release/SHA256SUMS.txt
           if-no-files-found: error
+          retention-days: 1
 
   release:
     name: Create GitHub Release

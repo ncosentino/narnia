@@ -9,8 +9,8 @@ is pushed directly to the default branch.
 
 The machine-readable contract lives in
 [`.github/genesis-delivery.json`](https://github.com/ncosentino/narnia/blob/main/.github/genesis-delivery.json)
-and is the source of truth for the default branch, required checks, and title rules. When this
-page and that file disagree, the file wins.
+and is the source of truth for the default branch, runner policy, required checks, and title
+rules. When this page and that file disagree, the file wins.
 
 ## Pull request titles
 
@@ -38,6 +38,24 @@ validation. Marking a pull request ready starts fresh full validation and publis
 
 Because only the ready run publishes `CI`, a pull request that was never marked ready has not
 produced the check that gates merge.
+
+## Runner and storage policy
+
+Narnia's workflows use only the standard GitHub-hosted `ubuntu-latest` and `windows-latest`
+runner labels. GitHub's
+[hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+lists `windows-latest` in the Windows row for public repositories and states that standard
+GitHub-hosted runners are free and unlimited on public repositories.
+
+Self-hosted runners and larger GitHub-hosted runners are not part of Narnia's delivery model.
+GitHub's
+[Actions billing documentation](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+states that larger runners are always charged, including for public repositories.
+
+Free hosted-runner minutes do not make Actions artifact storage unlimited. Pull request and main
+validation smoke-test the Windows package without retaining it as a workflow artifact. Release
+jobs use a one-day artifact only to hand the package to the publishing job; the completed files
+then live on the GitHub Release.
 
 ## Required checks
 
