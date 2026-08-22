@@ -1,6 +1,6 @@
 {
   "$schema": "./genesis-delivery.schema.json",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "template": "narnia",
   "defaultBranch": "main",
   "ciWorkflow": "CI",
@@ -9,14 +9,13 @@
     "PR title",
     "Review policy"
   ],
+  "runnerPolicy": "github-hosted-standard",
   "draftValidation": {
     "hostedDefault": "subset",
-    "pitcrewDefault": "subset",
     "subsetJobs": [
       "code"
     ]
   },
-  "runnerProfiles": [],
   "componentWorkflows": [
     {
       "source": "narnia",

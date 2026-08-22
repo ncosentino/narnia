@@ -75,13 +75,11 @@ if (-not (Test-Path $contractPath)) {
 }
 
 $contract = Get-Content $contractPath -Raw | ConvertFrom-Json
+if ([string]$contract.runnerPolicy -ne 'github-hosted-standard') {
+    throw "Unsupported runner policy '$($contract.runnerPolicy)'."
+}
 $requiredChecks = @($contract.requiredChecks | ForEach-Object { [string]$_ })
-$draftMode =
-    if (@($contract.runnerProfiles).Count -gt 0) {
-        [string]$contract.draftValidation.pitcrewDefault
-    } else {
-        [string]$contract.draftValidation.hostedDefault
-    }
+$draftMode = [string]$contract.draftValidation.hostedDefault
 
 function Invoke-GhJson {
     param(
@@ -329,10 +327,11 @@ if ($status -eq 'ready') {
 }
 
 $result = [ordered]@{
-    schemaVersion    = 1
+    schemaVersion    = [int]$contract.schemaVersion
     repository       = [string]$snapshot.repository
     defaultBranch    = [string]$snapshot.defaultBranch
     visibility       = [string]$snapshot.visibility
+    runnerPolicy     = [string]$contract.runnerPolicy
     selectedMode     = $selectedMode
     status           = $status
     requiredChecks   = @($requiredChecks)

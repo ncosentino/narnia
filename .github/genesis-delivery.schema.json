@@ -11,8 +11,8 @@
     "defaultBranch",
     "ciWorkflow",
     "requiredChecks",
+    "runnerPolicy",
     "draftValidation",
-    "runnerProfiles",
     "componentWorkflows",
     "pullRequestTitle",
     "squashMerge"
@@ -22,7 +22,7 @@
       "const": "./genesis-delivery.schema.json"
     },
     "schemaVersion": {
-      "const": 1
+      "const": 2
     },
     "template": {
       "type": "string",
@@ -45,15 +45,15 @@
         "minLength": 1
       }
     },
+    "runnerPolicy": {
+      "const": "github-hosted-standard"
+    },
     "draftValidation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["hostedDefault", "pitcrewDefault", "subsetJobs"],
+      "required": ["hostedDefault", "subsetJobs"],
       "properties": {
         "hostedDefault": {
-          "enum": ["full", "subset", "ready-only"]
-        },
-        "pitcrewDefault": {
           "enum": ["full", "subset", "ready-only"]
         },
         "subsetJobs": {
@@ -62,42 +62,6 @@
           "items": {
             "type": "string",
             "minLength": 1
-          }
-        }
-      }
-    },
-    "runnerProfiles": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["id", "source", "labels", "jobs"],
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$"
-          },
-          "source": {
-            "type": "string",
-            "minLength": 1
-          },
-          "labels": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "jobs": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
           }
         }
       }
