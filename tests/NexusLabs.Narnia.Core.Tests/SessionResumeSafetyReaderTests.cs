@@ -68,7 +68,28 @@ public sealed class SessionResumeSafetyReaderTests
         Assert.Equal(SessionResumeSafety.Incompatible, result.Safety);
         Assert.Equal("session.start", result.FirstEventType);
         Assert.Contains("128-character", result.Reason, StringComparison.Ordinal);
-        Assert.Contains("cannot load this history as one string", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("does not advertise", result.Reason, StringComparison.Ordinal);
+        Assert.Equal("legacy-character-ceiling", result.ResumePolicy);
+    }
+
+    [Fact]
+    public void Inspect_HistoryAboveLegacyLimit_WithAdvertisedCapability_IsResumable()
+    {
+        const long characterLimit = 128;
+        var content =
+            """{"type":"session.start","id":"event-1","data":{}}""" + "\n" +
+            new string('a', 200);
+        var reader = CreateReader(
+            content,
+            Encoding.UTF8.GetByteCount(content),
+            characterLimit,
+            CopilotLargeSessionResumeSupport.Supported);
+
+        var result = reader.Inspect(SessionId);
+
+        Assert.Equal(SessionResumeSafety.Resumable, result.Safety);
+        Assert.Equal("native-large-session-resume", result.ResumePolicy);
+        Assert.Equal("1.0.87-0", result.CopilotVersion);
     }
 
     [Fact]
@@ -156,7 +177,8 @@ public sealed class SessionResumeSafetyReaderTests
     private static SessionResumeSafetyReader CreateReader(
         string content,
         long reportedLength,
-        long characterLimit)
+        long characterLimit,
+        CopilotLargeSessionResumeSupport support = CopilotLargeSessionResumeSupport.Unsupported)
     {
         var baseFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>
         {
@@ -177,10 +199,17 @@ public sealed class SessionResumeSafetyReaderTests
         var workspace = new Mock<IWorkspaceReader>();
         workspace.Setup(candidate => candidate.ReadMetadata(SessionId))
             .Returns(new WorkspaceInfo(SessionId, null, []));
+        var capability = new Mock<ICopilotRuntimeCapabilityReader>();
+        capability.Setup(candidate => candidate.Read())
+            .Returns(new CopilotRuntimeCapability(
+                support,
+                "1.0.87-0",
+                "test evidence"));
         return new SessionResumeSafetyReader(
             Options(),
             fileSystem.Object,
             workspace.Object,
+            capability.Object,
             characterLimit);
     }
 }

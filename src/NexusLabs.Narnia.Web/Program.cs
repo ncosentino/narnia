@@ -54,6 +54,7 @@ builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
 builder.Services.AddSingleton<SettingsDatabaseRelocator>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<IWorkspaceReader, WorkspaceReader>();
+builder.Services.AddSingleton<ICopilotRuntimeCapabilityReader, CopilotRuntimeCapabilityReader>();
 builder.Services.AddSingleton<ISessionResumeSafetyReader, SessionResumeSafetyReader>();
 builder.Services.AddSingleton<ISessionTaskStateReader, SessionTaskStateReader>();
 builder.Services.AddSingleton<ICopilotSessionLockReader, CopilotSessionLockReader>();
@@ -67,6 +68,7 @@ builder.Services.AddSingleton<INarniaSettingsRepository>(sp => sp.GetRequiredSer
 builder.Services.AddSingleton<SqliteSessionMigrationRepository>();
 builder.Services.AddSingleton<ISessionMigrationRepository>(
     sp => sp.GetRequiredService<SqliteSessionMigrationRepository>());
+builder.Services.AddSingleton<IRawSessionEventTailReader, RawSessionEventTailReader>();
 builder.Services.AddSingleton<ISessionRecoveryPacketBuilder, SessionRecoveryPacketBuilder>();
 builder.Services.AddSingleton<ISessionEventStreamRecovery, SessionEventStreamRecovery>();
 builder.Services.AddSingleton<ISessionMigrationService, SessionMigrationService>();

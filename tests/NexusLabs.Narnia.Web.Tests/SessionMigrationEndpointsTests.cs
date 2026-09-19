@@ -33,6 +33,8 @@ public sealed class SessionMigrationEndpointsTests
         Assert.Equal(121, body.TodoCount);
         Assert.Equal("incompatible", body.ResumeAssessment.Safety);
         Assert.True(body.ResumeAssessment.IsNestedAgent);
+        Assert.Equal("legacy-character-ceiling", body.ResumeAssessment.Policy);
+        Assert.Null(body.ResumeAssessment.CopilotVersion);
     }
 
     [Fact]
@@ -94,7 +96,9 @@ public sealed class SessionMigrationEndpointsTests
                 SessionResumeSafety.Incompatible,
                 "Missing session.start.",
                 "system.message",
-                true),
+                true,
+                "legacy-character-ceiling",
+                null),
             false,
             101,
             5,
@@ -149,7 +153,9 @@ public sealed class SessionMigrationEndpointsTests
 
     private sealed record ResumeAssessmentResponse(
         string Safety,
-        bool IsNestedAgent);
+        bool IsNestedAgent,
+        string Policy,
+        string? CopilotVersion);
 
     private sealed record MigrationResponse(
         bool Migrated,

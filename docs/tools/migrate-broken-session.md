@@ -5,7 +5,10 @@ description: Recover a broken Copilot session in place while retaining its folde
 # `migrate_broken_session`
 
 Archives the broken event stream, asks Copilot to reseed the same session ID and folder, and records
-the recovery archive and integrity hash. Narnia never modifies Chronicle directly.
+the recovery archive and integrity hash. Before seeding, Narnia includes bounded raw-event-tail evidence
+when it is newer than the Chronicle index, so the successor does not rely on an older indexed turn as
+its latest direction. Narnia never modifies Chronicle directly; the original stream remains archived
+for inspection.
 
 | Parameter | Description |
 |-----------|-------------|

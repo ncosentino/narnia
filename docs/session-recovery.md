@@ -14,12 +14,12 @@ Failed to resume session: Error: Session file is corrupted or incompatible
 Launching such a session can leave you in an unrelated blank session. Narnia inspects the minimum resume contract before every terminal launch and blocks sessions that
 are known to be incompatible.
 
-Copilot loads the entire `events.jsonl` file as one in-memory string. Once the decoded stream
-exceeds V8's 536,870,888-character ceiling, current releases reject the session; earlier releases
-could silently create a new blank session even when the stream began with a valid `session.start`.
-For files large enough to be at risk, Narnia counts decoded characters with a bounded streaming
-read, caches the result until the file changes, blocks normal launch, and offers the same in-place
-recovery workflow.
+Some older Copilot runtimes loaded the entire `events.jsonl` file as one in-memory string. They
+rejected decoded streams beyond V8's 536,870,888-character ceiling and could silently create a blank
+session. Narnia now inspects the installed Copilot package changelog read-only. When the selected
+runtime explicitly advertises reliable very-large-session resume, Narnia allows native resume.
+Missing, older, or malformed capability evidence keeps the conservative character-ceiling guard.
+Migration previews report both the selected policy and detected Copilot package version.
 
 ## Recovering in Place
 
@@ -27,19 +27,23 @@ Open the source session's detail page. When Narnia detects incompatible history,
 evidence and shows **Recover this session in place**.
 
 Recovery is intentionally limited to histories Narnia can prove are incompatible: malformed start
-records, missing required `session.start` events, empty streams, or streams too large for Copilot's
-current whole-file loader. A session that still satisfies those constraints should be resumed
+records, missing required `session.start` events, empty streams, or streams too large for the
+conservative compatibility guard. A session that still satisfies those constraints should be resumed
 normally.
 
 Recovery:
 
 1. Reads indexed turns, checkpoints, workspace tasks, artifact names, and Narnia metadata.
-2. Writes a bounded recovery packet beneath `<LocalAppData>/narnia/recoveries/`.
-3. Atomically renames only `events.jsonl` inside the affected session folder and records its
+2. Scans the raw event stream with bounded memory, retaining recent direct user direction separately
+   from agent-generated steering. It compares the latest direct message with selected Chronicle turns
+   so an incomplete index cannot make older instructions look current.
+3. Writes a bounded recovery packet beneath `<LocalAppData>/narnia/recoveries/`. Direct raw user
+   direction appears before indexed conversation and steering evidence.
+4. Atomically renames only `events.jsonl` inside the affected session folder and records its
    SHA-256 hash.
-4. Asks `GitHub.Copilot.SDK` to create the same session ID in the same folder.
-5. Uses one tool-disabled bootstrap response to synthesize a working-state handoff.
-6. Verifies the new event stream starts with `session.start`, the session is resumable, and
+5. Asks `GitHub.Copilot.SDK` to create the same session ID in the same folder.
+6. Uses one tool-disabled bootstrap response to synthesize a working-state handoff.
+7. Verifies the new event stream starts with `session.start`, the session is resumable, and
    Chronicle indexed the new turn.
 
 If reseeding fails, Narnia archives the failed replacement stream and restores the original
@@ -59,9 +63,8 @@ Sessions with recorded recovery state are protected from normal Storage cleanup 
 recovery packet can be downloaded from the session detail page or read in chunks through
 `get_session_recovery_packet`.
 
-If a recovered session later grows beyond Copilot's loader ceiling again, Narnia can recover it
-again. Every completed recovery retains its own migration record, recovery packet, and archived
-event stream.
+If a recovered session later becomes incompatible again, Narnia can recover it again. Every
+completed recovery retains its own migration record, recovery packet, and archived event stream.
 
 ## Limits
 

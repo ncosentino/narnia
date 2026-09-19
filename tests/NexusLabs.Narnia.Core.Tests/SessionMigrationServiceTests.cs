@@ -530,13 +530,17 @@ public sealed class SessionMigrationServiceTests
                     SessionResumeSafety.Resumable,
                     null,
                     "session.start",
-                    false)
+                    false,
+                    "legacy-character-ceiling",
+                    null)
                 : new SessionResumeAssessment(
                     SourceId,
                     safety,
                     safety == SessionResumeSafety.Incompatible ? "Missing session.start." : null,
                     safety == SessionResumeSafety.Resumable ? "session.start" : "system.message",
-                    safety == SessionResumeSafety.Incompatible));
+                    safety == SessionResumeSafety.Incompatible,
+                    "legacy-character-ceiling",
+                    null));
         var tasks = new Mock<ISessionTaskStateReader>();
         tasks
             .Setup(reader => reader.Read(SourceId))

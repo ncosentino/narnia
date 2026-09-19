@@ -14,7 +14,8 @@ public sealed class SessionRecoveryPacketBuilder(
     IWorkspaceReader workspaceReader,
     ISessionTaskStateReader taskStateReader,
     NarniaOptions options,
-    IFileSystem fileSystem) : ISessionRecoveryPacketBuilder
+    IFileSystem fileSystem,
+    IRawSessionEventTailReader rawEventTailReader) : ISessionRecoveryPacketBuilder
 {
     private const int FullPacketCharacterLimit = 1_000_000;
     private const int BootstrapCharacterLimit = 70_000;
@@ -48,6 +49,7 @@ public sealed class SessionRecoveryPacketBuilder(
             var workspace = workspaceReader.ReadWorkspace(sourceSessionId);
             var taskState = taskStateReader.Read(sourceSessionId);
             var turns = await ReadSelectedTurnsAsync(session, ct);
+            var rawTail = await rawEventTailReader.ReadAsync(session.Id, turns.Turns, ct);
             var packet = BuildFullPacket(
                 sourceSessionId,
                 replacementSessionId,
@@ -56,7 +58,8 @@ public sealed class SessionRecoveryPacketBuilder(
                 workspace,
                 checkpoints,
                 taskState,
-                turns);
+                turns,
+                rawTail);
             var bootstrap = BuildBootstrapPrompt(
                 sourceSessionId,
                 replacementSessionId,
@@ -65,7 +68,8 @@ public sealed class SessionRecoveryPacketBuilder(
                 workspace,
                 checkpoints,
                 taskState,
-                turns);
+                turns,
+                rawTail);
 
             var recoveryRoot = fileSystem.Path.GetFullPath(options.RecoveryDirectory)
                 .TrimEnd(
@@ -165,7 +169,8 @@ public sealed class SessionRecoveryPacketBuilder(
         WorkspaceInfo workspace,
         IReadOnlyList<Checkpoint> checkpoints,
         SessionTaskState taskState,
-        SelectedTurns turns)
+        SelectedTurns turns,
+        RawSessionEventTail rawTail)
     {
         var text = new BoundedText(FullPacketCharacterLimit);
         text.AppendLine("# Narnia Session Recovery Packet");
@@ -188,6 +193,8 @@ public sealed class SessionRecoveryPacketBuilder(
         AppendNarniaMetadata(metadata, sessionOverride);
         text.Append(metadata.Content);
         AppendWorkspaceMetadata(text, workspace);
+        var rawEvidence = BuildRawEvidence(rawTail, 24, 24, 140_000);
+        text.Append(rawEvidence.Content);
         var conversation = new BoundedText(450_000);
         AppendConversation(conversation, turns.Turns, turns.Truncated);
         text.Append(conversation.Content);
@@ -205,6 +212,8 @@ public sealed class SessionRecoveryPacketBuilder(
             text.Content,
             text.Truncated ||
             metadata.Truncated ||
+            rawEvidence.Truncated ||
+            rawTail.Truncated ||
             conversation.Truncated ||
             checkpointText.Truncated ||
             tasks.Truncated ||
@@ -219,7 +228,8 @@ public sealed class SessionRecoveryPacketBuilder(
         WorkspaceInfo workspace,
         IReadOnlyList<Checkpoint> checkpoints,
         SessionTaskState taskState,
-        SelectedTurns turns)
+        SelectedTurns turns,
+        RawSessionEventTail rawTail)
     {
         var text = new BoundedText(BootstrapCharacterLimit);
         text.AppendLine(
@@ -258,6 +268,8 @@ public sealed class SessionRecoveryPacketBuilder(
             .DistinctBy(turn => turn.Id)
             .OrderBy(turn => turn.TurnIndex)
             .ToArray();
+        var rawEvidence = BuildRawEvidence(rawTail, 24, 8, 28_000);
+        text.Append(rawEvidence.Content);
         var conversation = new BoundedText(35_000);
         AppendConversation(conversation, bootstrapTurns, turns.Truncated);
         text.Append(conversation.Content);
@@ -418,6 +430,58 @@ public sealed class SessionRecoveryPacketBuilder(
             AppendLabeledContent(text, "User", turn.UserMessage);
             AppendLabeledContent(text, "Assistant", turn.AssistantResponse);
         }
+    }
+
+    private static BoundedText BuildRawEvidence(
+        RawSessionEventTail rawTail,
+        int directMessageLimit,
+        int steeringMessageLimit,
+        int characterLimit)
+    {
+        var text = new BoundedText(characterLimit);
+        text.AppendLine();
+        text.AppendLine("## Raw event-stream evidence");
+        if (rawTail.LatestMessageTimestamp is not null)
+            text.AppendLine($"- Newest retained raw message: {rawTail.LatestMessageTimestamp:o}");
+        text.AppendLine($"- Chronicle index may be stale: {(rawTail.IndexMayBeStale ? "yes" : "no")}");
+        if (rawTail.Truncated)
+        {
+            text.AppendLine(
+                "- Raw scanning retained bounded recent direction; older, oversized, or malformed records may be omitted.");
+        }
+
+        var direct = rawTail.DirectUserMessages.TakeLast(directMessageLimit).Reverse().ToArray();
+        if (direct.Length == 0)
+        {
+            text.AppendLine("- No direct user messages were recognized in the raw stream.");
+        }
+        else
+        {
+            text.AppendLine();
+            text.AppendLine("### Direct user direction, newest first");
+            foreach (var message in direct)
+                AppendRawMessage(text, message, 8_000);
+        }
+
+        var steering = rawTail.SteeringMessages.TakeLast(steeringMessageLimit).Reverse().ToArray();
+        if (steering.Length > 0)
+        {
+            text.AppendLine();
+            text.AppendLine("### Agent and steering direction, newest first");
+            foreach (var message in steering)
+                AppendRawMessage(text, message, 3_000);
+        }
+        return text;
+    }
+
+    private static void AppendRawMessage(
+        BoundedText text,
+        RawSessionEvent message,
+        int maximumCharacters)
+    {
+        text.AppendLine();
+        text.AppendLine($"#### {message.Type} ({message.Timestamp:o})");
+        text.AppendLine(TruncateInline(message.Message, maximumCharacters));
     }
 
     private static void AppendArtifacts(BoundedText text, IReadOnlyList<string> artifacts)

@@ -9,8 +9,8 @@ using NexusLabs.Narnia.Core.Models;
 namespace NexusLabs.Narnia.Core.Repositories;
 
 /// <summary>
-/// Reads the first Copilot event, event-stream size, and nested-agent metadata through read-only
-/// access so Narnia can block histories the current Copilot loader cannot safely resume.
+/// Reads the first Copilot event, event-stream size, nested-agent metadata, and installed runtime
+/// capabilities through read-only access so Narnia can select a defensible resume policy.
 /// </summary>
 public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
 {
@@ -21,10 +21,11 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
     private readonly NarniaOptions _options;
     private readonly IFileSystem _fileSystem;
     private readonly IWorkspaceReader _workspaceReader;
+    private readonly ICopilotRuntimeCapabilityReader _capabilityReader;
     private readonly long _maximumSafeEventStreamCharacters;
     private readonly ConcurrentDictionary<string, CharacterLimitCacheEntry> _characterLimitCache;
 
-    /// <summary>Initializes the resume-safety reader with Copilot's current loader ceiling.</summary>
+    /// <summary>Initializes the resume-safety reader and discovers installed Copilot capabilities.</summary>
     /// <param name="options">Narnia paths.</param>
     /// <param name="fileSystem">Filesystem abstraction used for read-only inspection.</param>
     /// <param name="workspaceReader">Workspace metadata reader.</param>
@@ -36,6 +37,26 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
             options,
             fileSystem,
             workspaceReader,
+            new CopilotRuntimeCapabilityReader(options, fileSystem),
+            MaximumSafeEventStreamCharacters)
+    {
+    }
+
+    /// <summary>Initializes the resume-safety reader with explicit capability inspection.</summary>
+    /// <param name="options">Narnia paths.</param>
+    /// <param name="fileSystem">Filesystem abstraction used for read-only inspection.</param>
+    /// <param name="workspaceReader">Workspace metadata reader.</param>
+    /// <param name="capabilityReader">Installed Copilot capability reader.</param>
+    public SessionResumeSafetyReader(
+        NarniaOptions options,
+        IFileSystem fileSystem,
+        IWorkspaceReader workspaceReader,
+        ICopilotRuntimeCapabilityReader capabilityReader)
+        : this(
+            options,
+            fileSystem,
+            workspaceReader,
+            capabilityReader,
             MaximumSafeEventStreamCharacters)
     {
     }
@@ -45,10 +66,26 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
         IFileSystem fileSystem,
         IWorkspaceReader workspaceReader,
         long maximumSafeEventStreamCharacters)
+        : this(
+            options,
+            fileSystem,
+            workspaceReader,
+            new CopilotRuntimeCapabilityReader(options, fileSystem),
+            maximumSafeEventStreamCharacters)
+    {
+    }
+
+    internal SessionResumeSafetyReader(
+        NarniaOptions options,
+        IFileSystem fileSystem,
+        IWorkspaceReader workspaceReader,
+        ICopilotRuntimeCapabilityReader capabilityReader,
+        long maximumSafeEventStreamCharacters)
     {
         _options = options;
         _fileSystem = fileSystem;
         _workspaceReader = workspaceReader;
+        _capabilityReader = capabilityReader;
         _maximumSafeEventStreamCharacters = maximumSafeEventStreamCharacters;
         _characterLimitCache = new ConcurrentDictionary<string, CharacterLimitCacheEntry>(
             OperatingSystem.IsWindows()
@@ -59,6 +96,11 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
     /// <inheritdoc />
     public SessionResumeAssessment Inspect(string sessionId)
     {
+        var capability = _capabilityReader.Read();
+        var policy = capability.Support == CopilotLargeSessionResumeSupport.Supported
+            ? "native-large-session-resume"
+            : "legacy-character-ceiling";
+
         if (!TryResolveSessionDirectory(sessionId, out var sessionDirectory))
         {
             return new SessionResumeAssessment(
@@ -66,7 +108,9 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                 SessionResumeSafety.Incompatible,
                 "Session identifier does not resolve beneath the configured session-state directory.",
                 null,
-                false);
+                false,
+                policy,
+                capability.Version);
         }
 
         var workspace = ReadWorkspace(sessionId);
@@ -78,7 +122,9 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                 SessionResumeSafety.Unknown,
                 "No local event stream is available for a deterministic resume check.",
                 null,
-                workspace.IsNestedAgent);
+                workspace.IsNestedAgent,
+                policy,
+                capability.Version);
         }
 
         try
@@ -100,7 +146,9 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                     SessionResumeSafety.Incompatible,
                     "The local event stream is empty.",
                     null,
-                    workspace.IsNestedAgent);
+                    workspace.IsNestedAgent,
+                    policy,
+                    capability.Version);
             }
 
             using var document = JsonDocument.Parse(firstLine);
@@ -113,13 +161,16 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                     SessionResumeSafety.Incompatible,
                     "The first persisted event does not contain a valid string event type.",
                     null,
-                    workspace.IsNestedAgent);
+                    workspace.IsNestedAgent,
+                    policy,
+                    capability.Version);
             }
 
             var firstEventType = type.GetString();
             if (string.Equals(firstEventType, "session.start", StringComparison.Ordinal))
             {
-                if (eventStreamBytes > _maximumSafeEventStreamCharacters &&
+                if (capability.Support != CopilotLargeSessionResumeSupport.Supported &&
+                    eventStreamBytes > _maximumSafeEventStreamCharacters &&
                     ExceedsCharacterLimit(
                         eventsPath,
                         eventStreamBytes,
@@ -128,9 +179,11 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                     return new SessionResumeAssessment(
                         sessionId,
                         SessionResumeSafety.Incompatible,
-                        $"The local event stream is {eventStreamBytes:N0} bytes and decodes beyond Copilot's current {_maximumSafeEventStreamCharacters:N0}-character whole-file loader ceiling. Copilot cannot load this history as one string.",
+                        $"The local event stream is {eventStreamBytes:N0} bytes and decodes beyond the conservative {_maximumSafeEventStreamCharacters:N0}-character legacy loader ceiling. The installed Copilot runtime does not advertise reliable very-large-session resume.",
                         firstEventType,
-                        workspace.IsNestedAgent);
+                        workspace.IsNestedAgent,
+                        policy,
+                        capability.Version);
                 }
 
                 return new SessionResumeAssessment(
@@ -138,7 +191,9 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                     SessionResumeSafety.Resumable,
                     null,
                     firstEventType,
-                    workspace.IsNestedAgent);
+                    workspace.IsNestedAgent,
+                    policy,
+                    capability.Version);
             }
 
             var reason = workspace.IsNestedAgent
@@ -149,7 +204,9 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                 SessionResumeSafety.Incompatible,
                 reason,
                 firstEventType,
-                workspace.IsNestedAgent);
+                workspace.IsNestedAgent,
+                policy,
+                capability.Version);
         }
         catch (JsonException exception)
         {
@@ -158,7 +215,9 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                 SessionResumeSafety.Incompatible,
                 $"The first persisted event is invalid JSON: {exception.Message}",
                 null,
-                workspace.IsNestedAgent);
+                workspace.IsNestedAgent,
+                policy,
+                capability.Version);
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException)
@@ -168,7 +227,9 @@ public sealed class SessionResumeSafetyReader : ISessionResumeSafetyReader
                 SessionResumeSafety.Unknown,
                 $"The local event stream could not be inspected: {exception.Message}",
                 null,
-                workspace.IsNestedAgent);
+                workspace.IsNestedAgent,
+                policy,
+                capability.Version);
         }
     }
 
