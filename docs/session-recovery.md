@@ -14,12 +14,12 @@ Failed to resume session: Error: Session file is corrupted or incompatible
 Launching such a session can leave you in an unrelated blank session. Narnia inspects the minimum resume contract before every terminal launch and blocks sessions that
 are known to be incompatible.
 
-Copilot loads the entire `events.jsonl` file as one in-memory string. Once the decoded stream
-exceeds V8's 536,870,888-character ceiling, current releases reject the session; earlier releases
-could silently create a new blank session even when the stream began with a valid `session.start`.
-For files large enough to be at risk, Narnia counts decoded characters with a bounded streaming
-read, caches the result until the file changes, blocks normal launch, and offers the same in-place
-recovery workflow.
+Some Copilot runtimes load the entire `events.jsonl` file as one in-memory string. Older runtimes
+rejected decoded streams beyond V8's 536,870,888-character ceiling and could silently create a blank
+session. Narnia retains a conservative compatibility guard for runtimes whose capability is unknown;
+capability-aware native-resume selection is tracked separately. For files large enough to be at risk,
+Narnia counts decoded characters with a bounded streaming read, caches the result until the file
+changes, blocks normal launch, and offers the same in-place recovery workflow.
 
 ## Recovering in Place
 
@@ -27,14 +27,14 @@ Open the source session's detail page. When Narnia detects incompatible history,
 evidence and shows **Recover this session in place**.
 
 Recovery is intentionally limited to histories Narnia can prove are incompatible: malformed start
-records, missing required `session.start` events, empty streams, or streams too large for Copilot's
-current whole-file loader. A session that still satisfies those constraints should be resumed
+records, missing required `session.start` events, empty streams, or streams too large for the
+conservative compatibility guard. A session that still satisfies those constraints should be resumed
 normally.
 
 Recovery:
 
-1. Reads indexed turns, checkpoints, workspace tasks, artifact names, and Narnia metadata.
-2. Writes a bounded recovery packet beneath `<LocalAppData>/narnia/recoveries/`.
+1. Reads indexed turns, checkpoints, workspace tasks, artifact names, Narnia metadata, and a bounded raw event tail.
+2. Writes a bounded recovery packet beneath `<LocalAppData>/narnia/recoveries/`. The packet labels raw-tail evidence when the Chronicle index may be stale.
 3. Atomically renames only `events.jsonl` inside the affected session folder and records its
    SHA-256 hash.
 4. Asks `GitHub.Copilot.SDK` to create the same session ID in the same folder.

@@ -14,7 +14,8 @@ public sealed class SessionRecoveryPacketBuilder(
     IWorkspaceReader workspaceReader,
     ISessionTaskStateReader taskStateReader,
     NarniaOptions options,
-    IFileSystem fileSystem) : ISessionRecoveryPacketBuilder
+    IFileSystem fileSystem,
+    IRawSessionEventTailReader rawEventTailReader) : ISessionRecoveryPacketBuilder
 {
     private const int FullPacketCharacterLimit = 1_000_000;
     private const int BootstrapCharacterLimit = 70_000;
@@ -48,6 +49,7 @@ public sealed class SessionRecoveryPacketBuilder(
             var workspace = workspaceReader.ReadWorkspace(sourceSessionId);
             var taskState = taskStateReader.Read(sourceSessionId);
             var turns = await ReadSelectedTurnsAsync(session, ct);
+            var rawTail = await rawEventTailReader.ReadAsync(session, ct);
             var packet = BuildFullPacket(
                 sourceSessionId,
                 replacementSessionId,
@@ -56,7 +58,8 @@ public sealed class SessionRecoveryPacketBuilder(
                 workspace,
                 checkpoints,
                 taskState,
-                turns);
+                turns,
+                rawTail);
             var bootstrap = BuildBootstrapPrompt(
                 sourceSessionId,
                 replacementSessionId,
@@ -65,7 +68,8 @@ public sealed class SessionRecoveryPacketBuilder(
                 workspace,
                 checkpoints,
                 taskState,
-                turns);
+                turns,
+                rawTail);
 
             var recoveryRoot = fileSystem.Path.GetFullPath(options.RecoveryDirectory)
                 .TrimEnd(
@@ -165,7 +169,8 @@ public sealed class SessionRecoveryPacketBuilder(
         WorkspaceInfo workspace,
         IReadOnlyList<Checkpoint> checkpoints,
         SessionTaskState taskState,
-        SelectedTurns turns)
+        SelectedTurns turns,
+        RawSessionEventTail rawTail)
     {
         var text = new BoundedText(FullPacketCharacterLimit);
         text.AppendLine("# Narnia Session Recovery Packet");
@@ -188,6 +193,7 @@ public sealed class SessionRecoveryPacketBuilder(
         AppendNarniaMetadata(metadata, sessionOverride);
         text.Append(metadata.Content);
         AppendWorkspaceMetadata(text, workspace);
+        AppendRawTail(text, rawTail);
         var conversation = new BoundedText(450_000);
         AppendConversation(conversation, turns.Turns, turns.Truncated);
         text.Append(conversation.Content);
@@ -219,7 +225,8 @@ public sealed class SessionRecoveryPacketBuilder(
         WorkspaceInfo workspace,
         IReadOnlyList<Checkpoint> checkpoints,
         SessionTaskState taskState,
-        SelectedTurns turns)
+        SelectedTurns turns,
+        RawSessionEventTail rawTail)
     {
         var text = new BoundedText(BootstrapCharacterLimit);
         text.AppendLine(
@@ -258,6 +265,7 @@ public sealed class SessionRecoveryPacketBuilder(
             .DistinctBy(turn => turn.Id)
             .OrderBy(turn => turn.TurnIndex)
             .ToArray();
+        AppendRawTail(text, rawTail);
         var conversation = new BoundedText(35_000);
         AppendConversation(conversation, bootstrapTurns, turns.Truncated);
         text.Append(conversation.Content);
@@ -417,6 +425,34 @@ public sealed class SessionRecoveryPacketBuilder(
             text.AppendLine($"### Turn {turn.TurnIndex} ({turn.Timestamp:o})");
             AppendLabeledContent(text, "User", turn.UserMessage);
             AppendLabeledContent(text, "Assistant", turn.AssistantResponse);
+        }
+    }
+
+    private static void AppendRawTail(BoundedText text, RawSessionEventTail rawTail)
+    {
+        text.AppendLine();
+        text.AppendLine("## Raw event-tail evidence");
+        if (rawTail.LatestTimestamp is not null)
+            text.AppendLine($"- Newest raw event: {rawTail.LatestTimestamp:o}");
+        text.AppendLine($"- Chronicle index may be stale: {(rawTail.IndexMayBeStale ? "yes" : "no")}");
+        if (rawTail.Truncated)
+            text.AppendLine("- The raw tail was bounded or contained incomplete lines; older evidence may be omitted.");
+
+        var messages = rawTail.Events
+            .Where(item => !string.IsNullOrWhiteSpace(item.UserMessage))
+            .TakeLast(24)
+            .ToArray();
+        if (messages.Length == 0)
+        {
+            text.AppendLine("- No authoritative user messages were recognized in the bounded raw tail.");
+            return;
+        }
+
+        foreach (var message in messages.Reverse())
+        {
+            text.AppendLine();
+            text.AppendLine($"### Raw {message.Type} ({message.Timestamp:o})");
+            AppendLabeledContent(text, "User", message.UserMessage);
         }
     }
 

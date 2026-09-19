@@ -104,13 +104,27 @@ public sealed class SessionRecoveryPacketBuilderTests
                 [],
                 null));
         var fileSystem = new MockFileSystem();
+        var rawTail = new Mock<IRawSessionEventTailReader>();
+        rawTail
+            .Setup(reader => reader.ReadAsync(
+                It.IsAny<Session>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RawSessionEventTail(
+                [new RawSessionEvent(
+                    "user.message",
+                    now.AddMinutes(5),
+                    "Newest raw instruction")],
+                now.AddMinutes(5),
+                false,
+                true));
         var builder = new SessionRecoveryPacketBuilder(
             sessions.Object,
             overrides.Object,
             workspace.Object,
             tasks.Object,
             new NarniaOptions { RecoveryDirectory = "C:\\narnia\\recoveries\\" },
-            fileSystem);
+            fileSystem,
+            rawTail.Object);
 
         var result = await builder.BuildAsync(
             SourceId,
@@ -128,6 +142,8 @@ public sealed class SessionRecoveryPacketBuilderTests
         Assert.Contains("[in_progress] Finish", packet, StringComparison.Ordinal);
         Assert.Contains("Important notes", packet, StringComparison.Ordinal);
         Assert.Contains("Follow-up response", packet, StringComparison.Ordinal);
+        Assert.Contains("Newest raw instruction", packet, StringComparison.Ordinal);
+        Assert.Contains("Chronicle index may be stale: yes", packet, StringComparison.Ordinal);
         Assert.Contains("Content truncated", packet, StringComparison.Ordinal);
         Assert.Contains("plan.md", packet, StringComparison.Ordinal);
         Assert.True(result.PacketTruncated);
