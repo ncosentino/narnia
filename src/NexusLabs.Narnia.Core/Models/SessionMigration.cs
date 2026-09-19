@@ -19,12 +19,16 @@ public enum SessionResumeSafety
 /// <param name="Reason">Human-readable evidence for the assessment.</param>
 /// <param name="FirstEventType">First persisted event type, when readable.</param>
 /// <param name="IsNestedAgent">Whether Copilot recorded the session as a nested agent.</param>
+/// <param name="ResumePolicy">Narnia policy selected for the installed Copilot runtime.</param>
+/// <param name="CopilotVersion">Selected installed Copilot package version, when known.</param>
 public sealed record SessionResumeAssessment(
     string SessionId,
     SessionResumeSafety Safety,
     string? Reason,
     string? FirstEventType,
-    bool IsNestedAgent);
+    bool IsNestedAgent,
+    string ResumePolicy,
+    string? CopilotVersion);
 
 /// <summary>Lifecycle state for a Narnia-owned session migration.</summary>
 public enum SessionMigrationStatus

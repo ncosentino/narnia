@@ -54,6 +54,7 @@ builder.Services.AddSingleton<NarniaSettingsDbMigrator>();
 builder.Services.AddSingleton<SettingsDatabaseRelocator>();
 builder.Services.AddSingleton<SessionService>();
 builder.Services.AddSingleton<IWorkspaceReader, WorkspaceReader>();
+builder.Services.AddSingleton<ICopilotRuntimeCapabilityReader, CopilotRuntimeCapabilityReader>();
 builder.Services.AddSingleton<ISessionResumeSafetyReader, SessionResumeSafetyReader>();
 builder.Services.AddSingleton<ISessionTaskStateReader, SessionTaskStateReader>();
 builder.Services.AddSingleton<ICopilotSessionLockReader, CopilotSessionLockReader>();

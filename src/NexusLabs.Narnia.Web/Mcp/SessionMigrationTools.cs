@@ -74,6 +74,8 @@ internal sealed class SessionMigrationTools(ISessionMigrationService migrationSe
             preview.ResumeAssessment.Reason,
             preview.ResumeAssessment.FirstEventType,
             preview.ResumeAssessment.IsNestedAgent,
+            preview.ResumeAssessment.ResumePolicy,
+            preview.ResumeAssessment.CopilotVersion,
             preview.References,
             preview.ExistingMigration is null
                 ? null
@@ -123,6 +125,8 @@ internal sealed record SessionMigrationPreviewMcpDto(
     string? ResumeReason,
     string? FirstEventType,
     bool IsNestedAgent,
+    string ResumePolicy,
+    string? CopilotVersion,
     NexusLabs.Narnia.Core.Models.SessionMigrationReferenceSummary References,
     SessionMigrationMcpDto? ExistingMigration);
 

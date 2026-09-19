@@ -24,7 +24,9 @@ public sealed class TerminalLauncherTests
                 SessionResumeSafety.Resumable,
                 null,
                 "session.start",
-                false));
+                false,
+                "legacy-character-ceiling",
+                null));
     }
 
     private TerminalLauncher Launcher() =>
@@ -159,7 +161,9 @@ public sealed class TerminalLauncherTests
                 SessionResumeSafety.Incompatible,
                 "Missing session.start.",
                 "system.message",
-                true));
+                true,
+                "legacy-character-ceiling",
+                null));
         _commandBuilder.Setup(builder => builder.FindWindowsTerminalPath()).Returns(WtPath);
         _commandBuilder
             .Setup(builder => builder.BuildNewTabSegment(

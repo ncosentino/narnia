@@ -204,7 +204,9 @@ public sealed class NarniaWebAppFactory : WebApplicationFactory<Program>
                 SessionResumeSafety.Unknown,
                 "No test event stream.",
                 null,
-                false));
+                false,
+                "legacy-character-ceiling",
+                null));
         SessionMigrationService
             .Setup(service => service.GetRelatedAsync(
                 It.IsAny<string>(),

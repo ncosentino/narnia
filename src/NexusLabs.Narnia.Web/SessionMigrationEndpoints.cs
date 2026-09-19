@@ -106,6 +106,8 @@ internal static class SessionMigrationEndpoints
                 reason = preview.ResumeAssessment.Reason,
                 firstEventType = preview.ResumeAssessment.FirstEventType,
                 isNestedAgent = preview.ResumeAssessment.IsNestedAgent,
+                policy = preview.ResumeAssessment.ResumePolicy,
+                copilotVersion = preview.ResumeAssessment.CopilotVersion,
             },
             references = preview.References,
             existingMigration = preview.ExistingMigration is null

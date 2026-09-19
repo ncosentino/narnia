@@ -107,13 +107,20 @@ public sealed class SessionRecoveryPacketBuilderTests
         var rawTail = new Mock<IRawSessionEventTailReader>();
         rawTail
             .Setup(reader => reader.ReadAsync(
-                It.IsAny<Session>(),
+                SourceId,
+                It.IsAny<IReadOnlyList<Turn>>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RawSessionEventTail(
                 [new RawSessionEvent(
                     "user.message",
                     now.AddMinutes(5),
-                    "Newest raw instruction")],
+                    "Newest raw instruction",
+                    null)],
+                [new RawSessionEvent(
+                    "user.message",
+                    now.AddMinutes(6),
+                    "Agent steering instruction",
+                    "task-agent")],
                 now.AddMinutes(5),
                 false,
                 true));
@@ -143,6 +150,13 @@ public sealed class SessionRecoveryPacketBuilderTests
         Assert.Contains("Important notes", packet, StringComparison.Ordinal);
         Assert.Contains("Follow-up response", packet, StringComparison.Ordinal);
         Assert.Contains("Newest raw instruction", packet, StringComparison.Ordinal);
+        Assert.Contains("Agent steering instruction", packet, StringComparison.Ordinal);
+        Assert.True(
+            packet.IndexOf("Newest raw instruction", StringComparison.Ordinal) <
+            packet.IndexOf("Initial request", StringComparison.Ordinal));
+        Assert.True(
+            packet.IndexOf("Newest raw instruction", StringComparison.Ordinal) <
+            packet.IndexOf("Agent steering instruction", StringComparison.Ordinal));
         Assert.Contains("Chronicle index may be stale: yes", packet, StringComparison.Ordinal);
         Assert.Contains("Content truncated", packet, StringComparison.Ordinal);
         Assert.Contains("plan.md", packet, StringComparison.Ordinal);
