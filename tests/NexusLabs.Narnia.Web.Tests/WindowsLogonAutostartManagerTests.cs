@@ -130,7 +130,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     public void ServerLauncher_SelectsThePublishedDeploymentHost(bool frameworkDependent)
     {
         var appDirectory = Path.Combine(_localAppData, "launcher mode", "app");
-        var executablePath = Path.Combine(appDirectory, "launcher-probe.ps1");
+        var executablePath = Path.Combine(appDirectory, "launcher-probe.cmd");
         var assemblyPath = Path.Combine(appDirectory, "NexusLabs.Narnia.Web.dll");
         var runtimeConfigPath = Path.Combine(
             appDirectory,
@@ -140,7 +140,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "launcher mode",
             "autostart.log");
         Directory.CreateDirectory(appDirectory);
-        File.WriteAllText(executablePath, "'launcher probe completed'\nexit 0");
+        File.WriteAllText(executablePath, "@echo launcher probe completed\r\n@exit /b 0\r\n");
         File.WriteAllText(assemblyPath, "");
         File.WriteAllText(
             runtimeConfigPath,
