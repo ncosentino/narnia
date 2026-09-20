@@ -140,7 +140,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "launcher mode",
             "autostart.log");
         Directory.CreateDirectory(appDirectory);
-        File.WriteAllText(executablePath, "'launcher probe completed'");
+        File.WriteAllText(executablePath, "'launcher probe completed'\nexit 0");
         File.WriteAllText(assemblyPath, "");
         File.WriteAllText(
             runtimeConfigPath,
