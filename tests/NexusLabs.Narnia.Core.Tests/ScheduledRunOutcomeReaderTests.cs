@@ -25,6 +25,78 @@ public sealed class ScheduledRunOutcomeReaderTests
         new(Options(), new ScheduledJobWorkspace(Options(), fs), fs);
 
     [Fact]
+    public async Task ReadLatestAsync_BackgroundTimeoutEventWithExitZero_IsInterrupted()
+    {
+        var fs = FileSystemWith(
+            RunLog(SessionId),
+            """{"type":"session.warning","data":{"warningType":"background_task_wait_timeout"}}"""
+                + "\n" + Event("session.shutdown"));
+
+        var outcome = await Create(fs).ReadLatestAsync("job-1", Ct);
+
+        Assert.Equal(ScheduledRunCompletion.Interrupted, outcome.Completion);
+        Assert.Equal("background_task_wait_timeout", outcome.AbortReason);
+        Assert.Equal(SessionId, outcome.SessionId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadLatestAsync_LogWarningSurvivesMissingOrResumedSession(bool sessionPresent)
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [LogPath] = new MockFileData(TimeoutLog()),
+        });
+        if (sessionPresent)
+            fs.AddFile($@"{SessionStateDir}\{SessionId}\events.jsonl", new MockFileData(string.Join(
+                '\n',
+                Event("user.message"),
+                Event("assistant.turn_start"),
+                Event("assistant.turn_end"),
+                Event("session.shutdown"))));
+
+        var outcome = await Create(fs).ReadLatestAsync("job-1", Ct);
+
+        Assert.Equal(ScheduledRunCompletion.Interrupted, outcome.Completion);
+        Assert.Equal("background_task_wait_timeout", outcome.AbortReason);
+        Assert.Equal(SessionId, outcome.SessionId);
+    }
+
+    [Fact]
+    public async Task ReadLatestAsync_LogWarningWithoutResumeFooter_IsInterrupted()
+    {
+        var fs = new MockFileSystem(new Dictionary<string, MockFileData>
+        {
+            [LogPath] = new MockFileData(TimeoutLog().Replace($"Resume     copilot --resume={SessionId}\n", "")),
+        });
+
+        var outcome = await Create(fs).ReadLatestAsync("job-1", Ct);
+
+        Assert.Equal(ScheduledRunCompletion.Interrupted, outcome.Completion);
+        Assert.Equal("background_task_wait_timeout", outcome.AbortReason);
+        Assert.Null(outcome.SessionId);
+    }
+
+    [Fact]
+    public async Task ReadLatestAsync_LargeCheckpointHidesEventWarning_LogStillReportsInterruption()
+    {
+        var events = """{"type":"session.warning","data":{"warningType":"background_task_wait_timeout"}}"""
+            + "\n" + System.Text.Json.JsonSerializer.Serialize(new
+            {
+                type = "session.usage_checkpoint",
+                data = new { padding = new string('x', 600_000) },
+            })
+            + "\n" + Event("session.shutdown");
+        var fs = FileSystemWith(TimeoutLog(), events);
+
+        var outcome = await Create(fs).ReadLatestAsync("job-1", Ct);
+
+        Assert.Equal(ScheduledRunCompletion.Interrupted, outcome.Completion);
+        Assert.Equal("background_task_wait_timeout", outcome.AbortReason);
+    }
+
+    [Fact]
     public async Task ReadLatestAsync_SessionEndedInAnAbort_IsInterrupted()
     {
         var fs = FileSystemWith(
@@ -190,6 +262,10 @@ public sealed class ScheduledRunOutcomeReaderTests
 
     private static string RunLog(string sessionId) =>
         $"=== Job ===\nChanges +1 -0\nResume     copilot --resume={sessionId}\nEnd: ExitCode: 0";
+
+    private static string TimeoutLog() =>
+        "! Timed out after 600s waiting for background tasks to finish; giving up on the wait with work still\n  pending.\n"
+        + RunLog(SessionId);
 
     private static string Event(string type) =>
         $$"""{"type":"{{type}}","timestamp":"2026-08-08T07:43:09.931Z"}""";
