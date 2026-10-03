@@ -6,6 +6,74 @@ namespace NexusLabs.Narnia.Core.Tests;
 public sealed class SessionTerminationParserTests
 {
     [Fact]
+    public void Classify_BackgroundTimeoutThenRoutineShutdown_IsInterrupted()
+    {
+        string[] lines =
+        [
+            Event("assistant.turn_start"),
+            BackgroundTimeout(),
+            """{"type":"session.shutdown","data":{"shutdownType":"routine"}}""",
+        ];
+
+        var termination = SessionTerminationParser.Classify(lines);
+
+        Assert.Equal(ScheduledRunCompletion.Interrupted, termination.Completion);
+        Assert.Equal("background_task_wait_timeout", termination.AbortReason);
+    }
+
+    [Theory]
+    [InlineData("tool.execution_complete")]
+    [InlineData("subagent.completed")]
+    [InlineData("assistant.turn_start")]
+    [InlineData("assistant.turn_end")]
+    public void Classify_WorkAfterBackgroundTimeout_DoesNotEraseInterruption(string eventType)
+    {
+        string[] lines = [BackgroundTimeout(), Event(eventType), Event("session.shutdown")];
+
+        var termination = SessionTerminationParser.Classify(lines);
+
+        Assert.Equal(ScheduledRunCompletion.Interrupted, termination.Completion);
+        Assert.Equal("background_task_wait_timeout", termination.AbortReason);
+    }
+
+    [Fact]
+    public void Classify_NewPromptAfterBackgroundTimeout_CanComplete()
+    {
+        string[] lines =
+        [
+            BackgroundTimeout(),
+            Event("session.shutdown"),
+            Event("user.message"),
+            Event("assistant.turn_start"),
+            Event("assistant.turn_end"),
+            Event("session.shutdown"),
+        ];
+
+        Assert.Equal(ScheduledRunCompletion.Completed, SessionTerminationParser.Classify(lines).Completion);
+    }
+
+    [Theory]
+    [InlineData("""{"type":"tool.execution_complete"}""")]
+    [InlineData("""{"type":"assistant.turn_end"}""")]
+    [InlineData("""{"type":"session.warning","data":{"warningType":"other_warning"}}""")]
+    public void Classify_WithoutAShutdown_DoesNotClaimCompletion(string line)
+    {
+        Assert.Equal(ScheduledRunCompletion.Unknown, SessionTerminationParser.Classify([line]).Completion);
+    }
+
+    [Theory]
+    [InlineData("""{"type":"session.warning","data":{"warningType":"other_warning"}}""")]
+    [InlineData("""{"type":"session.warning","data":{"warningType":42}}""")]
+    [InlineData("""{"type":"session.warning","data":null}""")]
+    [InlineData("""{"type":"tool.execution_complete","data":{"warningType":"background_task_wait_timeout"}}""")]
+    public void Classify_UnrelatedOrMalformedWarnings_DoNotFlagInterruption(string line)
+    {
+        Assert.Equal(
+            ScheduledRunCompletion.Completed,
+            SessionTerminationParser.Classify([line, Event("session.shutdown")]).Completion);
+    }
+
+    [Fact]
     public void Classify_SessionThatFinishedItsWork_IsCompleted()
     {
         string[] lines =
@@ -134,4 +202,7 @@ public sealed class SessionTerminationParserTests
 
     private static string AbortEvent(string reason) =>
         $$"""{"type":"abort","data":{"reason":"{{reason}}"},"timestamp":"2026-08-08T07:43:09.931Z"}""";
+
+    private static string BackgroundTimeout() =>
+        """{"type":"session.warning","data":{"warningType":"background_task_wait_timeout","message":"Pending work was abandoned."}}""";
 }

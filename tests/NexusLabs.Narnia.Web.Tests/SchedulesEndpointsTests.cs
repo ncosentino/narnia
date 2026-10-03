@@ -68,8 +68,10 @@ public sealed class SchedulesEndpointsTests
         Assert.True(job.RequiresAttention);
     }
 
-    [Fact]
-    public async Task GetSchedules_SuccessfulExitCodeWithAnInterruptedSession_IsReportedAsInterrupted()
+    [Theory]
+    [InlineData("user_initiated")]
+    [InlineData("background_task_wait_timeout")]
+    public async Task GetSchedules_SuccessfulExitCodeWithAnInterruptedSession_IsReportedAsInterrupted(string reason)
     {
         // The Copilot CLI exits 0 when it is killed, so the scheduler records success for a run
         // that never did its work. Without the session's own account of how it ended, this job is
@@ -86,7 +88,7 @@ public sealed class SchedulesEndpointsTests
             .ReturnsAsync(new ScheduledRunOutcome(
                 ScheduledRunCompletion.Interrupted,
                 "1b7cf2d0-9d2b-4f0d-9d8f-6b0f1e2a3c4d",
-                "user_initiated"));
+                reason));
 
         var client = factory.CreateClient();
         var response = await client.GetFromJsonAsync<SchedulesResponse>("/api/schedules", Ct);
@@ -97,7 +99,12 @@ public sealed class SchedulesEndpointsTests
         Assert.True(job.RequiresAttention);
         Assert.Equal("interrupted", job.LastRun!.Completion);
         Assert.Equal("1b7cf2d0-9d2b-4f0d-9d8f-6b0f1e2a3c4d", job.LastRun.SessionId);
-        Assert.Equal("user_initiated", job.LastRun.AbortReason);
+        Assert.Equal(reason, job.LastRun.AbortReason);
+
+        var html = await client.GetStringAsync("/schedules", Ct);
+        Assert.Contains("interrupted", html, StringComparison.Ordinal);
+        if (reason == "background_task_wait_timeout")
+            Assert.Contains("Copilot stopped waiting with background work still pending", html, StringComparison.Ordinal);
     }
 
     [Fact]

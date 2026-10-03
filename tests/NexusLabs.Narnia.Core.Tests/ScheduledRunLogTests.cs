@@ -4,6 +4,28 @@ namespace NexusLabs.Narnia.Core.Tests;
 
 public sealed class ScheduledRunLogTests
 {
+    [Theory]
+    [InlineData("! Timed out after 600s waiting for background tasks to finish; giving up on the wait with work still pending.")]
+    [InlineData("! Timed out after 600s waiting for background tasks to finish; giving up on the wait with work still\n  pending. Set COPILOT_TASK_WAIT_TIMEOUT_SECONDS to change the limit.")]
+    [InlineData("  ! Timed out after 1200s waiting for background tasks to finish; giving up on the wait with work still\r\n  pending.")]
+    public void FindInterruptionReason_RecognizesTerminalBackgroundWarning(string warning)
+    {
+        Assert.Equal(
+            "background_task_wait_timeout",
+            ScheduledRunLog.FindInterruptionReason($"=== Job ===\n{warning}\nEnd: ExitCode: 0"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("A tool timed out but the agent recovered.")]
+    [InlineData("! Timed out after 600s waiting for background tasks to finish.")]
+    [InlineData("Prompt: ! Timed out after 600s waiting for background tasks to finish; giving up on the wait with work still pending.")]
+    public void FindInterruptionReason_UnrelatedTextIsNotAnInterruption(string? log)
+    {
+        Assert.Null(ScheduledRunLog.FindInterruptionReason(log));
+    }
+
     [Fact]
     public void FindSessionId_ReadsTheResumeFooter()
     {

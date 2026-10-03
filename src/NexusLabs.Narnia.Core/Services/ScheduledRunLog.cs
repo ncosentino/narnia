@@ -8,6 +8,12 @@ namespace NexusLabs.Narnia.Core.Services;
 /// </summary>
 public static partial class ScheduledRunLog
 {
+    /// <summary>Finds the CLI's terminal warning that it abandoned pending background work.</summary>
+    public static string? FindInterruptionReason(string? logText) =>
+        !string.IsNullOrEmpty(logText) && BackgroundTimeoutPattern().IsMatch(logText)
+            ? SessionTerminationParser.BackgroundTaskWaitTimeout
+            : null;
+
     /// <summary>
     /// Finds the Copilot session a run log belongs to, from the <c>--resume=</c> footer the CLI
     /// prints when it exits.
@@ -34,4 +40,9 @@ public static partial class ScheduledRunLog
         @"--resume[=\s]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
         RegexOptions.CultureInvariant)]
     private static partial Regex ResumePattern();
+
+    [GeneratedRegex(
+        @"^[ \t]*![ \t]+Timed out after [0-9]+s waiting for background tasks to finish; giving up on the wait with work still[ \t]*(?:\r?\n[ \t]*)?pending\.",
+        RegexOptions.Multiline | RegexOptions.CultureInvariant)]
+    private static partial Regex BackgroundTimeoutPattern();
 }

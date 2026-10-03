@@ -45,6 +45,10 @@ public sealed class ScheduledRunOutcomeReader(
 
         var logTail = await ReadTailAsync(logPath, LogTailBytes, ct);
         var sessionId = ScheduledRunLog.FindSessionId(logTail?.Text);
+        var interruptionReason = ScheduledRunLog.FindInterruptionReason(logTail?.Text);
+        if (interruptionReason is not null)
+            return new ScheduledRunOutcome(ScheduledRunCompletion.Interrupted, sessionId, interruptionReason);
+
         if (sessionId is null)
             return ScheduledRunOutcome.Indeterminate;
 

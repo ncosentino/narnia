@@ -10,6 +10,7 @@ namespace NexusLabs.Narnia.Core.Services;
 public static class SessionTerminationParser
 {
     private const string AbortType = "abort";
+    internal const string BackgroundTaskWaitTimeout = "background_task_wait_timeout";
 
     // Any of these appearing after an abort means the session carried on working, so the abort was
     // not what ended it. Tool completions are deliberately excluded: a cancelled tool can still
@@ -30,16 +31,17 @@ public static class SessionTerminationParser
     /// </param>
     /// <returns>
     /// <see cref="ScheduledRunCompletion.Interrupted"/> with the recorded reason when the last thing
-    /// the session did was abort, <see cref="ScheduledRunCompletion.Completed"/> when recognizable
-    /// events were read and none of them ended it, and
-    /// <see cref="ScheduledRunCompletion.Unknown"/> when nothing could be read.
+    /// the session did was abort or abandon pending background work,
+    /// <see cref="ScheduledRunCompletion.Completed"/> when a shutdown was read without an
+    /// unresolved interruption, and <see cref="ScheduledRunCompletion.Unknown"/> otherwise.
     /// </returns>
     public static SessionTermination Classify(IEnumerable<string> eventLines)
     {
         ArgumentNullException.ThrowIfNull(eventLines);
 
-        var sawEvent = false;
+        var sawShutdown = false;
         var sawAbort = false;
+        var sawBackgroundTimeout = false;
         string? abortReason = null;
 
         foreach (var line in eventLines)
@@ -50,24 +52,43 @@ public static class SessionTerminationParser
             if (!TryReadEvent(line, out var type, out var reason))
                 continue;
 
-            sawEvent = true;
+            if (type is "session.start" or "user.message")
+            {
+                sawShutdown = false;
+                sawBackgroundTimeout = false;
+                sawAbort = false;
+                abortReason = null;
+            }
 
-            if (string.Equals(type, AbortType, StringComparison.Ordinal))
+            if (string.Equals(reason, BackgroundTaskWaitTimeout, StringComparison.Ordinal)
+                && type == "session.warning")
+            {
+                sawBackgroundTimeout = true;
+            }
+            else if (string.Equals(type, AbortType, StringComparison.Ordinal))
             {
                 sawAbort = true;
                 abortReason = reason ?? abortReason;
             }
             else if (ResumptionTypes.Contains(type))
             {
+                sawShutdown = false;
                 sawAbort = false;
                 abortReason = null;
             }
+
+            if (type == "session.shutdown")
+                sawShutdown = true;
         }
+
+        // In-flight turns and child completions can arrive after the CLI has given up waiting.
+        if (sawBackgroundTimeout)
+            return new SessionTermination(ScheduledRunCompletion.Interrupted, BackgroundTaskWaitTimeout);
 
         if (sawAbort)
             return new SessionTermination(ScheduledRunCompletion.Interrupted, abortReason);
 
-        return sawEvent
+        return sawShutdown
             ? new SessionTermination(ScheduledRunCompletion.Completed, null)
             : new SessionTermination(ScheduledRunCompletion.Unknown, null);
     }
@@ -92,11 +113,14 @@ public static class SessionTerminationParser
                 return false;
 
             if (document.RootElement.TryGetProperty("data", out var data)
-                && data.ValueKind == JsonValueKind.Object
-                && data.TryGetProperty("reason", out var reasonElement)
-                && reasonElement.ValueKind == JsonValueKind.String)
+                && data.ValueKind == JsonValueKind.Object)
             {
-                reason = reasonElement.GetString();
+                var reasonProperty = type == "session.warning" ? "warningType" : "reason";
+                if (data.TryGetProperty(reasonProperty, out var reasonElement)
+                    && reasonElement.ValueKind == JsonValueKind.String)
+                {
+                    reason = reasonElement.GetString();
+                }
             }
 
             return true;
@@ -110,7 +134,7 @@ public static class SessionTerminationParser
 
 /// <summary>How a session's event stream ended.</summary>
 /// <param name="Completion">The classification.</param>
-/// <param name="AbortReason">The reason recorded on the abort that ended the session, when there was one.</param>
+/// <param name="AbortReason">The abort reason or terminal warning type, when one was recorded.</param>
 public readonly record struct SessionTermination(
     ScheduledRunCompletion Completion,
     string? AbortReason);

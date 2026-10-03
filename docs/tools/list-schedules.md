@@ -74,9 +74,13 @@ None.
 
 The Copilot CLI shuts down gracefully when it is interrupted, so a run that was killed part-way through still exits `0` and Windows Task Scheduler still records success. `health` and `lastRun` exist because of that: they come from the run's own Copilot session rather than from the exit code.
 
-- `health: "interrupted"` — the scheduler reported success, but the session was aborted before it finished. Whatever the job was supposed to do at the end (write to a database, send a notification, open a pull request) probably never happened.
+- `health: "interrupted"` — the scheduler reported success, but the session was aborted or Copilot abandoned pending background work. Whatever the job was supposed to do at the end (write to a database, send a notification, open a pull request) may never have happened.
 - `lastRun.completion` is `completed`, `interrupted`, or `unknown`. `unknown` asserts nothing: the log may be missing, name no session, or the session may have been cleaned up. It is never treated as a problem.
-- `lastRun.abortReason` is the reason the session recorded. `user_initiated` is the CLI's interrupt path, which covers a `Ctrl+C` as well as the process being terminated by something else.
+- `lastRun.abortReason` is the recorded abort reason or terminal warning type. `user_initiated` is the CLI's interrupt path, which covers a `Ctrl+C` as well as the process being terminated by something else. `background_task_wait_timeout` identifies the CLI abandoning pending background work; the run log can supply that evidence even if the session is unavailable.
 - `lastRun` is only present when the scheduler already reported success — every other health value comes from the scheduler itself and needs no second opinion.
 
 See [Scheduled job health](../schedule-health.md) for the full classification.
+
+`completed` requires a recorded shutdown without recognized interruption; it is not proof of
+application-specific results. Narnia preserves the scheduler's exit code and does not automatically
+retry a partially completed job.

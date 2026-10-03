@@ -259,10 +259,13 @@
     // The exit code says success, so the badge has to explain why it is being contradicted.
     private static string InterruptedTitle(ScheduledRunOutcome? lastRun)
     {
-        var reason = string.IsNullOrWhiteSpace(lastRun?.AbortReason)
-            ? "The run's Copilot session was aborted"
-            : $"The run's Copilot session was aborted ({lastRun!.AbortReason})";
-        return $"{reason} before it finished, so the rest of the job never ran. "
+        var reason = lastRun?.AbortReason switch
+        {
+            "background_task_wait_timeout" => "Copilot stopped waiting with background work still pending",
+            var abortReason when string.IsNullOrWhiteSpace(abortReason) => "The run's Copilot session was interrupted",
+            var abortReason => $"The run's Copilot session was interrupted ({abortReason})",
+        };
+        return $"{reason}; remaining work may not have run. "
             + "The task still exited successfully. Click to see the log.";
     }
 

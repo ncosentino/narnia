@@ -24,6 +24,26 @@ public sealed class ScheduleToolsTests
     // ── list_schedules ───────────────────────────────────────────────────────
 
     [Fact]
+    public async Task ListSchedulesAsync_BackgroundTimeoutWithExitZero_IsInterrupted()
+    {
+        var status = new ScheduledTaskStatus(
+            @"\Narnia\", "Narnia - Sample", ScheduledTaskState.Ready, Now, 0, Now.AddDays(1), "powershell.exe");
+        var outcome = new ScheduledRunOutcome(
+            ScheduledRunCompletion.Interrupted, null, "background_task_wait_timeout");
+        _jobService.Setup(s => s.ListAsync(It.IsAny<CancellationToken>())).ReturnsAsync(
+            new ScheduledJobListView(true, [new ScheduledJobStatusView(Job(), status, true, outcome)], []));
+
+        var json = await CreateTools().ListSchedulesAsync(Ct);
+        using var doc = JsonDocument.Parse(json);
+        var job = doc.RootElement.GetProperty("jobs")[0];
+
+        Assert.Equal(0, job.GetProperty("status").GetProperty("lastResult").GetInt32());
+        Assert.Equal("interrupted", job.GetProperty("health").GetString());
+        Assert.Equal("interrupted", job.GetProperty("lastRun").GetProperty("completion").GetString());
+        Assert.Equal("background_task_wait_timeout", job.GetProperty("lastRun").GetProperty("abortReason").GetString());
+    }
+
+    [Fact]
     public async Task ListSchedulesAsync_ReturnsJobsJoinedToStatusAndUntracked()
     {
         var status = new ScheduledTaskStatus(@"\Narnia\", "Narnia - Sample", ScheduledTaskState.Ready, null, 0, Now.AddDays(1), "powershell.exe");
