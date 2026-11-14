@@ -1,3 +1,7 @@
+---
+title: Skills
+---
+
 # Skills
 
 Narnia ships with **agentic skills** — instructions that let an LLM (such as GitHub Copilot CLI or Claude Code) perform complex tasks on your behalf.
