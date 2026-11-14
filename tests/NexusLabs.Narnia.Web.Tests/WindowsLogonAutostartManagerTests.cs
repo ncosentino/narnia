@@ -5,6 +5,7 @@ using NexusLabs.Narnia.Core.Services;
 namespace NexusLabs.Narnia.Web.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection(nameof(WindowsLauncherCollection))]
 public sealed class WindowsLogonAutostartManagerTests : IDisposable
 {
     private const string UserId = @"EXAMPLE\tester";

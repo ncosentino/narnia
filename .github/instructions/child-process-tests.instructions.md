@@ -13,3 +13,5 @@ applyTo: "tests/**/*.cs"
   Do not hide pipe deadlocks by rerunning or increasing exit timeouts.
 - Restrict a PowerShell fixture's module search path to the selected host's
   built-in modules when no external modules are part of the contract.
+- Native launcher contracts that fail under parallel application-host load belong
+  in an isolated xUnit collection. Preserve parallelism outside that collection.
