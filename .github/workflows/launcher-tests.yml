@@ -1,0 +1,33 @@
+name: Windows launcher regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/NexusLabs.Narnia.Web.Tests/WindowsLogonAutostartManagerTests.cs'
+      - 'tests/NexusLabs.Narnia.Web.Tests/WindowsLauncherCollection.cs'
+      - 'src/NexusLabs.Narnia.Web/WindowsLogonAutostartManager.cs'
+      - '.github/workflows/launcher-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launcher:
+    name: Windows launcher regression
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Validate launcher host selection and process output handling
+        run: >-
+          dotnet test tests/NexusLabs.Narnia.Web.Tests/NexusLabs.Narnia.Web.Tests.csproj
+          --configuration Release
+          --filter FullyQualifiedName~WindowsLogonAutostartManagerTests

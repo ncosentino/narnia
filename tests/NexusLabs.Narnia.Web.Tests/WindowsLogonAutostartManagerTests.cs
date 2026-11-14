@@ -5,6 +5,7 @@ using NexusLabs.Narnia.Core.Services;
 namespace NexusLabs.Narnia.Web.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection(nameof(WindowsLauncherCollection))]
 public sealed class WindowsLogonAutostartManagerTests : IDisposable
 {
     private const string UserId = @"EXAMPLE\tester";
@@ -125,9 +126,13 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void ServerLauncher_SelectsThePublishedDeploymentHost(bool frameworkDependent)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task ServerLauncher_SelectsThePublishedDeploymentHost(
+        bool frameworkDependent,
+        bool writeDiagnostics)
     {
         var appDirectory = Path.Combine(_localAppData, "launcher mode", "app");
         var executablePath = Path.Combine(appDirectory, "launcher-probe.cmd");
@@ -140,7 +145,10 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "launcher mode",
             "autostart.log");
         Directory.CreateDirectory(appDirectory);
-        File.WriteAllText(executablePath, "@echo launcher probe completed\r\n@exit /b 0\r\n");
+        var completionPath = Path.Combine(appDirectory, "probe-completed.txt");
+        File.WriteAllText(
+            executablePath,
+            "@echo launcher probe completed>\"%~dp0probe-completed.txt\"\r\n@exit /b 0\r\n");
         File.WriteAllText(assemblyPath, "");
         File.WriteAllText(
             runtimeConfigPath,
@@ -155,18 +163,25 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "http://127.0.0.1:1",
             skipHealthCheck: true);
         Assert.Contains("$skipHealthCheck = $true", launcher, StringComparison.Ordinal);
+        if (writeDiagnostics)
+        {
+            launcher =
+                "[Console]::Out.Write(('o' * 65536))\r\n" +
+                "[Console]::Error.Write(('e' * 65536))\r\n" +
+                launcher;
+        }
         var launcherPath = Path.Combine(
             _localAppData,
             "launcher mode",
             "start-server.ps1");
         File.WriteAllText(launcherPath, launcher, System.Text.Encoding.Unicode);
 
+        var powershellDirectory = Path.Combine(
+            Environment.SystemDirectory,
+            "WindowsPowerShell",
+            "v1.0");
         var startInfo = new System.Diagnostics.ProcessStartInfo(
-            Path.Combine(
-                Environment.SystemDirectory,
-                "WindowsPowerShell",
-                "v1.0",
-                "powershell.exe"))
+            Path.Combine(powershellDirectory, "powershell.exe"))
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -181,17 +196,40 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         startInfo.ArgumentList.Add("-File");
         startInfo.ArgumentList.Add(launcherPath);
         startInfo.Environment["DOTNET_HOST_PATH"] = executablePath;
+        startInfo.Environment["PSModulePath"] = Path.Combine(powershellDirectory, "Modules");
         using var process = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException("Could not start powershell.exe.");
-        var exited = process.WaitForExit(15_000);
-        if (!exited)
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var standardOutputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var standardErrorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        var exited = true;
+        try
         {
-            process.Kill(entireProcessTree: true);
-            process.WaitForExit();
+            await process.WaitForExitAsync(cancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         }
-        var standardError = process.StandardError.ReadToEnd();
-        Assert.True(exited, $"The generated launcher did not exit. {standardError}");
-        var log = File.ReadAllText(startupLogPath);
+        catch (TimeoutException)
+        {
+            exited = false;
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
+        }
+        var standardOutput = await standardOutputTask;
+        var standardError = await standardErrorTask;
+        var log = File.Exists(startupLogPath)
+            ? File.ReadAllText(startupLogPath)
+            : "No startup log was created.";
+        Assert.True(exited, $"The generated launcher did not exit. {standardError}{Environment.NewLine}{log}");
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal(writeDiagnostics ? new string('o', 65536) : "", standardOutput);
+        Assert.Equal(writeDiagnostics ? new string('e', 65536) : "", standardError);
+        Assert.Equal($"launcher probe completed{Environment.NewLine}", File.ReadAllText(completionPath));
 
         Assert.Contains(
             frameworkDependent ? "framework-dependent" : "self-contained",
