@@ -125,9 +125,13 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void ServerLauncher_SelectsThePublishedDeploymentHost(bool frameworkDependent)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public void ServerLauncher_SelectsThePublishedDeploymentHost(
+        bool frameworkDependent,
+        bool writeDiagnostics)
     {
         var appDirectory = Path.Combine(_localAppData, "launcher mode", "app");
         var executablePath = Path.Combine(appDirectory, "launcher-probe.cmd");
@@ -155,6 +159,13 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "http://127.0.0.1:1",
             skipHealthCheck: true);
         Assert.Contains("$skipHealthCheck = $true", launcher, StringComparison.Ordinal);
+        if (writeDiagnostics)
+        {
+            launcher =
+                "[Console]::Out.Write(('o' * 65536))\r\n" +
+                "[Console]::Error.Write(('e' * 65536))\r\n" +
+                launcher;
+        }
         var launcherPath = Path.Combine(
             _localAppData,
             "launcher mode",
@@ -189,8 +200,11 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             process.Kill(entireProcessTree: true);
             process.WaitForExit();
         }
+        var standardOutput = process.StandardOutput.ReadToEnd();
         var standardError = process.StandardError.ReadToEnd();
         Assert.True(exited, $"The generated launcher did not exit. {standardError}");
+        Assert.Equal(writeDiagnostics ? new string('o', 65536) : "", standardOutput);
+        Assert.Equal(writeDiagnostics ? new string('e', 65536) : "", standardError);
         var log = File.ReadAllText(startupLogPath);
 
         Assert.Contains(
