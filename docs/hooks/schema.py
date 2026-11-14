@@ -4,6 +4,10 @@ import json
 import re
 
 
+def _serialize_json_ld(schema: dict) -> str:
+    return json.dumps(schema, indent=2, ensure_ascii=False).replace('<', '\\u003c')
+
+
 def _extract_h2_sections(html: str) -> list[tuple[str, str]]:
     """Return a list of (heading_text, first_paragraph_text) for each H2 in html."""
     sections = []
@@ -67,7 +71,7 @@ def _inject_howto_schema(html: str, page) -> str:
 
     script_tag = (
         '<script type="application/ld+json">\n'
-        + json.dumps(schema, indent=2, ensure_ascii=False)
+        + _serialize_json_ld(schema)
         + '\n</script>\n'
     )
     return html + script_tag
@@ -102,7 +106,7 @@ def _inject_faq_schema(html: str, page) -> str:
 
     script_tag = (
         '<script type="application/ld+json">\n'
-        + json.dumps(schema, indent=2, ensure_ascii=False)
+        + _serialize_json_ld(schema)
         + '\n</script>\n'
     )
     return html + script_tag
