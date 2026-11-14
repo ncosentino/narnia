@@ -2,6 +2,7 @@
 
 import json
 import re
+from html import unescape
 
 
 def _serialize_json_ld(schema: dict) -> str:
@@ -18,11 +19,11 @@ def _extract_h2_sections(html: str) -> list[tuple[str, str]]:
     for match in pattern.finditer(html):
         raw_heading = match.group(1)
         heading = re.sub(r'<[^>]+>', '', raw_heading)
-        heading = re.sub(r'&[a-z#0-9]+;', '', heading).strip()
+        heading = unescape(heading).strip()
         body_html = match.group(2)
         first_para = re.search(r'<p>(.*?)</p>', body_html, re.DOTALL)
         para_text = re.sub(r'<[^>]+>', '', first_para.group(1)).strip() if first_para else ''
-        para_text = re.sub(r'\s+', ' ', para_text)
+        para_text = re.sub(r'\s+', ' ', unescape(para_text))
         if heading:
             sections.append((heading, para_text))
     return sections
