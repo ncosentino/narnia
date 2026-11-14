@@ -5,7 +5,6 @@ using NexusLabs.Narnia.Core.Services;
 namespace NexusLabs.Narnia.Web.Tests;
 
 [SupportedOSPlatform("windows")]
-[Collection(nameof(WindowsLauncherCollection))]
 public sealed class WindowsLogonAutostartManagerTests : IDisposable
 {
     private const string UserId = @"EXAMPLE\tester";
@@ -145,7 +144,10 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "launcher mode",
             "autostart.log");
         Directory.CreateDirectory(appDirectory);
-        File.WriteAllText(executablePath, "@echo launcher probe completed\r\n@exit /b 0\r\n");
+        var completionPath = Path.Combine(appDirectory, "probe-completed.txt");
+        File.WriteAllText(
+            executablePath,
+            "@echo launcher probe completed>\"%~dp0probe-completed.txt\"\r\n@exit /b 0\r\n");
         File.WriteAllText(assemblyPath, "");
         File.WriteAllText(
             runtimeConfigPath,
@@ -173,12 +175,12 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
             "start-server.ps1");
         File.WriteAllText(launcherPath, launcher, System.Text.Encoding.Unicode);
 
+        var powershellDirectory = Path.Combine(
+            Environment.SystemDirectory,
+            "WindowsPowerShell",
+            "v1.0");
         var startInfo = new System.Diagnostics.ProcessStartInfo(
-            Path.Combine(
-                Environment.SystemDirectory,
-                "WindowsPowerShell",
-                "v1.0",
-                "powershell.exe"))
+            Path.Combine(powershellDirectory, "powershell.exe"))
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -193,6 +195,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         startInfo.ArgumentList.Add("-File");
         startInfo.ArgumentList.Add(launcherPath);
         startInfo.Environment["DOTNET_HOST_PATH"] = executablePath;
+        startInfo.Environment["PSModulePath"] = Path.Combine(powershellDirectory, "Modules");
         using var process = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException("Could not start powershell.exe.");
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -225,7 +228,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         Assert.Equal(0, process.ExitCode);
         Assert.Equal(writeDiagnostics ? new string('o', 65536) : "", standardOutput);
         Assert.Equal(writeDiagnostics ? new string('e', 65536) : "", standardError);
-        Assert.Contains("launcher probe completed", log, StringComparison.Ordinal);
+        Assert.Equal($"launcher probe completed{Environment.NewLine}", File.ReadAllText(completionPath));
 
         Assert.Contains(
             frameworkDependent ? "framework-dependent" : "self-contained",

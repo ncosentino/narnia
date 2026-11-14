@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - 'tests/NexusLabs.Narnia.Web.Tests/WindowsLogonAutostartManagerTests.cs'
-      - 'tests/NexusLabs.Narnia.Web.Tests/WindowsLauncherCollection.cs'
       - 'src/NexusLabs.Narnia.Web/WindowsLogonAutostartManager.cs'
       - '.github/workflows/launcher-tests.yml'
   workflow_dispatch:

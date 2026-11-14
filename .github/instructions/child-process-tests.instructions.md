@@ -11,5 +11,5 @@ applyTo: "tests/**/*.cs"
   only the process tree created by the test.
 - Exercise output larger than the pipe buffer when testing redirected launchers.
   Do not hide pipe deadlocks by rerunning or increasing exit timeouts.
-- Isolate native launcher contracts from concurrent application-host integration
-  tests with a non-parallel xUnit collection, not assembly-wide serialization.
+- Restrict a PowerShell fixture's module search path to the selected host's
+  built-in modules when no external modules are part of the contract.
