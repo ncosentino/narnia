@@ -5,6 +5,7 @@ using NexusLabs.Narnia.Core.Services;
 namespace NexusLabs.Narnia.Web.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection(nameof(WindowsLauncherCollection))]
 public sealed class WindowsLogonAutostartManagerTests : IDisposable
 {
     private const string UserId = @"EXAMPLE\tester";
@@ -217,10 +218,14 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         }
         var standardOutput = await standardOutputTask;
         var standardError = await standardErrorTask;
-        Assert.True(exited, $"The generated launcher did not exit. {standardError}");
+        var log = File.Exists(startupLogPath)
+            ? File.ReadAllText(startupLogPath)
+            : "No startup log was created.";
+        Assert.True(exited, $"The generated launcher did not exit. {standardError}{Environment.NewLine}{log}");
+        Assert.Equal(0, process.ExitCode);
         Assert.Equal(writeDiagnostics ? new string('o', 65536) : "", standardOutput);
         Assert.Equal(writeDiagnostics ? new string('e', 65536) : "", standardError);
-        var log = File.ReadAllText(startupLogPath);
+        Assert.Contains("launcher probe completed", log, StringComparison.Ordinal);
 
         Assert.Contains(
             frameworkDependent ? "framework-dependent" : "self-contained",

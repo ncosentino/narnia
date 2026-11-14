@@ -11,3 +11,5 @@ applyTo: "tests/**/*.cs"
   only the process tree created by the test.
 - Exercise output larger than the pipe buffer when testing redirected launchers.
   Do not hide pipe deadlocks by rerunning or increasing exit timeouts.
+- Isolate native launcher contracts from concurrent application-host integration
+  tests with a non-parallel xUnit collection, not assembly-wide serialization.
