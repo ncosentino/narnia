@@ -129,7 +129,7 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
     [InlineData(false, false)]
     [InlineData(true, true)]
     [InlineData(false, true)]
-    public void ServerLauncher_SelectsThePublishedDeploymentHost(
+    public async Task ServerLauncher_SelectsThePublishedDeploymentHost(
         bool frameworkDependent,
         bool writeDiagnostics)
     {
@@ -194,14 +194,21 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         startInfo.Environment["DOTNET_HOST_PATH"] = executablePath;
         using var process = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException("Could not start powershell.exe.");
-        var exited = process.WaitForExit(15_000);
-        if (!exited)
+        var standardOutputTask = process.StandardOutput.ReadToEndAsync();
+        var standardErrorTask = process.StandardError.ReadToEndAsync();
+        var exited = false;
+        try
+        {
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+            exited = true;
+        }
+        catch (TimeoutException)
         {
             process.Kill(entireProcessTree: true);
-            process.WaitForExit();
+            await process.WaitForExitAsync();
         }
-        var standardOutput = process.StandardOutput.ReadToEnd();
-        var standardError = process.StandardError.ReadToEnd();
+        var standardOutput = await standardOutputTask;
+        var standardError = await standardErrorTask;
         Assert.True(exited, $"The generated launcher did not exit. {standardError}");
         Assert.Equal(writeDiagnostics ? new string('o', 65536) : "", standardOutput);
         Assert.Equal(writeDiagnostics ? new string('e', 65536) : "", standardError);
