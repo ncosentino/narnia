@@ -1,4 +1,5 @@
 ---
+title: MCP Tools
 description: Reference for Narnia MCP tools covering session history, recovery, storage, and portable scheduled Copilot jobs.
 ---
 
