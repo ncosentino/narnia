@@ -194,18 +194,26 @@ public sealed class WindowsLogonAutostartManagerTests : IDisposable
         startInfo.Environment["DOTNET_HOST_PATH"] = executablePath;
         using var process = System.Diagnostics.Process.Start(startInfo)
             ?? throw new InvalidOperationException("Could not start powershell.exe.");
-        var standardOutputTask = process.StandardOutput.ReadToEndAsync();
-        var standardErrorTask = process.StandardError.ReadToEndAsync();
-        var exited = false;
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var standardOutputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var standardErrorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        var exited = true;
         try
         {
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
-            exited = true;
+            await process.WaitForExitAsync(cancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         }
         catch (TimeoutException)
         {
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync();
+            exited = false;
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
         }
         var standardOutput = await standardOutputTask;
         var standardError = await standardErrorTask;
