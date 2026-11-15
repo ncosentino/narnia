@@ -31,6 +31,30 @@ dotnet test narnia.slnx
 
 Tests live in `tests/NexusLabs.Narnia.Core.Tests/` (xUnit v3 unit tests) and `tests/NexusLabs.Narnia.Web.Tests/` (`WebApplicationFactory` integration tests); both run together in this one command.
 
+## Documentation metadata
+
+New guides need a meaningful title and a substantive introductory paragraph, not boilerplate
+frontmatter. At build time, `docs/hooks/metadata.py` preserves nonblank authored descriptions,
+then uses the homepage site description or derives a description from the page title and first
+prose paragraph. Notes, images, lists, tables, headings, and code blocks do not supply the
+introduction. Pages without prose receive a truthful site-and-page identity fallback.
+Derived introductions are shortened at a word boundary to keep summaries concise.
+
+This deterministic policy avoids duplicated summaries that drift from their guides. An explicit
+description remains available for an editorial exception; the tradeoff is that automatically
+derived wording depends on the quality of the introduction. There is no runtime AI, remote
+generation, or archive backfill.
+
+Source metadata remains decoded plain text for schema and `llms.txt` consumers. Only the
+template context receives HTML-escaped descriptions. JSON-LD serializes its plain values first,
+then escapes less-than characters so content cannot terminate a script element.
+The metadata hook runs before the schema and llms hooks.
+
+The hosted documentation job builds with `python -m mkdocs build --strict`, retains the existing
+title verification, and runs `python scripts/test-docs-metadata.py` through the real templates.
+Those fixtures cover overrides, homepage defaults, missing prose, inline markup, truncation,
+social descriptions, plain llms output, and safe JSON-LD.
+
 ## Publish the Web UI (serves the MCP endpoint too)
 
 The web app is the only executable to publish — it serves the Blazor UI and the `/mcp` endpoint from the same process, so there is no separate MCP server to build:

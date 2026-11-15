@@ -2,6 +2,11 @@
 
 import json
 import re
+from html import unescape
+
+
+def _serialize_json_ld(schema: dict) -> str:
+    return json.dumps(schema, indent=2, ensure_ascii=False).replace('<', '\\u003c')
 
 
 def _extract_h2_sections(html: str) -> list[tuple[str, str]]:
@@ -14,11 +19,11 @@ def _extract_h2_sections(html: str) -> list[tuple[str, str]]:
     for match in pattern.finditer(html):
         raw_heading = match.group(1)
         heading = re.sub(r'<[^>]+>', '', raw_heading)
-        heading = re.sub(r'&[a-z#0-9]+;', '', heading).strip()
+        heading = unescape(heading).strip()
         body_html = match.group(2)
         first_para = re.search(r'<p>(.*?)</p>', body_html, re.DOTALL)
         para_text = re.sub(r'<[^>]+>', '', first_para.group(1)).strip() if first_para else ''
-        para_text = re.sub(r'\s+', ' ', para_text)
+        para_text = re.sub(r'\s+', ' ', unescape(para_text))
         if heading:
             sections.append((heading, para_text))
     return sections
@@ -67,7 +72,7 @@ def _inject_howto_schema(html: str, page) -> str:
 
     script_tag = (
         '<script type="application/ld+json">\n'
-        + json.dumps(schema, indent=2, ensure_ascii=False)
+        + _serialize_json_ld(schema)
         + '\n</script>\n'
     )
     return html + script_tag
@@ -102,7 +107,7 @@ def _inject_faq_schema(html: str, page) -> str:
 
     script_tag = (
         '<script type="application/ld+json">\n'
-        + json.dumps(schema, indent=2, ensure_ascii=False)
+        + _serialize_json_ld(schema)
         + '\n</script>\n'
     )
     return html + script_tag

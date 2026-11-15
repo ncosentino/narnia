@@ -155,6 +155,9 @@ jobs:
       - name: Verify documentation titles
         run: python scripts/test-docs-titles.py site
 
+      - name: Verify documentation metadata
+        run: python scripts/test-docs-metadata.py
+
       - name: Deploy documentation (Cloudflare Pages)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: cloudflare/wrangler-action@v4

@@ -73,6 +73,10 @@ without a branch-protection edit.
 `.github/workflows/pr-review-policy.yml` publishes the **Review policy** check and evaluates the
 repository variable `GENESIS_REVIEW_POLICY`.
 
+The evaluator's native GitHub Actions job is named **Review policy**, matching the required
+check exactly. Its pass/fail result is the merge gate; it does not create a replacement check
+through the Checks API. The token needs only read access to repository contents and reviews.
+
 Under `copilot-one-approval`, a ready pull request authored by the Copilot bot needs one approval
 from an OWNER, MEMBER, or COLLABORATOR **on the current head SHA**. Approvals are matched against
 the exact commit, so pushing another commit invalidates the previous approval and requires a new
