@@ -9,6 +9,10 @@ def _serialize_json_ld(schema: dict) -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False).replace('<', '\\u003c')
 
 
+def _schema_script(schema: dict) -> str:
+    return '<script type="application/ld+json">\n' + _serialize_json_ld(schema) + '\n</script>\n'
+
+
 def _extract_h2_sections(html: str) -> list[tuple[str, str]]:
     """Return a list of (heading_text, first_paragraph_text) for each H2 in html."""
     sections = []
@@ -32,6 +36,14 @@ def _extract_h2_sections(html: str) -> list[tuple[str, str]]:
 def on_page_content(html: str, page, config, files) -> str:
     """Inject structured data JSON-LD blocks based on page URL."""
     url = page.url or ''
+    html += _schema_script({
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        '@id': page.canonical_url,
+        'url': page.canonical_url,
+        'name': page.title,
+        'description': page.meta['description'],
+    })
 
     if url == 'getting-started/':
         html = _inject_howto_schema(html, page)
@@ -70,12 +82,7 @@ def _inject_howto_schema(html: str, page) -> str:
         'step': steps,
     }
 
-    script_tag = (
-        '<script type="application/ld+json">\n'
-        + _serialize_json_ld(schema)
-        + '\n</script>\n'
-    )
-    return html + script_tag
+    return html + _schema_script(schema)
 
 
 def _inject_faq_schema(html: str, page) -> str:
@@ -105,9 +112,4 @@ def _inject_faq_schema(html: str, page) -> str:
         'mainEntity': questions,
     }
 
-    script_tag = (
-        '<script type="application/ld+json">\n'
-        + _serialize_json_ld(schema)
-        + '\n</script>\n'
-    )
-    return html + script_tag
+    return html + _schema_script(schema)
